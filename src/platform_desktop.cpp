@@ -55,6 +55,15 @@
 #ifndef GL_ARRAY_BUFFER
 #define GL_ARRAY_BUFFER 0x8892
 #endif
+#ifndef GL_ELEMENT_ARRAY_BUFFER
+#define GL_ELEMENT_ARRAY_BUFFER 0x8893
+#endif
+#ifndef GL_COMPRESSED_RGB_S3TC_DXT1_EXT
+#define GL_COMPRESSED_RGB_S3TC_DXT1_EXT 0x83F0
+#endif
+#ifndef GL_COMPRESSED_RGBA_S3TC_DXT5_EXT
+#define GL_COMPRESSED_RGBA_S3TC_DXT5_EXT 0x83F3
+#endif
 #ifndef GL_STATIC_DRAW
 #define GL_STATIC_DRAW 0x88E4
 #endif
@@ -238,6 +247,7 @@ namespace gfx { static void applySync(); }
 // ---------------------------------------------------------------- graphics
 namespace {
 float anisotropy = 1;
+bool haveS3TC = false;        // the card compresses textures for us (DXT1 / DXT5): the Blender cars' big ones
 u8* arena = nullptr;
 const int ARENA_SIZE = 16 << 20;
 int arenaUsed = 0;
@@ -1043,6 +1053,89 @@ void setMaterial(float spec, float gloss) {
 void attachNormals(const ModelVertex* v, const int8_t* n, int count) {
     if (v && n && count > 0) normRanges[(uintptr_t)v] = NormRange{v, count, n};
 }
+
+// ---- the Blender cars (CarMesh): meshes and full-colour textures that live in video memory
+struct GMesh { GLuint vbo = 0, ibo = 0; int verts = 0, indices = 0; };
+struct GTexRGBA { GLuint id = 0; int kb = 0; };
+static std::vector<GMesh> gMeshes;
+static std::vector<GTexRGBA> gTexRGBA;
+bool meshesSupported() { return haveBuffers && !getenv("EMR_NOMESH"); }
+int createMesh(const MeshVertex* v, int vc, const uint32_t* idx, int ic) {
+    if (!haveBuffers || !v || !idx || vc <= 0 || ic <= 0) return 0;
+    GMesh m; m.verts = vc; m.indices = ic;
+    glGenBuffers(1, &m.vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, m.vbo);
+    glBufferData(GL_ARRAY_BUFFER, (size_t)vc * sizeof(MeshVertex), v, GL_STATIC_DRAW);
+    glGenBuffers(1, &m.ibo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m.ibo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, (size_t)ic * sizeof(uint32_t), idx, GL_STATIC_DRAW);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    for (size_t i = 0; i < gMeshes.size(); i++) if (!gMeshes[i].vbo) { gMeshes[i] = m; return (int)i + 1; }
+    gMeshes.push_back(m);
+    return (int)gMeshes.size();
+}
+void freeMesh(int mesh) {
+    if (mesh <= 0 || mesh > (int)gMeshes.size()) return;
+    GMesh& m = gMeshes[mesh - 1];
+    if (m.vbo) glDeleteBuffers(1, &m.vbo);
+    if (m.ibo) glDeleteBuffers(1, &m.ibo);
+    m = GMesh();
+}
+int createTextureRGBA(const u8* rgba, int w, int h) {
+    if (!rgba || w <= 0 || h <= 0) return 0;
+    bool alpha = false;
+    for (size_t i = 3, n = (size_t)w * h * 4; i < n && !alpha; i += 4) alpha = rgba[i] < 255;
+    GLuint id = 0;
+    glGenTextures(1, &id);
+    glBindTexture(GL_TEXTURE_2D, id);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    if (anisotropy > 1) glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, anisotropy);
+    if (!fl_glGenerateMipmap) glTexParameteri(GL_TEXTURE_2D, GL_GENERATE_MIPMAP, GL_TRUE);
+    // compressed by the driver where it can: 1/8 (DXT1) or 1/4 (DXT5, with see-through parts) of the memory
+    GLenum fmt = haveS3TC ? (alpha ? GL_COMPRESSED_RGBA_S3TC_DXT5_EXT : GL_COMPRESSED_RGB_S3TC_DXT1_EXT) : GL_RGBA8;
+    glTexImage2D(GL_TEXTURE_2D, 0, fmt, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    curTex = nullptr;                    // (the next bindTexture binds its own again)
+    double bytes = (double)w * h * (haveS3TC ? (alpha ? 1.0 : 0.5) : 4.0) * 4.0 / 3.0;
+    GTexRGBA t; t.id = id; t.kb = (int)(bytes / 1024);
+    for (size_t i = 0; i < gTexRGBA.size(); i++) if (!gTexRGBA[i].id) { gTexRGBA[i] = t; return (int)i + 1; }
+    gTexRGBA.push_back(t);
+    return (int)gTexRGBA.size();
+}
+void freeTextureRGBA(int tex) {
+    if (tex <= 0 || tex > (int)gTexRGBA.size() || !gTexRGBA[tex - 1].id) return;
+    glDeleteTextures(1, &gTexRGBA[tex - 1].id);
+    gTexRGBA[tex - 1] = GTexRGBA();
+    curTex = nullptr;
+}
+int textureKB(int tex) { return tex > 0 && tex <= (int)gTexRGBA.size() ? gTexRGBA[tex - 1].kb : 0; }
+void drawMesh(int mesh, int tex, int first, int count, const M4& model) {
+    if (mesh <= 0 || mesh > (int)gMeshes.size() || count <= 0) return;
+    const GMesh& m = gMeshes[mesh - 1];
+    if (!m.vbo || first < 0 || first + count > m.indices) return;
+    enter3D();
+    curTex = nullptr;                    // (bindTexture after this binds its texture again)
+    GLuint tid = tex > 0 && tex <= (int)gTexRGBA.size() ? gTexRGBA[tex - 1].id : 0;
+    if (tid) { glEnable(GL_TEXTURE_2D); glEnableClientState(GL_TEXTURE_COORD_ARRAY); glBindTexture(GL_TEXTURE_2D, tid); texOn = true; }
+    else { glDisable(GL_TEXTURE_2D); glDisableClientState(GL_TEXTURE_COORD_ARRAY); texOn = false; }
+    bool lit = useLit(true);
+    setModel(model);
+    glBindBuffer(GL_ARRAY_BUFFER, m.vbo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m.ibo);
+    glVertexPointer(3, GL_FLOAT, sizeof(MeshVertex), (void*)offsetof(MeshVertex, x));
+    glColorPointer(4, GL_UNSIGNED_BYTE, sizeof(MeshVertex), (void*)offsetof(MeshVertex, color));
+    if (lit) { glEnableClientState(GL_NORMAL_ARRAY); glNormalPointer(GL_BYTE, sizeof(MeshVertex), (void*)offsetof(MeshVertex, nx)); }
+    if (texOn) glTexCoordPointer(2, GL_FLOAT, sizeof(MeshVertex), (void*)offsetof(MeshVertex, u));
+    glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_INT, (void*)(sizeof(uint32_t) * (size_t)first));
+    if (lit) glDisableClientState(GL_NORMAL_ARRAY);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+}
 }
 
 // ---------------------------------------------------------------- input
@@ -1216,6 +1309,8 @@ bool init() {
     loadGlProcs();
     log("OpenGL %s on %s, MSAA %dx, buffers %s\n", (const char*)glGetString(GL_VERSION), (const char*)glGetString(GL_RENDERER),
         msaaWanted, haveBuffers ? "yes" : "no");
+    haveS3TC = strstr((const char*)glGetString(GL_EXTENSIONS), "GL_EXT_texture_compression_s3tc") && !getenv("EMR_NOS3TC");
+    log("texture compression (S3TC): %s\n", haveS3TC ? "yes" : "no");
     if (strstr((const char*)glGetString(GL_EXTENSIONS), "GL_EXT_texture_filter_anisotropic")) {
         float maxA = 1; glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &maxA);
         anisotropy = maxA < 16 ? maxA : 16;

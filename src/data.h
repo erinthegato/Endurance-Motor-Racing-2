@@ -2,6 +2,7 @@
 // for the model packs (.emm) and texture files made by the tools/ scripts.
 #pragma once
 #include "platform.h"
+#include <vector>
 
 enum CarClass { CLASS_HYPER = 0, CLASS_GT3 = 1 };
 // Endurance Motor Racing 2.0: the two classes of the 2027 FIA WEC. Formula Legends' "eras" became the
@@ -98,6 +99,38 @@ struct Model {
     M4 matrix(const M4& place) const {
         return place * M4::translate(V3(offset[0], offset[1], offset[2])) * M4::scale(scale[0], scale[1], scale[2]);
     }
+};
+
+// (the PC edition) a car made in Blender (tools/blender/emr_export_game.py): 'ECM1' in
+// DATA/cars/<id>/<id>.ecm (the PC/ folder), with its PNG textures next to it. Up to four levels of
+// detail; each is the body and its four wheels (pivoted at the hub), each a mesh in video memory drawn
+// in a few groups (texture + shine). Metres, game axes (+X forward, +Y left, +Z up), the ground at z = 0.
+struct CarMesh {
+    enum { MAT_GLASS = 1, MAT_INTERIOR = 2, MAT_HELMET = 4, MAT_TYRE = 8, MAT_LIVERY = 16, MAT_BOARD = 32 };
+    enum { TEX_PLAIN = 0, TEX_LIVERY = 1, TEX_TYRE = 2, TEX_BOARD = 3 };
+    enum { PART_BODY = 0, PART_FL, PART_FR, PART_RL, PART_RR, PART_COUNT };
+    struct Mat { int tex = -1; float spec = 0.1f, gloss = 12; uint32_t flags = 0; };
+    struct Tex { int id = 0; int role = TEX_PLAIN; int arg = 0; int kb = 0; };
+    struct Draw { int mat = 0, first = 0, count = 0; };
+    struct Part { int mesh = 0; int tris = 0; int drawFirst = 0, drawCount = 0; };
+    struct Lod { Part part[PART_COUNT]; int tris = 0; };
+    int lodCount = 0;
+    Lod lod[4];
+    std::vector<Mat> mats;
+    std::vector<Tex> texs;
+    std::vector<Draw> draws;
+    float size[3] = {0, 0, 0};       // length, width, height
+    float head[3] = {0, 0, 1};       // the driver's helmet (its centre)
+    float hub[4][3] = {};            // wheel hubs: FL, FR, RL, RR
+    float wheelR[4] = {};            // tyre radius
+    int textureKB = 0;
+    // hd: full-size textures (your car, the showroom); else halved once when 2048 px or more
+    bool load(const char* carId, bool hd);
+    void unload();
+    bool loaded() const { return lodCount > 0; }
+    // the texture to draw a material with: the livery / number board of this car number, the tyres
+    // of this compound (TY_*), or the material's own
+    int texFor(const Mat& m, int number, int compound) const;
 };
 
 struct TexFile {

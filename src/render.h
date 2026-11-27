@@ -17,13 +17,21 @@ struct Renderer {
     bool sceneMirrorX = false;                       // drawScene flipped left-right (a mirror)
     bool sceneSide = false;                          // drawScene for a side mirror (PC): the full scene, no new shadow map
     bool mirrorsLive = false;                        // (PC) the player's side mirrors have this frame's pictures
-    struct GlassDraw { const ModelVertex* v; const Texture* tex; int count; M4 mm; float d; };
+    // (mesh != 0: a Blender car's glass, indices [first, first + count) drawn with texture mtex)
+    struct GlassDraw { const ModelVertex* v; const Texture* tex; int count; M4 mm; float d; int mesh = 0, mtex = 0, first = 0; };
     std::vector<GlassDraw> glassQueue;               // (PC) see-through glass, drawn after everything solid
     bool hudManage = false;                          // drawHUD: managing (the team panel and the controls take the bottom)
     int hideCar = -1;                                // drawScene: leave this car out (the manager's dashcam is inside it)
     bool sceneLite = false;                          // drawScene: road and cars only (the mirror)
     Model carModel[48];
     bool carLoaded[48] = {};
+    // (the PC) the cars made in Blender (DATA/cars/<id>/<id>.ecm): drawn instead of carModel's body,
+    // wheels, cabin and driver when present; carModel stays loaded for everything else (the ghost, etc.)
+    CarMesh carMesh[48];
+    int meshLod(const CarMesh& cm, float d) const;
+    void drawMeshBody(const CarMesh& cm, int lod, const M4& place, int number, bool inside, bool shadow, float d);
+    void drawMeshWheels(const CarMesh& cm, int lod, const M4& place, float steer, float spin, int compound, int number,
+                        const Car* car, const V3* eye, bool frontOnly);
     Model wheel, prop[PROP_COUNT], cockpit[2], steering[ERA_COUNT], pitCrew, fuelRig;
     Model eraWheel[ERA_COUNT], flap[ERA_COUNT];      // each era's road wheel and DRS flap
     void drawFlap(const Car& c, const M4& place, bool near);

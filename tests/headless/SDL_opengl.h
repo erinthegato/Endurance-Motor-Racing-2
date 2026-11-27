@@ -14,7 +14,7 @@ void glAlphaFunc(GLenum, GLclampf); void glBindTexture(GLenum, GLuint); void glB
 void glClear(GLbitfield); void glClearColor(GLclampf, GLclampf, GLclampf, GLclampf); void glClearDepth(GLclampd);
 void glColorPointer(GLint, GLenum, GLsizei, const void*); void glDeleteTextures(GLsizei, const GLuint*);
 void glDepthFunc(GLenum); void glDepthMask(GLboolean); void glDisable(GLenum); void glDisableClientState(GLenum);
-void glDrawArrays(GLenum, GLint, GLsizei); void glEnable(GLenum); void glEnableClientState(GLenum);
+void glDrawArrays(GLenum, GLint, GLsizei); void glDrawElements(GLenum, GLsizei, GLenum, const void*); void glEnable(GLenum); void glEnableClientState(GLenum);
 void glFogf(GLenum, GLfloat); void glFogfv(GLenum, const GLfloat*); void glFogi(GLenum, GLint);
 void glGenTextures(GLsizei, GLuint*); void glGetFloatv(GLenum, GLfloat*); void glGetIntegerv(GLenum, GLint*);
 const GLubyte* glGetString(GLenum); void glHint(GLenum, GLenum); void glLoadIdentity(void); void glLoadMatrixf(const GLfloat*);

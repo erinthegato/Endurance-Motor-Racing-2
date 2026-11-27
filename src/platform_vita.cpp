@@ -419,6 +419,14 @@ bool beginShadow(const V3&, const V3&, float) { return false; }
 void endShadow() {}
 void setMaterial(float, float) {}
 void attachNormals(const ModelVertex*, const int8_t*, int) {}
+// (the PC edition's Blender cars: not here, the .emm models are used)
+bool meshesSupported() { return false; }
+int createMesh(const MeshVertex*, int, const uint32_t*, int) { return 0; }
+void freeMesh(int) {}
+int createTextureRGBA(const u8*, int, int) { return 0; }
+void freeTextureRGBA(int) {}
+int textureKB(int) { return 0; }
+void drawMesh(int, int, int, int, const M4&) {}
 // The Vita has plenty of video memory; textures already live on the GPU once bound.
 bool moveToFastMemory(Texture&) { return false; }
 int fastMark() { return 0; }

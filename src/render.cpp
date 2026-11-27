@@ -131,6 +131,11 @@ void Renderer::loadCar(int idx) {
         m.reshare();
     }
     if (carLoaded[idx] && CARS[idx].career) applyLivery(idx);
+    // (the PC) the car made in Blender, where there is one: your car's textures at full size, the others' halved
+    if (carLoaded[idx] && !CARS[idx].career && carMesh[idx].load(CARS[idx].id, hd)) {
+        // the cockpit camera and cabin go where this model's driver sits
+        carModel[idx].cabX = carMesh[idx].head[0] - COCKPIT[CARS[idx].era % ERA_COUNT].eye.x;
+    }
 }
 
 void Renderer::setLivery(int idx, int style, u32 a, u32 b, u32 c) {
@@ -208,7 +213,7 @@ void Renderer::applyLivery(int idx) {
 void Renderer::freeCars() {
     ghostFor = -1; std::vector<ModelVertex>().swap(ghostVerts);
     crewPalCount = 0;                             // the team / compound palettes are made again as needed
-    for (int i = 0; i < CAR_COUNT; i++) if (carLoaded[i]) { carModel[i].unload(); carLoaded[i] = false; }
+    for (int i = 0; i < CAR_COUNT; i++) if (carLoaded[i]) { carModel[i].unload(); carMesh[i].unload(); carLoaded[i] = false; }
     std::vector<WorldVertex>().swap(pitVerts);   // the pit lane mesh is rebuilt for the next circuit
     gfx::fastRelease(raceMark);
 }
@@ -489,6 +494,14 @@ void Renderer::drawShadows(const Race& r, const Camera& cam) {
         if (!carLoaded[idx] || !near(car.pos, 4)) continue;
         const Model& m = carModel[idx];
         V3 rel = car.pos - cam.eye;
+        if (carMesh[idx].loaded()) {          // (the PC's Blender cars: a lighter level is plenty for a shadow)
+            const CarMesh& cm = carMesh[idx];
+            int sl = cm.lodCount > 2 ? (len(rel) < 30 ? 1 : 2) : cm.lodCount - 1;
+            M4 place = M4::basis(car.fwd, car.left, car.up, rel);
+            drawMeshBody(cm, sl, place, car.number, false, true, len(rel));
+            if (len(rel) < 60) drawMeshWheels(cm, sl, place, car.steer, car.wheelSpin, car.tyre, car.number, nullptr, nullptr, false);
+            continue;
+        }
         int lod = len(rel) < 30 ? 0 : 1;
         if (lod >= m.lodCount) lod = m.lodCount - 1;
         const PartSplit& ps = split[idx][lod];
@@ -514,6 +527,7 @@ void Renderer::drawGlassQueue() {
     gfx::setBlend(true); gfx::setDepthWrite(false); gfx::setGlass(true);
     gfx::setMaterial(1.0f, 600);
     for (const GlassDraw& g : glassQueue) {
+        if (g.mesh) { gfx::drawMesh(g.mesh, g.mtex, g.first, g.count, g.mm); continue; }
         gfx::bindTexture(g.tex);
         gfx::drawModel(g.v, g.count, g.mm);
     }
@@ -778,6 +792,17 @@ void Renderer::drawCar(const Car& c, const V3& eye, const V3& fwd, float tanH, f
     Camera cam; cam.fwd = fwd; cam.up = V3(0, 0, 1);
     if (!inside && !visible(rel, 3.0f, cam, tanH, tanV, FAR_CARS * perf.distance)) return;   // (camRight / camUp set by drawScene)
     float d = len(rel);
+    if (carMesh[idx].loaded()) {
+        // (the PC) the car made in Blender: its own body, interior, driver's helmet, glass and wheels
+        const CarMesh& cm = carMesh[idx];
+        int ml = inside ? 0 : meshLod(cm, d);
+        M4 place = M4::basis(c.fwd, c.left, c.up, rel);
+        statVerts[3] += cm.lod[ml].tris * 3;
+        drawMeshBody(cm, ml, place, c.number, inside, false, d);
+        if (inside) { drawMeshWheels(cm, 0, place, c.steer, c.wheelSpin, c.tyre, c.number, &c, &eye, true); return; }
+        if (d < (sceneLite ? 40 : 200)) drawMeshWheels(cm, ml, place, c.steer, c.wheelSpin, c.tyre, c.number, &c, &eye, false);
+        return;
+    }
     int lod = d < 28 * perf.lodBias ? 0 : (d < 75 * perf.lodBias ? 1 : 2);   // a 5 m car is ~95 px wide at 28 m, ~35 px at 75 m
     if (sceneLite) lod = 2;                    // the mirror is a few pixels tall: the plainest body
     if (lod >= m.lodCount) lod = m.lodCount - 1;
@@ -835,6 +860,60 @@ void Renderer::drawCar(const Car& c, const V3& eye, const V3& fwd, float tanH, f
         text3D(place * M4::basis(V3(-1, 0, 0), V3(0, 0, 1), V3(0, 1, 0), V3(px, py, pz)), b, 0.26f, RGBA(255, 255, 255), true);
         text3D(place * M4::basis(V3(1, 0, 0), V3(0, 0, 1), V3(0, -1, 0), V3(px, -py, pz)), b, 0.26f, RGBA(255, 255, 255), true);
     }
+}
+
+// (the PC) the Blender cars' level of detail: the full model up close, the lighter ones further out
+// (a 5 m car is ~70 px wide at 40 m on the 1280 x 720 picture, ~25 px at 110 m)
+int Renderer::meshLod(const CarMesh& cm, float d) const {
+    float b = perf.lodBias;
+    int l = sceneLite ? 2 : (d < 20 * b ? 0 : (d < 50 * b ? 1 : (d < 120 * b ? 2 : 3)));
+    return l < cm.lodCount ? l : cm.lodCount - 1;
+}
+
+// the body in its groups; inside (your own car from the cockpit): no glass, interior or helmet (the
+// game's cabin is drawn there); shadow: everything solid, no glass
+void Renderer::drawMeshBody(const CarMesh& cm, int lod, const M4& place, int number, bool inside, bool shadow, float d) {
+    const CarMesh::Part& p = cm.lod[lod].part[CarMesh::PART_BODY];
+    if (!p.mesh) return;
+    for (int i = 0; i < p.drawCount; i++) {
+        const CarMesh::Draw& dr = cm.draws[p.drawFirst + i];
+        const CarMesh::Mat& m = cm.mats[dr.mat];
+        if (inside && (m.flags & (CarMesh::MAT_INTERIOR | CarMesh::MAT_HELMET | CarMesh::MAT_GLASS))) continue;
+        int tex = cm.texFor(m, number, 1);
+        if (m.flags & CarMesh::MAT_GLASS) {
+            if (shadow) continue;
+            if (gfx::pcGlass()) { GlassDraw g{nullptr, nullptr, dr.count, place, d}; g.mesh = p.mesh; g.mtex = tex; g.first = dr.first; glassQueue.push_back(g); continue; }
+            gfx::setMaterial(1.0f, 600);
+        } else gfx::setMaterial(m.spec, m.gloss);
+        gfx::drawMesh(p.mesh, tex, dr.first, dr.count, place);
+    }
+    gfx::setMaterial(0.08f, 12);
+}
+
+// the four wheels, each turning on its own hub: the fronts steer, all spin; the tyres in their compound
+void Renderer::drawMeshWheels(const CarMesh& cm, int lod, const M4& place, float steer, float spin, int compound, int number,
+                              const Car* car, const V3* eye, bool frontOnly) {
+    for (int k = 0; k < (frontOnly ? 2 : 4); k++) {
+        const CarMesh::Part& p = cm.lod[lod].part[CarMesh::PART_FL + k];
+        if (!p.mesh) continue;
+        M4 w = place * M4::translate(V3(cm.hub[k][0], cm.hub[k][1], cm.hub[k][2]));
+        if (car && eye) {
+            // the body dives, rolls and squats on its springs; the tyres stay on the road
+            V3 wc(w.m[12], w.m[13], w.m[14]), g = car->body.gPos - *eye, n = car->body.gUp;
+            float pen = (wc.x - g.x) * n.x + (wc.y - g.y) * n.y + (wc.z - g.z) * n.z - cm.wheelR[k];
+            if (pen < 0) { w.m[12] -= n.x * pen; w.m[13] -= n.y * pen; w.m[14] -= n.z * pen; }
+        }
+        if (k < 2) w = w * M4::rotZ(-steer * 0.30f);
+        w = w * M4::rotY(spin);
+        for (int i = 0; i < p.drawCount; i++) {
+            const CarMesh::Draw& dr = cm.draws[p.drawFirst + i];
+            const CarMesh::Mat& m = cm.mats[dr.mat];
+            gfx::setMaterial(m.spec, m.gloss);
+            gfx::drawMesh(p.mesh, cm.texFor(m, number, compound), dr.first, dr.count, w);
+        }
+        statVerts[4] += p.tris * 3;
+    }
+    gfx::setMaterial(0.08f, 12);
 }
 
 // ------------------------------------------------------------------ cockpit
@@ -1504,6 +1583,12 @@ void Renderer::drawCarModel(int idx, const M4& place, bool withDriver) {
     loadCar(idx);
     if (!carLoaded[idx]) return;
     const Model& m = carModel[idx];
+    if (carMesh[idx].loaded()) {
+        const CarMesh& cm = carMesh[idx];
+        drawMeshBody(cm, 0, place, CARS[idx].numbers[0], false, false, 5);
+        drawMeshWheels(cm, 0, place, 0, 0, 1, CARS[idx].numbers[0], nullptr, nullptr, false);
+        return;
+    }
     gfx::bindTexture(&m.lod[0].tex);
     clip::drawModel(m.lod[0].verts, m.lod[0].count, m.matrix(place));
     Car c; c.def = &CARS[idx]; c.number = CARS[idx].numbers[0];
@@ -1544,6 +1629,16 @@ void Renderer::drawCarShowroom(int idx, float angle, float x0, float y0, float w
     gfx::setLighting(L);
     gfx::setLit(true);
     gfx::setMaterial(0.55f, 70);
+    if (carMesh[idx].loaded()) {
+        // (the PC's Blender cars: the model's own cabin and driver show through its glass)
+        const CarMesh& cm = carMesh[idx];
+        glassQueue.clear();
+        drawMeshBody(cm, 0, place, CARS[idx].numbers[0], false, false, 0);
+        drawMeshWheels(cm, 0, place, 0, 0, 1, CARS[idx].numbers[0], nullptr, nullptr, false);
+        drawGlassQueue();
+        gfx::setLit(false);
+        return;
+    }
     gfx::bindTexture(&m.lod[0].tex);
     const PartSplit& ps = split[idx][0];
     bool see = gfx::pcGlass() && ps.glassCount;

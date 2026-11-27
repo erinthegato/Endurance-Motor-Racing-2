@@ -1,5 +1,7 @@
 #include "data.h"
 #include "endian.h"
+#include "png.h"
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
@@ -143,6 +145,106 @@ bool Model::load(const char* path) {
     return true;
 }
 void Model::unload() { if (blob) sys::freeFile(blob); blob = nullptr; lodCount = 0; }
+
+// ---------------------------------------------------------------- the PC edition's Blender cars
+// 'ECM1' u32 lodCount, matCount, texCount; f32 size[3], head[3], wheel[4][4] (x, y, z, radius)
+// textures: u32 role, i32 arg, u32 nameLen, name (a PNG next to the file)
+// materials: i32 texture (-1: none), f32 spec, f32 gloss, u32 flags
+// per level: u32 partCount; per part: u32 kind, u32 vertCount, u32 indexCount, u32 drawCount,
+//   drawCount x {u32 material, u32 firstIndex, u32 indexCount}, MeshVertex[vertCount], u32 index[indexCount]
+namespace {
+struct Reader {
+    const uint8_t* p; const uint8_t* end; bool ok = true;
+    template <class T> T get() { T v{}; if (p + sizeof(T) > end) { ok = false; return v; } memcpy(&v, p, sizeof(T)); p += sizeof(T); return v; }
+    const uint8_t* take(size_t n) { if ((size_t)(end - p) < n) { ok = false; return nullptr; } const uint8_t* q = p; p += n; return q; }
+};
+}
+bool CarMesh::load(const char* id, bool hd) {
+    unload();
+    if (!gfx::meshesSupported()) return false;
+    char path[160];
+    snprintf(path, sizeof path, "DATA/cars/%s/%s.ecm", id, id);
+    int fileSize = 0;
+    void* blob = sys::loadFile(path, &fileSize);
+    if (!blob) return false;
+    Reader r{(const uint8_t*)blob, (const uint8_t*)blob + fileSize};
+    bool good = fileSize > 16 && !memcmp(blob, "ECM1", 4);
+    r.p += 4;
+    uint32_t nl = r.get<uint32_t>(), nm = r.get<uint32_t>(), nt = r.get<uint32_t>();
+    good = good && r.ok && nl >= 1 && nl <= 4 && nm < 4096 && nt < 1024;
+    if (good) {
+        for (float& f : size) f = r.get<float>();
+        for (float& f : head) f = r.get<float>();
+        for (int k = 0; k < 4; k++) { for (float& f : hub[k]) f = r.get<float>(); wheelR[k] = r.get<float>(); }
+        texs.resize(nt);
+        for (Tex& t : texs) {
+            t.role = (int)r.get<uint32_t>(); t.arg = r.get<int32_t>();
+            uint32_t n = r.get<uint32_t>();
+            const uint8_t* name = r.take(n);
+            if (!r.ok || n > 120) { good = false; break; }
+            char tp[300]; snprintf(tp, sizeof tp, "DATA/cars/%s/%.*s", id, (int)n, (const char*)name);
+            int ts = 0; void* tb = sys::loadFile(tp, &ts);
+            std::vector<uint8_t> px; int w = 0, h = 0;
+            if (tb && png::decode(tb, (size_t)ts, px, w, h)) {
+                if (!hd && w >= 2048 && h >= 2048) png::halve(px, w, h);   // (mipmaps would never reach the top level anyway)
+                t.id = gfx::createTextureRGBA(px.data(), w, h);
+                t.kb = gfx::textureKB(t.id); textureKB += t.kb;
+            } else sys::log("car %s: texture %s missing or not a PNG this reader takes\n", id, tp);
+            if (tb) sys::freeFile(tb);
+        }
+    }
+    if (good) {
+        mats.resize(nm);
+        for (Mat& m : mats) { m.tex = r.get<int32_t>(); m.spec = r.get<float>(); m.gloss = r.get<float>(); m.flags = r.get<uint32_t>(); }
+        good = r.ok;
+    }
+    for (uint32_t l = 0; good && l < nl; l++) {
+        uint32_t np = r.get<uint32_t>();
+        if (!r.ok || np > PART_COUNT) { good = false; break; }
+        for (uint32_t k = 0; k < np && good; k++) {
+            uint32_t kind = r.get<uint32_t>(), vc = r.get<uint32_t>(), ic = r.get<uint32_t>(), dc = r.get<uint32_t>();
+            if (!r.ok || kind >= PART_COUNT || dc > 4096) { good = false; break; }
+            Part& pt = lod[l].part[kind];
+            pt.drawFirst = (int)draws.size(); pt.drawCount = (int)dc;
+            for (uint32_t d = 0; d < dc; d++) {
+                Draw dr; dr.mat = (int)r.get<uint32_t>(); dr.first = (int)r.get<uint32_t>(); dr.count = (int)r.get<uint32_t>();
+                if (dr.mat < 0 || dr.mat >= (int)nm || (uint32_t)dr.first + dr.count > ic) good = false;
+                draws.push_back(dr);
+            }
+            const uint8_t* vv = r.take((size_t)vc * sizeof(MeshVertex));
+            const uint8_t* ii = r.take((size_t)ic * 4);
+            if (!r.ok || !good) { good = false; break; }
+            // (copied out: the file's bytes needn't be aligned for the floats)
+            std::vector<MeshVertex> verts(vc); memcpy(verts.data(), vv, (size_t)vc * sizeof(MeshVertex));
+            std::vector<uint32_t> idx(ic); memcpy(idx.data(), ii, (size_t)ic * 4);
+            for (uint32_t& i : idx) if (i >= vc) { good = false; break; }
+            if (!good) break;
+            pt.mesh = gfx::createMesh(verts.data(), (int)vc, idx.data(), (int)ic);
+            pt.tris = (int)ic / 3; lod[l].tris += pt.tris;
+            if (!pt.mesh) good = false;
+        }
+        if (good) lodCount = (int)l + 1;
+    }
+    sys::freeFile(blob);
+    if (!good || !lodCount) { sys::log("car %s: %s is damaged or not an ECM1 file\n", id, path); unload(); return false; }
+    sys::log("car %s: Blender model, %d levels (%d / %d / %d / %d triangles), textures %d KB\n", id, lodCount,
+             lod[0].tris, lod[1].tris, lod[2].tris, lod[3].tris, textureKB);
+    return true;
+}
+void CarMesh::unload() {
+    for (Lod& l : lod) { for (Part& p : l.part) { if (p.mesh) gfx::freeMesh(p.mesh); p = Part(); } l.tris = 0; }
+    for (Tex& t : texs) if (t.id) gfx::freeTextureRGBA(t.id);
+    texs.clear(); mats.clear(); draws.clear();
+    lodCount = 0; textureKB = 0;
+}
+int CarMesh::texFor(const Mat& m, int number, int compound) const {
+    int want = (m.flags & MAT_LIVERY) ? TEX_LIVERY : (m.flags & MAT_BOARD) ? TEX_BOARD : (m.flags & MAT_TYRE) ? TEX_TYRE : -1;
+    if (want >= 0) {
+        int arg = want == TEX_TYRE ? compound : number;
+        for (const Tex& t : texs) if (t.role == want && t.arg == arg && t.id) return t.id;
+    }
+    return m.tex >= 0 && m.tex < (int)texs.size() ? texs[m.tex].id : 0;
+}
 
 bool TexFile::load(const char* path) {
     int size = 0;

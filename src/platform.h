@@ -26,6 +26,9 @@ struct Texture {
 struct ModelVertex { u16 u, v; u32 color; int16_t x, y, z, pad; };
 // World vertex (24 bytes): GU_TEXTURE_32BITF | GU_COLOR_8888 | GU_VERTEX_32BITF
 struct WorldVertex { float u, v; u32 color; float x, y, z; };
+// (the PC) mesh vertex (28 bytes) for the cars made in Blender ('ECM1', see CarMesh): metres, a normal
+// (int8, -127..127), the material's colour (sRGB, multiplies the texture) and the texture coordinate
+struct MeshVertex { float x, y, z; int8_t nx, ny, nz, pad; u32 color; float u, v; };
 
 enum Prim { PRIM_TRIANGLES = 0, PRIM_TRIANGLE_STRIP = 1, PRIM_LINES = 2, PRIM_LINE_STRIP = 3 };
 
@@ -97,6 +100,18 @@ bool beginShadow(const V3& sunDir, const V3& centreRel, float radius);
 void endShadow();                          // light the 3D drawing that follows
 void setMaterial(float spec, float gloss);     // shine of what follows: 0..1, and the highlight's tightness
 void attachNormals(const ModelVertex* v, const int8_t* normals4, int count);   // (Model::load)
+// (the PC) meshes and full-colour textures kept in video memory: the cars made in Blender (CarMesh).
+// Elsewhere meshesSupported() is false, the create calls return 0 and the game keeps its .emm models.
+bool meshesSupported();
+int createMesh(const MeshVertex* v, int vertCount, const uint32_t* indices, int indexCount);   // 0: failed
+void freeMesh(int mesh);
+// RGBA, rows top to bottom, any power-of-two size: mipmapped, S3TC-compressed where the card has it
+int createTextureRGBA(const u8* rgba, int w, int h);   // 0: failed
+void freeTextureRGBA(int tex);
+int textureKB(int tex);                                // video memory it takes (for the performance log)
+// triangles [firstIndex, firstIndex + indexCount) of a mesh, with a texture (0: the colours only), lit
+// like the models (normals, the sun's shadow, setMaterial's shine, setGlass's see-through glass)
+void drawMesh(int mesh, int tex, int firstIndex, int indexCount, const M4& model);
 // Copy a texture's pixels into video memory (faster for the GPU to read). Returns false when full.
 // fastMark / fastRelease free everything moved after a mark (used for the cars of one race).
 bool moveToFastMemory(Texture& t);

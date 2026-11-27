@@ -27,7 +27,7 @@ struct Config {
     int tilt = 0; bool tiltInvert = false;
     bool mirror = true;      // PS Vita: rear-view mirror at the top of the screen
     // cockpit: hide the steering wheel (and its screen); with it hidden, the normal HUD can be shown in the cockpit
-    bool hideWheel = false, cockpitHud = false;
+    bool hideWheel = false, cockpitHud = true;   // cockpitHud: the timing boxes and map in the cockpit view
     // steering help: 0 off, 1 light (default; -1 = not set yet), 2 strong (no slides or spins)
     int steerHelp = -1;
     // button (d-pad) steering: 0 quick, 1 smooth, 2 extra smooth (the wheel winds on and back more gently)

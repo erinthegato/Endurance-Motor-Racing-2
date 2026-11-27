@@ -1239,8 +1239,8 @@ void Game::updateOptions(const Pad& p, int dx, int dy, bool ok, bool back) {
     if ((dx || ok) && id == 19) { cfg.mirror = !cfg.mirror; cfg.save(); return; }
     if ((dx || ok) && id == 17) { cfg.hideWheel = !cfg.hideWheel; cfg.save(); return; }
     if ((dx || ok) && id == 18) {
-        if (cfg.hideWheel) { cfg.cockpitHud = !cfg.cockpitHud; cfg.save(); }
-        else { snprintf(note, sizeof note, "Hide the steering wheel first"); noteT = 1.5f; }
+        if (!cfg.hideWheel) { cfg.cockpitHud = !cfg.cockpitHud; cfg.save(); }
+        else { snprintf(note, sizeof note, "Show the steering wheel first"); noteT = 1.5f; }
         return;
     }
     if (dx) {

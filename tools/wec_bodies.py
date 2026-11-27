@@ -532,7 +532,7 @@ def proto_interior():
     m.quad((x_dash - 0.005, yd - 0.24, sill + 0.035), (x_dash - 0.005, yd + 0.24, sill + 0.035),
            (x_dash - 0.005, yd + 0.24, sill + 0.047), (x_dash - 0.005, yd - 0.24, sill + 0.047), uv='orange', shade=1.6)
     # the housing behind the driver's display (the game draws the display on its face at x 0.43)
-    m.box((0.445, yd - 0.19, 0.64), (0.56, yd + 0.19, 0.72), uv='carbon', shade=0.55)
+    m.box((0.455, yd - 0.19, 0.65), (0.56, yd + 0.19, 0.735), uv='carbon', shade=0.55)
     # switch panels either side of the wheel, the master switch (Art. 13.20: a red spark in a blue triangle) and the
     # extinguisher button on the dash
     for s in (-1, 1):
@@ -612,5 +612,5 @@ def gt_interior():
     """the LMGT3 cockpit: the production car's cabin with the FIA GT3 cage, seat, window net and the
     compulsory rear-view camera screen; left-hand drive"""
     m = mirror_y(G.hd_gt_interior())
-    m.box((0.66, -0.13, 1.08), (0.70, 0.13, 1.15), uv='carbon', shade=0.5)      # the rear-view camera screen
+    m.box((0.66, -0.13, 1.045), (0.70, 0.13, 1.115), uv="grey", shade=0.45)    # the rear-view camera screen
     return m

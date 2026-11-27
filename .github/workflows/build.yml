@@ -48,7 +48,7 @@ jobs:
         run: |
           (apk add --no-cache git cmake make bash python3 2>/dev/null || (apt-get update && apt-get install -y git cmake make python3)) || true
           ls $VITASDK/arm-vita-eabi/lib | grep -i -E "vitagl|vitashark|mathneon|ShaccCgExt" || echo "vitaGL not preinstalled"
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: vitaGL (if the image lacks it)
         run: |
           if [ ! -f $VITASDK/arm-vita-eabi/lib/libvitaGL.a ]; then
@@ -65,12 +65,12 @@ jobs:
           cmake -S vita -B build-vita -DCMAKE_BUILD_TYPE=Release -DFL_APP_VER=${{ needs.version.outputs.app }}
           cmake --build build-vita -j4
           ls -la build-vita/*.vpk build-vita/*.zip
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: EnduranceMotorRacing2-Vita
           path: build-vita/EnduranceMotorRacing2.vpk
           compression-level: 0
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: EnduranceMotorRacing2-music
           path: build-vita/EnduranceMotorRacing2-music.zip
@@ -79,7 +79,7 @@ jobs:
   pc-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Build PC test (address + UB sanitizer)
         run: |
           dpkg -s zlib1g-dev >/dev/null 2>&1 || (sudo apt-get update && sudo apt-get install -y zlib1g-dev)
@@ -135,7 +135,7 @@ jobs:
           ./emr_test_asan cars shots
           ./emr_test_asan replay fuji shots 2>&1 | grep -E "recorded|did not|back on"
           for h in 0 1; do ./emr_test_asan steer imola $h; done
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: pc-test-shots
           path: shots
@@ -149,7 +149,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - name: Release notes (the changes since the last release, then how to install)
@@ -169,15 +169,15 @@ jobs:
             sed -n '/^### Install/,/^### In this version/p' RELEASE_NOTES.md | sed '$d'
           } > notes.md
           cat notes.md
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v6
         with:
           name: EnduranceMotorRacing2-Vita
           path: out
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v6
         with:
           name: EnduranceMotorRacing2-music
           path: out
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.version.outputs.tag }}
           target_commitish: ${{ github.sha }}

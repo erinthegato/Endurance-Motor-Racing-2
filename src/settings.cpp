@@ -63,7 +63,7 @@ void Config::save() const {
     fprintf(f, "v %d\nsound %d %d %d %d %d\nperf %d %d %d %d %d %d %d %d %d %d\nbind", VERSION, master, music, engine, effects, radio,
             preset, (int)vsync, fps, distance, (int)scenery, (int)effects3d, (int)showFps, attract, pitCam, (int)autoQuality);
     for (int a = 0; a < ACT_COUNT; a++) fprintf(f, " %d", bind[a]);
-    fprintf(f, "\ndrive %d\nvita %d %d %d %d\ncockpit %d %d\nsteering %d %d %d\n", (int)spins, tilt, (int)tiltInvert, (int)mirror, 0 /* (was: rear pad looks behind) */, (int)hideWheel, (int)cockpitHud, 1, steerHelp, 1);
+    fprintf(f, "\ndrive %d\nvita %d %d %d %d\ncockpit %d %d\nsteering %d %d %d\n", (int)spins, tilt, (int)tiltInvert, (int)mirror, 0 /* (was: rear pad looks behind) */, (int)hideWheel, cockpitHud ? 2 : 1, 1, steerHelp, 1);
     fprintf(f, "buttons %d\n", padSteer);
     fprintf(f, "realism %d %d %d %d %d %d %d %d %d %d", (int)real.full, (int)real.opponents, (int)real.tyres, (int)real.brakes,
             (int)real.cooling, (int)real.slipstream, (int)real.blowTyre, (int)real.ground, (int)real.fuel, real.damagePct);
@@ -89,7 +89,7 @@ void Config::load() {
     int tl = 0, ti = 0, mi = 1, rl = 0;
     if (ok && fscanf(f, "\nvita %d %d %d %d", &tl, &ti, &mi, &rl) >= 2) { c.tilt = tl < 0 ? 0 : (tl > 3 ? 3 : tl); c.tiltInvert = ti != 0; c.mirror = mi != 0; (void)rl; }
     int hw = 0, ch = 0;
-    if (ok && fscanf(f, "\ncockpit %d %d", &hw, &ch) == 2) { c.hideWheel = hw != 0; c.cockpitHud = ch != 0; }   // (optional line)
+    if (ok && fscanf(f, "\ncockpit %d %d", &hw, &ch) == 2) { c.hideWheel = hw != 0; if (ch) c.cockpitHud = ch == 2; }   // (optional line; 0: an older file, HUD on)
     int scv = -1, shp = -1, hdl = 1;
     if (ok && fscanf(f, "\nsteering %d %d %d", &scv, &shp, &hdl) >= 2) {
         (void)scv; (void)hdl; c.steerHelp = shp < -1 ? -1 : (shp > 2 ? 2 : shp); }   // (optional line)

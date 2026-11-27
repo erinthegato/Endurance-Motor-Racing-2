@@ -230,7 +230,7 @@ bool Track::load(const TrackDef* d, bool scenery) {
     placeSpeakers();
     groupProps();
     gfx::flushCache(verts.data(), (int)(verts.size() * sizeof(WorldVertex)));
-    sys::log("track %s: %d points, %.0f m, %d chunks, %d verts, %d props (%d left out), %d distance boards, %d run-offs cut short\n", d->id, n, length, (int)chunks.size(), (int)verts.size(), (int)props.size(), propsDropped, (int)boards.size(), closeRunoff);
+    sys::log("track %s: %d points, %.0f m, %d chunks, %d verts, %d props (%d left out), %d distance boards, %d run-off points narrowed (another part of the lap close by)\n", d->id, n, length, (int)chunks.size(), (int)verts.size(), (int)props.size(), propsDropped, (int)boards.size(), closeRunoff);
     return true;
 }
 

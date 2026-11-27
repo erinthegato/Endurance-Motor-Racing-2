@@ -1137,7 +1137,7 @@ void Game::screenOptions(Panel& P) {
     snprintf(v[15], 56, "Controls...");   // (not a row now: a category)
     snprintf(v[16], 56, "Back");
     snprintf(v[17], 56, "Steering wheel:  < %s >", cfg.hideWheel ? "Hidden" : "Shown");
-    snprintf(v[18], 56, "HUD in cockpit:  < %s >", !cfg.hideWheel ? "Wheel shown" : (cfg.cockpitHud ? "On" : "Off"));
+    snprintf(v[18], 56, "HUD in cockpit:  < %s >", cfg.hideWheel ? "On (wheel hidden)" : (cfg.cockpitHud ? "On" : "Off"));
     snprintf(v[19], 56, "Rear-view mirror:  < %s >", cfg.mirror ? "On" : "Off");
     if (optCat < 0) {
         // the categories
@@ -1160,7 +1160,7 @@ void Game::screenOptions(Panel& P) {
         int i = ids[k];
         float y = 56 + k * 19 + (i == 16 ? 6 : 0);
         if (k == sel) P.fill(40, y - 2, 400, 17, RGBA(255, 150, 40, 230));
-        P.text(52, y, v[i], k == sel ? INK : ((i == 18 && !cfg.hideWheel) ? DIM : WHITE), 0.82f);
+        P.text(52, y, v[i], k == sel ? INK : ((i == 18 && cfg.hideWheel) ? DIM : WHITE), 0.82f);
     }
     P.textC(240, 255, "LEFT/RIGHT change     X select     O back", DIM, 0.75f);
 }

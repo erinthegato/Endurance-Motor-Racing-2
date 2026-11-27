@@ -875,7 +875,6 @@ void Renderer::drawCabin(const Car& c, const Camera& cam, M4& car, M4& wheelM, c
 // everything the driver needs, on the car's own displays (the cockpit camera has no HUD)
 void Renderer::drawCockpit(const Race& r, const Camera& cam) {
     const Car& c = r.cars[r.playerIdx];
-    int cls = c.def->cls;
     M4 car, wheelM;
     drawCabin(c, cam, car, wheelM, &r);
     // at night the cabin is dark (the displays still glow)
@@ -885,188 +884,11 @@ void Renderer::drawCockpit(const Race& r, const Camera& cam) {
         gfx::drawFill2D(0, 0, SCREEN_W, SCREEN_H, RGBA(4, 6, 16, (int)(dark * 255)));
         gfx::setBlend(false); gfx::setDepthTest(true);
     }
-    const M4 FACE = M4::basis(V3(0, -1, 0), V3(0, 0, 1), V3(-1, 0, 0), V3(0, 0, 0));   // a panel facing the driver
-    const u32 white = RGBA(235, 240, 250), dim = RGBA(150, 160, 175), amber = RGBA(255, 190, 60), black = RGBA(6, 8, 12);
-    char b[64], t2[16];
     float rpmF = clampf((c.rpm - c.def->idleRpm) / (c.def->maxRpm - c.def->idleRpm), 0, 1);
-    bool timed = r.set.raceMin > 0 && r.session == SES_RACE;
-    const bool newDash = (cockpit[cls].flags & 2) != 0;   // Unity AI interior (Vita): the new instruments
-    // ---- 1980: no screen on the wheel; analogue instruments on the dash behind it -- a big rev counter
-    // in the middle (red from 10,500), oil pressure and water temperature either side, a gear number
-    // under the rev counter (the game's only concession) and the race-control light on the left
-    const bool dash80 = false;             // (Formula Legends' 1980 dials)
-    if (dash80) {
-        const CockpitLayout& L = COCKPIT[0];
-        // flat on the front wall of the cockpit (the bulkhead at x 1.05, facing the driver)
-        (void)L;
-        Display d{*this, car * M4::translate(V3(1.043f, 0, 0.455f)) * FACE * M4::scale(1.45f, 1.45f, 1.45f)};
-        d.box(-0.125f, -0.048f, 0.125f, 0.048f, RGBA(14, 14, 16));
-        auto dial = [&](float cx, float R0, float v, int ticks, int redFrom) {
-            d.box(cx - R0 - 0.004f, -R0 - 0.004f, cx + R0 + 0.004f, R0 + 0.004f, RGBA(30, 30, 34), 0.0012f);
-            for (int k = 0; k <= ticks; k++) {
-                float a = 3.93f - k * (4.71f / ticks);          // a 270-degree sweep from bottom left
-                Display tk{*this, d.m * M4::translate(V3(cx, 0, 0)) * M4::rotZ(a)};
-                tk.box(R0 - 0.010f, -0.0018f, R0, 0.0018f, k >= redFrom ? RGBA(255, 60, 40) : white, 0.002f);
-            }
-            Display nd{*this, d.m * M4::translate(V3(cx, 0, 0)) * M4::rotZ(3.93f - clampf(v, 0, 1) * 4.71f)};
-            nd.box(-0.004f, -0.0015f, R0 - 0.004f, 0.0015f, RGBA(255, 150, 40), 0.003f);
-            d.box(cx - 0.004f, -0.004f, cx + 0.004f, 0.004f, RGBA(60, 60, 66), 0.004f);
-        };
-        dial(0.0f, 0.040f, c.rpm / 12000.0f, 12, 11);                             // rev counter, 0-12,000
-        dial(-0.080f, 0.022f, 0.55f + 0.1f * rpmF, 6, 7);                          // oil pressure
-        dial(0.080f, 0.022f, 0.48f + 0.05f * sinf(r.time * 0.02f), 6, 5);          // water temperature
-        snprintf(b, sizeof b, "%d", c.gear);
-        d.box(0.050f, 0.026f, 0.068f, 0.044f, black, 0.004f);     // (top right, clear of the wheel rim)
-        d.text(0.059f, 0.035f, b, 0.014f, RGBA(255, 220, 60));
-        const char* fw0; u32 fc0 = flagColour(r, c, fw0);
-        if (fw0[0]) d.box(-0.118f, 0.030f, -0.100f, 0.044f, fc0, 0.004f);   // the flag light
-    }
-    // ---- on the wheel: gear, speed, rev bar, shift lights
-    if (!newDash && !cfg.hideWheel && !dash80) {
-        bool hy = cls == CLASS_HYPER;
-        // each era's wheel has its own screen (tools/blender/cockpit_parts.py SCREENS): 1980: no screen (dials on the dash), 1998 a small LCD
-        // at the top of the hub, 2010 a small screen, 2016 and 2025 the big screen
-        static const float WS_Z[ERA_COUNT] = {0.006f, 0.010f}, WS_K[ERA_COUNT] = {0.72f, 0.66f};
-        int we = c.def->era % ERA_COUNT;
-        Display d{*this, wheelM * M4::translate(V3(-0.013f, 0, WS_Z[we])) * FACE * M4::scale(WS_K[we], WS_K[we], WS_K[we])};
-        float w = hy ? 0.12f : 0.07f, h = hy ? 0.07f : 0.05f;
-        d.box(-w, -h, w, h, black);
-        snprintf(b, sizeof b, "%d", c.gear);
-        d.text(0, hy ? 0.0f : -0.004f, b, hy ? 0.085f : 0.07f, RGBA(255, 220, 60));
-        if (hy) {
-            snprintf(b, sizeof b, "%d", (int)(c.v * 3.6f + 0.5f));
-            d.text(-0.075f, -0.035f, b, 0.04f, white);
-            d.text(-0.075f, -0.060f, "km/h", 0.018f, dim);
-            formatTime(b, r.countdown > 0 ? 0 : r.time - c.lapStart);
-            d.text(0.072f, -0.04f, b, 0.026f, RGBA(140, 255, 160));
-        }
-        d.bar(-w + 0.008f, h - 0.012f, 2 * w - 0.016f, 0.008f, rpmF, rpmF > 0.92f ? RGBA(255, 60, 40) : RGBA(80, 200, 255));
-        for (int k = 0; k < 9; k++) {
-            bool on = rpmF * 10 - 1 > k;
-            u32 col = k < 3 ? RGBA(40, 230, 60) : (k < 6 ? RGBA(255, 40, 30) : RGBA(60, 120, 255));
-            if (!on) col = RGBA(25, 25, 30);
-            if (rpmF > 0.97f && ((int)(r.time * 12) & 1)) col = RGBA(60, 120, 255);
-            float x = (k - 4) * (hy ? 0.022f : 0.015f);
-            d.box(x - 0.006f, h + 0.004f, x + 0.006f, h + 0.014f, col, 0.004f);
-        }
-    }
-    // ---- shared pieces
     const char* fw; u32 fc = flagColour(r, c, fw);
-    auto position = [&](char* o, int n) { snprintf(o, n, "P%d/%d", r.classPosition(c), r.classCount(c.def->cls)); };
-    auto progress = [&](char* o, int n) {
-        if (r.set.timeTrial) snprintf(o, n, "TT L%d", r.player().lap + 1);
-        else if (r.session != SES_RACE) { float left = fmaxf(0, r.sessionLength - r.time); snprintf(o, n, "%d:%02d", (int)left / 60, (int)left % 60); }
-        else if (timed) { int sec = (int)(r.raceLeft() * r.timeScale); if (sec >= 3600) snprintf(o, n, "%d:%02d:%02d", sec / 3600, (sec / 60) % 60, sec % 60); else snprintf(o, n, "%d:%02d", sec / 60, sec % 60); }
-        else snprintf(o, n, "L%d/%d", c.lap + 1 > r.set.laps ? r.set.laps : c.lap + 1, r.set.laps);
-    };
-    static const u32 TYC[TY_COUNT] = {RGBA(235, 40, 40), RGBA(250, 210, 30), RGBA(240, 240, 240), RGBA(40, 200, 60), RGBA(40, 120, 255)};
-    // the race-control message board: latest message, wrapped onto lines of `cols` characters
-    auto messages = [&](Display& d, float w, float lineH, int cols, int maxLines, float top) {
-        if (r.msgs.empty()) return;
-        const RaceMsg& mg = r.msgs[0];
-        const char* s = mg.text; int n = (int)strlen(s), at = 0;
-        for (int ln = 0; ln < maxLines && at < n; ln++) {
-            int end = at + cols;
-            if (end >= n) end = n;
-            else { int e = end; while (e > at && s[e] != ' ') e--; if (e > at) end = e; }
-            char line[40]; int k = end - at; if (k > 39) k = 39;
-            memcpy(line, s + at, k); line[k] = 0;
-            d.text(0, top - ln * lineH * 1.15f, line, lineH, (mg.color & 0xFFFFFFu) | 0xFF000000u);
-            at = end; while (at < n && s[at] == ' ') at++;
-        }
-        (void)w;
-    };
-    auto carState = [&](Display& d, float x0, float w, float y, float rowH) {
-        // fuel, tyres, penalties
-        if (c.def->cls == CLASS_HYPER) {
-            // fuel and the hybrid battery side by side (the battery bar lights up while it boosts)
-            d.text(x0, y, "F", rowH * 0.7f, dim, false);
-            d.bar(x0 + w * 0.12f, y - rowH * 0.25f, w * 0.36f, rowH * 0.5f, c.fuel, c.fuel > 0.15f ? RGBA(80, 180, 255) : RGBA(250, 60, 40));
-            d.text(x0 + w * 0.53f, y, "E", rowH * 0.7f, c.boosting ? RGBA(255, 240, 120) : dim, false);
-            d.bar(x0 + w * 0.64f, y - rowH * 0.25f, w * 0.34f, rowH * 0.5f, c.ers, c.boosting ? RGBA(255, 240, 120) : RGBA(80, 230, 140));
-        } else {
-            d.text(x0, y, "FUEL", rowH * 0.7f, dim, false);
-            d.bar(x0 + w * 0.36f, y - rowH * 0.25f, w * 0.62f, rowH * 0.5f, c.fuel, c.fuel > 0.15f ? RGBA(80, 180, 255) : RGBA(250, 60, 40));
-        }
-        y -= rowH * 1.25f;
-        d.box(x0, y - rowH * 0.3f, x0 + rowH * 0.6f, y + rowH * 0.3f, TYC[c.tyre], 0.002f);
-        d.text(x0 + rowH * 0.8f, y, TYRE_NAME[c.tyre], rowH * 0.7f, white, false);
-        float life = 1 - c.wear;
-        d.bar(x0 + w * 0.5f, y - rowH * 0.25f, w * 0.48f, rowH * 0.5f, life, life > 0.4f ? RGBA(80, 220, 90) : (life > 0.15f ? RGBA(250, 200, 40) : RGBA(250, 60, 40)));
-        y -= rowH * 1.25f;
-        if (c.blue > 0) d.text(x0, y, ((int)(r.time * 2.5f) & 1) ? "BLUE FLAG" : "", rowH * 0.75f, RGBA(60, 130, 255), false);
-        else if (c.driveThrough) { snprintf(b, sizeof b, "DRIVE-THRU %d", c.dtLaps); d.text(x0, y, b, rowH * 0.75f, RGBA(255, 90, 60), false); }
-        else if (c.penalty > 0) { snprintf(b, sizeof b, "PEN +%.0fs", c.penalty); d.text(x0, y, b, rowH * 0.75f, RGBA(255, 120, 60), false); }
-        else if (c.limitWarn > 0) { snprintf(b, sizeof b, "LIMITS %d/5", c.limitWarn); d.text(x0, y, b, rowH * 0.75f, dim, false); }
-        else if (c.drv[c.driver].fatigue > 0.5f) { float f = c.drv[c.driver].fatigue; snprintf(b, sizeof b, "TIRED %d%%", (int)(f * 100)); d.text(x0, y, b, rowH * 0.75f, f > 0.7f ? RGBA(255, 90, 60) : RGBA(255, 200, 60), false); }
-        else {
-            static const char* MP[MAP_COUNT] = {"SC", "NRM", "ATK"};
-            float h = r.clockHour(); snprintf(b, sizeof b, "%s  %02d:%02d", MP[c.su.map], (int)h, (int)(h * 60) % 60);
-            d.text(x0, y, b, rowH * 0.75f, c.su.map == MAP_ATTACK ? RGBA(255, 120, 60) : RGBA(255, 220, 150), false);
-        }
-    };
-    if (newDash) { drawNewInstruments(r, c, car, wheelM, rpmF, fc, fw); return; }
-    if (carModel[c.def - CARS].flags & 4) {
-        // open cockpit: the flag colour and race-control messages on a strip at the top of the wheel
-        if (cfg.hideWheel || dash80) { (void)messages; (void)carState; (void)position; (void)progress; (void)t2; (void)amber; return; }
-        Display mb{*this, wheelM * M4::translate(V3(-0.014f, 0, 0.092f)) * FACE};
-        mb.box(-0.10f, -0.014f, 0.10f, 0.014f, fc, 0.003f);
-        if (fw[0]) mb.text(0, 0, fw, 0.018f, RGBA(10, 10, 10));
-        (void)messages; (void)carState; (void)position; (void)progress; (void)t2; (void)amber;
-        return;
-    }
-    if (cls == CLASS_HYPER) {
-        // left screen: position, laps / time left, last and best lap
-        Display l{*this, car * M4::translate(V3(0.397f, 0.31f, 0.552f)) * FACE};
-        l.box(-0.115f, -0.075f, 0.115f, 0.075f, black);
-        position(b, sizeof b); l.text(0, 0.043f, b, 0.05f, white);
-        progress(b, sizeof b); l.text(0, 0.0f, b, 0.036f, amber);
-        formatTime(t2, c.lastLap); l.text(0, -0.032f, t2, 0.028f, dim);
-        formatTime(t2, c.bestLap); l.text(0, -0.058f, t2, 0.028f, RGBA(200, 140, 255));
-        // right screen: fuel, tyres, penalties / clock
-        Display rr{*this, car * M4::translate(V3(0.397f, -0.31f, 0.552f)) * FACE};
-        rr.box(-0.115f, -0.075f, 0.115f, 0.075f, black);
-        carState(rr, -0.105f, 0.21f, 0.048f, 0.036f);
-        // message board over the wheel, with the flag light at each end
-        Display mb{*this, car * M4::translate(V3(0.458f, 0, 0.652f)) * FACE};
-        mb.box(-0.24f, -0.062f, 0.24f, 0.062f, black);
-        mb.box(-0.235f, -0.057f, -0.200f, 0.057f, fc, 0.002f); mb.box(0.200f, -0.057f, 0.235f, 0.057f, fc, 0.002f);
-        Display tx{*this, mb.m};
-        if (!r.msgs.empty()) messages(tx, 0.38f, 0.030f, 26, 3, 0.036f);
-        else if (fw[0]) tx.text(0, 0, fw, 0.06f, fc);
-    } else {
-        // behind the wheel: the lap time
-        Display d{*this, car * M4::translate(V3(0.357f, -0.38f, 0.885f)) * FACE};
-        d.box(-0.18f, -0.045f, 0.18f, 0.045f, black);
-        formatTime(b, r.countdown > 0 ? 0 : r.time - c.lapStart);
-        d.text(0, 0.008f, b, 0.045f, RGBA(140, 255, 160));
-        // centre console: flag light, fuel / tyres / penalties, race-control messages, best lap
-        Display cc{*this, car * M4::translate(V3(0.297f, 0, 0.68f)) * FACE};
-        cc.box(-0.125f, -0.175f, 0.125f, 0.175f, black);
-        cc.box(-0.115f, 0.125f, 0.115f, 0.168f, fc, 0.002f);
-        if (fw[0]) cc.text(0, 0.146f, fw, 0.036f, RGBA(10, 10, 10));
-        carState(cc, -0.112f, 0.224f, 0.098f, 0.034f);
-        messages(cc, 0.23f, 0.027f, 17, 3, -0.035f);
-        formatTime(t2, c.bestLap); snprintf(b, sizeof b, "BEST %s", t2); cc.text(0, -0.15f, b, 0.027f, RGBA(200, 140, 255));
-        // passenger side: speedometer, position and timer on the instrument pod
-        Display p{*this, car * M4::translate(V3(0.697f, 0.36f, 0.955f)) * FACE};
-        p.box(-0.29f, -0.075f, 0.29f, 0.075f, black);
-        float cx = 0.215f, cy = -0.012f, R0 = 0.072f;      // the dial is nearest the driver
-        for (int k = 0; k <= 8; k++) {
-            float a = 3.77f - k * (4.4f / 8);
-            Display tk{*this, p.m * M4::translate(V3(cx, cy, 0)) * M4::rotZ(a)};
-            tk.box(R0 - 0.014f, -0.003f, R0, 0.003f, k >= 7 ? RGBA(255, 60, 40) : white, 0.002f);
-        }
-        float kmh = c.v * 3.6f;
-        Display nd{*this, p.m * M4::translate(V3(cx, cy, 0)) * M4::rotZ(3.77f - clampf(kmh / 320.0f, 0, 1) * 4.4f)};
-        nd.box(-0.010f, -0.004f, R0 - 0.012f, 0.004f, RGBA(255, 90, 40), 0.004f);
-        snprintf(b, sizeof b, "%d", (int)(kmh + 0.5f)); p.text(cx, cy - 0.040f, b, 0.04f, white);
-        position(b, sizeof b); p.text(0.0f, 0.0f, b, 0.075f, white);
-        progress(b, sizeof b); p.text(-0.19f, 0.03f, b, 0.055f, amber);
-        if (timed || r.session != SES_RACE) snprintf(b, sizeof b, "LAP %d", c.lap + 1);
-        else { float sec = fmaxf(0, r.time - r.greenTime); snprintf(b, sizeof b, "%d:%02d", (int)sec / 60, (int)sec % 60); }
-        p.text(-0.19f, -0.035f, b, 0.045f, dim);
-    }
+    // both cockpits carry the wheel screen and dash displays (Formula Legends' 1980 dials and its older
+    // per-era screens are gone: every 2027 cockpit has the new instruments)
+    drawNewInstruments(r, c, car, wheelM, rpmF, fc, fw);
 }
 
 // ------------------------------------------------------------------ new instruments (Unity AI interiors)
@@ -1172,7 +994,7 @@ void Renderer::drawNewInstruments(const Race& r, const Car& c, const M4& car, co
     // ---------------- the rear-view camera (compulsory on both classes): the nearest car within 150 m behind,
     // drawn as a mirror would show it -- bigger as it closes, on the side it is on, in its class colour
     {
-        Display rv{*this, hy ? panel(V3(0.498f, -0.22f, 0.68f), 0, 0.10f) : panel(V3(0.658f, 0.0f, 1.115f), 0, -0.05f)};
+        Display rv{*this, hy ? panel(V3(0.498f, -0.22f, 0.68f), 0, 0.10f) : panel(V3(0.658f, 0.0f, 1.08f), 0, -0.05f)};
         float W = hy ? 0.105f : 0.125f, H = hy ? 0.036f : 0.032f;
         rv.box(-W - 0.004f, -H - 0.004f, W + 0.004f, H + 0.004f, frame, 0.0008f);
         rv.box(-W, -H, W, H, RGBA(18, 22, 30));
@@ -1198,7 +1020,7 @@ void Renderer::drawNewInstruments(const Race& r, const Car& c, const M4& car, co
 
     if (hy) {
         // ---------------- hypercar: one wide display on the dash in front of the driver
-        Display d{*this, panel(V3(0.443f, 0.17f, 0.68f), 0, 0.32f) * M4::scale(0.85f, 0.85f, 0.85f)};
+        Display d{*this, panel(V3(0.453f, 0.17f, 0.692f), 0, 0.32f) * M4::scale(0.85f, 0.85f, 0.85f)};
         float W = 0.205f, H = 0.040f;
         d.box(-W - 0.006f, -H - 0.006f, W + 0.006f, H + 0.006f, frame, 0.0008f);
         d.box(-W, -H, W, H, bg);
@@ -1343,6 +1165,10 @@ void Renderer::drawHUD(const Race& r, int mode) {
     gfx::setBlend(true);
     char b[48];
     u32 panel = RGBA(0, 0, 0, 120), white = RGBA(255, 255, 255), dim = RGBA(190, 200, 215);
+    // Settings > HUD in cockpit: Off -- the dash and the wheel screen already show the position, the
+    // times and the race progress, so the cockpit view drops those boxes and the map
+    const bool lean = mode == CAM_COCKPIT && !cfg.hideWheel && !cfg.cockpitHud;
+    if (!lean) {
     // position + lap
     gfx::drawFill2D(6, 6, 104, 40, panel);
     // WEC: the position in your class, the class's colour tag (Hypercar red, LMGT3 orange) and overall
@@ -1386,24 +1212,14 @@ void Renderer::drawHUD(const Race& r, int mode) {
     formatTime(t2, c.lastLap);
     snprintf(b, sizeof b, "LAST %s", t2);
     font.drawRight(SCREEN_W - 12, 37, b, dim, 0.8f);
+    }
     // speed + gear (the cockpit has its own displays, unless its wheel is hidden)
     if (mode != CAM_COCKPIT || cfg.hideWheel) drawSpeedBox(c);
-    // DRS: grey when the zones are live, outlined green when this car has it for the next zone, solid when open
-    if (r.ep().drs && r.session != SES_RACE ? true : r.drsOn) {
-        if (r.ep().drs) {
-            bool have = c.drsZone >= 0, open = c.drs;
-            // in the zone with DRS but the flap still shut: flash, press the DRS button
-            bool ready = have && !open && r.drsOn && r.drsZoneAt(c.s) == c.drsZone && !r.autoPlayer;
-            bool blink = ready && ((int)(r.time * 6) & 1);
-            float x = SCREEN_W - 172, y = SCREEN_H - 30;
-            gfx::drawFill2D(x, y, 40, 18, open ? RGBA(40, 200, 90, 230) : (blink ? RGBA(40, 200, 90, 150) : RGBA(0, 0, 0, 140)));
-            if (have && !open) { gfx::drawFill2D(x, y, 40, 2, RGBA(40, 200, 90)); gfx::drawFill2D(x, y + 16, 40, 2, RGBA(40, 200, 90)); }
-            font.drawCentre(x + 20, y + 1, "DRS", open || have ? RGBA(255, 255, 255) : RGBA(130, 130, 140), 0.85f);
-        }
-    }
     // map
-    gfx::drawFill2D(6, SCREEN_H - 86, 80, 80, RGBA(0, 0, 0, 90));
-    drawMap(r.track, &r, 10, SCREEN_H - 82, 72, RGBA(230, 230, 230, 200));
+    if (!lean) {
+        gfx::drawFill2D(6, SCREEN_H - 86, 80, 80, RGBA(0, 0, 0, 90));
+        drawMap(r.track, &r, 10, SCREEN_H - 82, 72, RGBA(230, 230, 230, 200));
+    }
     // start lights
     bool lights = r.countdown > 0 && r.cars[0].startDelay <= 0 && r.player().startDelay <= 0;
     for (const Car& o : r.cars) if (o.startDelay > 0) lights = false;
@@ -1527,7 +1343,9 @@ void Renderer::drawDriver(const Car& c, const M4& place, int lod, bool near) {
     // (the helmet sits above the camera's eye point: the eye is set low to see over the nose)
     // (the 1980 driver, no HANS, sits as before; the others 4 cm lower, deeper in the cockpit, with the
     // helmet on a shorter neck: tools/gen_cockpit.py shorter_neck)
-    V3 at = COCKPIT[e].eye + V3(carModel[c.def - CARS].cabX - 0.045f, 0, 0.065f);
+    // (Hypercar: 4 cm lower -- the helmet's top 80-100 mm under the line between the two rollover
+    // structures (Art. 13.5), which also keeps it clear of the canopy when the driver leans)
+    V3 at = COCKPIT[e].eye + V3(carModel[c.def - CARS].cabX - 0.045f, 0, e == ERA_HYPER ? 0.025f : 0.065f);
     float lean = clampf(-c.steer * 0.12f, -0.12f, 0.12f) * (c.v > 10 ? 1.0f : c.v / 10.0f);
     // (leans about the base of the neck)
     M4 w = place * M4::translate(at + V3(0, 0, -0.25f)) * M4::rotX(lean) * M4::translate(V3(0, 0, 0.25f));

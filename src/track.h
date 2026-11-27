@@ -15,6 +15,7 @@ struct TrackPoint {
     bool kerb;     // kerbs on both sides here
     float outL, outR;  // run-off width left / right (grass or gravel); cut short where another part of the lap is close
     bool gravelL, gravelR;
+    bool sausageL = false, sausageR = false;   // a raised "sausage" kerb behind the kerb on that side (chicanes)
 };
 
 enum { MAT_ROAD, MAT_KERB, MAT_GRASS, MAT_GRAVEL, MAT_WALL, MAT_TERRAIN, MAT_LINE, MAT_COUNT };

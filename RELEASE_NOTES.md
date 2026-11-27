@@ -35,3 +35,14 @@ built in code to the 2027 technical regulations, on the nine circuits of the 202
   limit, one hour and ten minutes to go, and other cars retiring (your sister car, the class leader, the car ahead)
 - A bad result gets its own line (last in class, out of the points, a DNF...). Settings > Sound > "Engineer on
   a bad day": Clean or Swears
+- Physics:
+  - Tyres grip a touch more just past the limit, then less and less as they slide (steering help off or Light)
+  - Each tyre wears on its own (the outside ones in long corners, the fronts under braking); the dash shows all four
+  - Tyre pressures (garage): they rise as the tyres heat up; best hot at about 1.80 bar
+  - Air and track temperatures follow the clock and the weather (garage WEATHER tab): hot tarmac wears
+    tyres faster, cool nights keep them colder
+  - Ride height (garage): low gives more downforce but bottoms out over bumps (sparks, a moment's less grip)
+  - Differential (garage): open turns in better, locked gives more traction but slides out of corners
+  - Hypercar hybrids: the LMH's front motor drives the front wheels above 190 km/h (more traction); regen
+    braking moves the brake balance (rearward on an LMDh, forward on an LMH) while the battery charges
+  - Yellow sausage kerbs behind the chicanes: cut them and the car is thrown up and twitches

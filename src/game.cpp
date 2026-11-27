@@ -82,7 +82,7 @@ void Game::ghostPath(char* out, int n) const { snprintf(out, n, "tt_%s_%s.gst", 
 
 void Game::startSession(Session ses) {
     if (raceLoaded) race.end();
-    if (!ttMode && (ses == SES_PRACTICE || (ses == SES_RACE && !set.weekend))) setups.get(set.track, CARS[set.car].era, set.setup);   // a new weekend: the remembered setup
+    if (!ttMode && (ses == SES_PRACTICE || (ses == SES_RACE && !set.weekend))) setups.get(set.track, CARS[set.car].era, set.setup, race.playerChassis);   // a new weekend: the remembered setup
     std::vector<int> grid;
     if (ses == SES_RACE && set.weekend && !ttMode) grid = qualiGrid;
     RaceSettings s = set;
@@ -103,7 +103,7 @@ void Game::startSession(Session ses) {
     if (ses != SES_RACE && !aiDrivesPlayer) {
         // practice and qualifying start in the garage, at the diagnostics computer
         race.toGarage();
-        screen = SCR_GARAGE; setupPage = true; look = 1; setupSel = 8;
+        screen = SCR_GARAGE; setupPage = true; look = 1; setupSel = SR_DRIVE;
     }
 }
 
@@ -613,7 +613,7 @@ void Game::updateRace(float dt, const Pad& p) {
         if (aiDrivesPlayer) race.releasePlayer();
         else { screen = SCR_TEAM; sel = 5; race.timeAccel = 1; sound::silence(); sound::radio("16_box"); }   // (on RELEASE THE CAR)
     }
-    if (race.inGarage()) { screen = SCR_GARAGE; setupSel = 8; race.timeAccel = 1; sound::silence(); }
+    if (race.inGarage()) { screen = SCR_GARAGE; setupSel = SR_DRIVE; race.timeAccel = 1; sound::silence(); }
     if (race.over) finishRace();
 }
 
@@ -802,7 +802,7 @@ void Game::update(float dt, const Pad& p) {
         if (ok && ttMode) { set.car = sel; t = 0; startSession(SES_PRACTICE); break; }   // time trial: straight to the garage
         if (ok) {
             set.car = sel; screen = SCR_SETTINGS; sel = 13; t = 0; setupPage = false;
-            if (setups.get(set.track, CARS[set.car].era, set.setup)) { snprintf(note, sizeof note, "Your %s setup is loaded", TRACKS[set.track].name); noteT = 2.5f; }
+            if (setups.get(set.track, CARS[set.car].era, set.setup, race.playerChassis)) { snprintf(note, sizeof note, "Your %s setup is loaded", TRACKS[set.track].name); noteT = 2.5f; }
         }
         if (back) {
             if (champMode) { screen = SCR_TITLE; sel = 1; }

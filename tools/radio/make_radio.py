@@ -7,10 +7,11 @@ into clips and give each era its own radio sound. Same engineer in every era; on
   2016  digital: wider band, clean compression, a short double beep in front
   2025  clean modern: nearly full band, light compression, a soft click
 
-usage: make_radio.py take.mp3 DATA/sfx [bad_day.mp3]
-  take.mp3     every line in LINES, in order (or LINES + BAD_DAY in one take)
-  bad_day.mp3  only the bad-day lines (BAD_DAY, in order; text in bad_day_lines.txt), recorded later
-  Either take alone also works: give "-" for take.mp3 to cut just the bad-day lines.
+usage: make_radio.py take.mp3 DATA/sfx                   the main take (LINES)
+       make_radio.py DATA/sfx GROUP=take.mp3 [...] [--era 16]
+  GROUP is one of the groups below (each an ElevenLabs take of its lines, in order, with pauses);
+  add _b (info_b=lines_b.mp3) for a second take of the same lines: written as <line>_b, and the game
+  picks one of the two at random. --era: only that era's radio (the game uses 16).
 writes DATA/sfx/radio_<era>_<line>.raw (ULW1: 8-bit mu-law, mono 11025 Hz -- a radio's band fits; see
 tools/sfx/adpcm.py), era = 80 / 10 / 16 / 25
 """
@@ -25,6 +26,18 @@ LINES = ["bestlap", "box", "box_ack", "contact", "damage", "drivethrough", "fini
          "giveback", "go", "green", "lastlap", "lemans", "limits", "overtake", "penalty", "sc", "sc_in", "tyres",
          "engine", "gearbox", "turbo", "suspension", "puncture", "wheel", "leak", "throttle", "brakes",
          "steering", "overheat"]
+# the ElevenLabs flow "EMR2 engineer" (voice 6pePhCBvwi0Dte0AkHf3): one take per group, lines in this order
+GROUPS = {
+    "lines": LINES,
+    # a bad result: clean, then (swear) the same lines with the engineer swearing (Settings > Sound)
+    "results": ["res_awful", "res_tough", "res_dnf", "res_points", "res_notwanted", "res_last"],
+    "swear": ["res_awful_swear", "res_tough_swear", "res_dnf_swear", "res_points_swear", "res_notwanted_swear", "res_last_swear"],
+    # other cars retiring
+    "retire": ["ret_sister", "ret_leader", "ret_hyper_wall", "ret_gt3_stopped", "ret_ahead", "ret_ahead_engine", "ret_big", "ret_another"],
+    # weather, tyres, neutralisations, traffic, night, the drivers, the clock
+    "info": ["rain_soon", "rain_wets", "drying", "radar_rain", "radar_dry", "tyres_warm", "tyres_cold", "tyres_hot",
+             "fcy", "slowzone", "hyper_behind", "blue_leaders", "night", "sunrise", "tired", "driver_limit", "hour_left", "ten_left"],
+}
 # a bad day (a poor finish, out of the race), each clean and then swearing (Settings > Sound > Engineer)
 BAD_DAY = ["finish_bad", "finish_bad_swear", "retired", "retired_swear"]
 
@@ -51,6 +64,11 @@ def segments(x, n):
                 segs.append((start, i - quiet + 1)); start = None
     if start is not None: segs.append((start, len(loud)))
     segs = [s for s in segs if s[1] - s[0] > 15]          # drop clicks / breaths
+    # a pause inside a line ("Fuck. Tough day."): join across the shortest pauses until n are left
+    # (the pauses between lines are the long ones)
+    while len(segs) > n:
+        k = min(range(len(segs) - 1), key=lambda i: segs[i + 1][0] - segs[i][1])
+        segs[k:k + 2] = [(segs[k][0], segs[k + 1][1])]
     if len(segs) != n:
         sys.exit(f"found {len(segs)} lines, expected {n}")
     pad = int(0.06 * SR)
@@ -133,22 +151,9 @@ def era25(x, rng):
 ERAS = {"80": era80, "10": era10, "16": era16, "25": era25}
 
 
-def main():
-    take, out = sys.argv[1], sys.argv[2]
-    extra = sys.argv[3] if len(sys.argv) > 3 else None
-    names, clips = [], []
-    if take != "-":
-        x = load(take)
-        # one take with the bad-day lines on the end, or the original take alone
-        n = len(LINES) + (0 if extra else len(BAD_DAY))
-        try:
-            clips += segments(x, n); names += (LINES + BAD_DAY)[:n]
-        except SystemExit:
-            if extra: raise
-            clips += segments(x, len(LINES)); names += LINES
-    if extra:
-        clips += segments(load(extra), len(BAD_DAY)); names += BAD_DAY
+def write(out, names, clips, eras):
     for tag, fx in ERAS.items():
+        if eras and tag not in eras: continue
         rng = np.random.default_rng(len(tag) * 7 + int(tag))
         for name, x in zip(names, clips):
             y = fx(x.copy(), rng)
@@ -156,7 +161,25 @@ def main():
             y = y / max(1e-6, np.max(np.abs(y))) * 0.82          # every clip as loud as the next
             with open(os.path.join(out, f"radio_{tag}_{name}.raw"), "wb") as f:
                 f.write(ulaw((np.clip(y, -1, 1) * 32767).astype("<i2"), SR // 2))
-    print(f"{len(clips)} lines x {len(ERAS)} eras")
+
+
+def main():
+    args = sys.argv[1:]
+    eras = []
+    if "--era" in args:
+        k = args.index("--era"); eras = args[k + 1].split(","); del args[k:k + 2]
+    if len(args) == 2 and "=" not in args[0] and "=" not in args[1]:
+        args = [args[1], "lines=" + args[0]]                     # the old form: take.mp3 DATA/sfx
+    out, total = args[0], 0
+    for a in args[1:]:
+        group, take = a.split("=", 1)
+        alt = group.endswith("_b")
+        names = GROUPS[group[:-2] if alt else group]
+        clips = segments(load(take), len(names))
+        write(out, [n + "_b" for n in names] if alt else names, clips, eras)
+        for n, x in zip(names, clips): print(f"  {group:8s} {n:22s} {len(x) / SR:4.1f} s")
+        total += len(clips)
+    print(f"{total} lines x {len(eras) or len(ERAS)} eras")
 
 
 if __name__ == "__main__":

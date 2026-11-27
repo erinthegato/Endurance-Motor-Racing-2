@@ -108,7 +108,7 @@ bool Race::start(const RaceSettings& s0, Session ses, const std::vector<int>* gr
     setupDrs();
     setupErs();
     cars.clear(); msgs.clear(); debris.clear(); parts.clear(); sfxEvents.clear(); markFirst.clear();
-    sc = SafetyCar(); scCooldown = 60; fcy = 0; fcyWarn = 0; zones.clear();
+    sc = SafetyCar(); scCooldown = 60; fcy = 0; fcyWarn = 0; zones.clear(); rs = RadioState();
     rubber = clampf(s.rubber, 0, 1); rubberMsg = (int)(rubber * 4); radioPending = -1; formation = false; timeAccel = 1;
     seed = 1234 + s.track * 77 + s.car * 13;
     const CarDef* me = &CARS[s.car];
@@ -208,6 +208,16 @@ bool Race::start(const RaceSettings& s0, Session ses, const std::vector<int>* gr
     for (auto& c : cars) pose(c);
     rank();
     return true;
+}
+
+// at the flag: last in class, out of the points (WEC: the top ten score), or just a poor day
+int Race::finishCall(const Car& c) {
+    int pos = classPosition(c), n = classCount((int)c.def->cls);
+    if (n > 3 && pos == n) return RADIO_RES_LAST;
+    if (n > 10 && pos > 10) return RADIO_RES_POINTS;
+    if (!badResult(c)) return RADIO_FINISH;
+    static const int BAD[3] = {RADIO_RES_AWFUL, RADIO_RES_TOUGH, RADIO_RES_NOTWANTED};
+    return BAD[(c.number + (int)time) % 3];
 }
 
 void Race::end() {
@@ -1053,7 +1063,7 @@ void Race::update(float dt, float steer, float throttle, float brake, int shift,
             if (!c.finished && done) {
                 c.finished = true; c.finishTime = time;
                 if (session == SES_RACE) leaderDone = true;
-                if (c.player) radioPending = session == SES_RACE && !set.timeTrial && badResult(c) ? RADIO_FINISH_BAD : RADIO_FINISH;
+                if (c.player) radioPending = session == SES_RACE && !set.timeTrial ? finishCall(c) : RADIO_FINISH;
             }
             if (c.player && session == SES_RACE && set.raceMin <= 0 && c.lap == set.laps - 1 && set.laps > 1) radioPending = RADIO_LASTLAP;
             strategy(c);

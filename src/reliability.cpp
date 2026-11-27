@@ -201,6 +201,7 @@ void Race::retire(Car& c, int cause) {
     if (c.player) snprintf(m, sizeof m, "RETIRED - %s", cause < 0 ? "accident" : MECH_NAME[cause]);
     else snprintf(m, sizeof m, "#%d %s out: %s", c.number, c.def->make, cause < 0 ? "accident" : RETIRE_SHORT[cause]);
     message(m, c.player ? RGBA(255, 70, 50) : RGBA(200, 200, 200));
+    retireCall(c);
 }
 
 // a retired car rolls to a stop at the side of the track and stays there

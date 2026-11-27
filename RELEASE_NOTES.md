@@ -30,3 +30,8 @@ built in code to the 2027 technical regulations, on the nine circuits of the 202
 - Pit stops: a Driver row to hand the car to a team-mate (you go to the pit wall as manager); the screen
   opens on RELEASE THE CAR
 - Career: timed and full-length races (6 h to 24 h), chosen for a new career or changed in the team hub
+- The race engineer says much more: rain on the way, the radar, the tyres (cold, up to temperature, overheating),
+  full-course yellows and slow zones, blue flags, night falling and sunrise, a tired driver, the driving-time
+  limit, one hour and ten minutes to go, and other cars retiring (your sister car, the class leader, the car ahead)
+- A bad result gets its own line (last in class, out of the points, a DNF...). Settings > Sound > "Engineer on
+  a bad day": Clean or Swears

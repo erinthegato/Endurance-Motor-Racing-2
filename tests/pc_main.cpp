@@ -468,6 +468,22 @@ int main(int argc, char** argv) {
         Career c2; bool okLoad = c2.load(eraSave("career", c2.cls = g.career.cls)); fprintf(stderr, "saved career loads: %d round %d\n", (int)okLoad, c2.champ.round);
         return 0;
     }
+    if (mode == "radiolog") {   // radiolog <track> <minutes> <event hours> [weather]: every engineer call in a timed race
+        RaceSettings rs; rs.track = atoi(argv[2]); rs.car = 1; rs.raceMin = atoi(argv[3]); rs.eventHours = (float)atof(argv[4]);
+        rs.opponents = 39; rs.weather = argc > 5 ? atoi(argv[5]) : WX_SIMULATED; rs.difficulty = 1;
+        g.set = rs; g.aiDrivesPlayer = true; g.startSession(SES_RACE); g.screen = SCR_RACE;
+        float simT = 0; int n = 0;
+        while (!g.race.over && simT < rs.raceMin * 60 + 900) {
+            g.race.update(1.0f / 60, 0, 0, 0, 0, true); simT += 1.0f / 60;
+            if (g.race.player().pit == PIT_STOP && g.race.playerAtBox()) g.race.releasePlayer();
+            int r = g.race.radioPending;
+            if (r >= 0) { int s2 = (int)((g.race.time - g.race.greenTime) * g.race.timeScale); n++;
+                fprintf(stderr, "  %2d:%02d race  engineer: %-16s %s\n", s2 / 3600, (s2 / 60) % 60, RADIO_FILE[r], g.race.msgs.empty() ? "" : g.race.msgs[0].text); }
+            g.race.radioPending = -1;
+        }
+        fprintf(stderr, "%d calls, class P%d\n", n, g.race.classPosition(g.race.player()));
+        return 0;
+    }
     if (mode == "badradio") {   // badradio <track>: the engineer's bad-day lines (a poor finish, a retirement)
         int tr = atoi(argv[2]);
         RaceSettings rs; rs.track = tr; rs.car = 1; rs.laps = 1; rs.opponents = 19; rs.startPos = 2; rs.weather = WX_DRY; rs.difficulty = 2;
@@ -476,13 +492,17 @@ int main(int argc, char** argv) {
         int heard = -1; float simT = 0;
         while (!g.race.over && simT < 1500) {
             g.race.update(1.0f / 60, 0, 0, 0, 0, true); simT += 1.0f / 60;
-            if (g.race.radioPending == RADIO_FINISH || g.race.radioPending == RADIO_FINISH_BAD) heard = g.race.radioPending;
+            if (g.race.radioPending == RADIO_FINISH || radioSwears(g.race.radioPending)) heard = g.race.radioPending;
+            if (g.race.radioPending >= RADIO_RET_SISTER) fprintf(stderr, "  %5.0f s  engineer: %s\n", g.race.time, RADIO_FILE[g.race.radioPending]);
             g.race.radioPending = -1;
         }
         const Car& m2 = g.race.player();
         fprintf(stderr, "finish: class P%d of %d, bad %d, radio %s\n", g.race.classPosition(m2), g.race.classCount(m2.def->cls),
                 (int)g.race.badResult(m2), heard >= 0 ? RADIO_FILE[heard] : "none");
-        fprintf(stderr, "clips: finish %d, finish_bad %d (missing is fine until recorded)\n", (int)sound::radio("16_finish"), (int)sound::radio("16_finish_bad"));
+        { int miss = 0; char nm[48];
+          for (int r = 0; r < RADIO_COUNT; r++) { snprintf(nm, sizeof nm, "16_%s", RADIO_FILE[r]); if (!sound::radio(nm)) { miss++; fprintf(stderr, "  missing %s\n", nm); }
+              if (radioSwears(r)) { snprintf(nm, sizeof nm, "16_%s_swear", RADIO_FILE[r]); if (!sound::radio(nm)) { miss++; fprintf(stderr, "  missing %s\n", nm); } } }
+          fprintf(stderr, "clips: %d lines, %d missing\n", RADIO_COUNT, miss); }
         // a retirement in a fresh race: the failure call, then (once it has finished) the engineer's word
         g.aiDrivesPlayer = false; cfg.swearing = true;
         rs.laps = 3; g.set = rs; g.startSession(SES_RACE); g.screen = SCR_RACE;

@@ -32,9 +32,17 @@ enum Radio { RADIO_BESTLAP = 0, RADIO_BOX, RADIO_BOX_ACK, RADIO_CONTACT, RADIO_D
              RADIO_LEMANS, RADIO_LIMITS, RADIO_OVERTAKE, RADIO_PENALTY, RADIO_SC, RADIO_SC_IN, RADIO_TYRES,
              RADIO_ENGINE, RADIO_GEARBOX, RADIO_TURBO, RADIO_SUSPENSION, RADIO_PUNCTURE, RADIO_WHEEL, RADIO_LEAK,
              RADIO_THROTTLE, RADIO_BRAKES, RADIO_STEERING, RADIO_OVERHEAT,
-             // bad results: a poor finish, out of the race. Each has a swearing take (Settings > Sound > Engineer),
-             // played instead when it is on (Game::raceEvents falls back to the clean one if it isn't there)
-             RADIO_FINISH_BAD, RADIO_FINISH_BAD_SWEAR, RADIO_RETIRED, RADIO_RETIRED_SWEAR, RADIO_COUNT };
+             // a bad result (each has a <name>_swear take, played instead when Settings > Sound > Engineer is
+             // on Swears; Game::raceEvents falls back to the clean take, then the plain finish line)
+             RADIO_RES_AWFUL, RADIO_RES_TOUGH, RADIO_RES_DNF, RADIO_RES_POINTS, RADIO_RES_NOTWANTED, RADIO_RES_LAST,
+             // other cars retiring
+             RADIO_RET_SISTER, RADIO_RET_LEADER, RADIO_RET_HYPER_WALL, RADIO_RET_GT3_STOPPED, RADIO_RET_AHEAD,
+             RADIO_RET_AHEAD_ENGINE, RADIO_RET_BIG, RADIO_RET_ANOTHER,
+             // weather, tyres, neutralisations, traffic, night, the drivers, the clock (two takes: <name>, <name>_b)
+             RADIO_RAIN_SOON, RADIO_RAIN_WETS, RADIO_DRYING, RADIO_RADAR_RAIN, RADIO_RADAR_DRY, RADIO_TYRES_WARM,
+             RADIO_TYRES_COLD, RADIO_TYRES_HOT, RADIO_FCY, RADIO_SLOWZONE, RADIO_HYPER_BEHIND, RADIO_BLUE_LEADERS,
+             RADIO_NIGHT, RADIO_SUNRISE, RADIO_TIRED, RADIO_DRIVER_LIMIT, RADIO_HOUR_LEFT, RADIO_TEN_LEFT, RADIO_COUNT };
+inline bool radioSwears(int r) { return r >= RADIO_RES_AWFUL && r <= RADIO_RES_LAST; }
 enum Sfx { SFX_AIRJACK = 0, SFX_JACKDROP, SFX_REFUEL, SFX_WHEELGUN, SFX_CHAMPAGNE, SFX_CROWD,
            SFX_THUNDER_CLOSE, SFX_THUNDER_MID, SFX_THUNDER_FAR1, SFX_THUNDER_FAR2, SFX_COUNT };
 extern const char* RADIO_FILE[RADIO_COUNT];
@@ -282,6 +290,10 @@ struct Race {
     float scCooldown = 0;
     std::vector<RaceMsg> msgs;
     int radioPending = -1;        // engineer radio clip for the player (RADIO_* in racecontrol.cpp)
+    // the engineer's running commentary (not saved): what has been said, so it isn't said again
+    struct RadioState { int tyres = 0; float hotT = 0, hotCool = 0, retireT = -100; float sun = -1; int clock = 0; bool radar = false; } rs;
+    void engineer(float dt);                    // tyres, night and day, the clock, the radar (racecontrol.cpp)
+    void retireCall(const Car& c);              // another car is out: tell the player if it matters
     std::vector<int> sfxEvents;   // pit / thunder sounds to play this frame
     std::vector<Debris> debris;
     std::vector<Particle> parts;
@@ -312,6 +324,7 @@ struct Race {
     int classCount(int cls) const { int n = 0; for (const Car& o : cars) if ((int)o.def->cls == cls) n++; return n; }
     // a bad day: outside the top half of the class (and off the podium)
     bool badResult(const Car& c) const { int n = classCount((int)c.def->cls); return classPosition(c) > (n / 2 > 3 ? n / 2 : 3); }
+    int finishCall(const Car& c);              // the engineer's line at the flag (a bad result has its own)
     const Car& player() const { return cars[playerIdx]; }
     void pose(Car& c) const;
     void surfaceFrame(const Car& c, V3& pos, V3& fwd, V3& left) const;   // the road (or verge) under the car

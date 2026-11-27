@@ -68,7 +68,7 @@ volatile bool mDirect = false;          // straight to the speakers / headphones
 volatile float mFullT = 0; float mFullG = 0;   // time skip: plain mono music at full level (target, glide)
 
 // ---------------- one-shot sounds (pit crew, thunder, radio) and the rain loop, DATA/sfx/*.raw
-const int MAX_SFX = 96;
+const int MAX_SFX = 160;
 Clip sfx[MAX_SFX]; int sfxCount = 0;
 struct Shot { volatile int clip = -1; volatile float vol = 0, pan = 0; volatile bool loop = false; float pos = 0, g = 0;
               int decAt = -1, decClip = -1, dec[2] = {0, 0}, cur = 0; };   // ADPCM: decoded up to sample decAt (audio thread)
@@ -471,11 +471,11 @@ void play(const char* name, float vol, float pan) {
 }
 bool radio(const char* name) {
     char full[48]; snprintf(full, sizeof full, "radio_%s", name);
-    static char keep[64][48]; static int nk = 0;
+    static char keep[128][48]; static int nk = 0;
     // the clip table keeps the name pointer: hold the strings
     const char* key = nullptr;
     for (int i = 0; i < nk; i++) if (!strcmp(keep[i], full)) key = keep[i];
-    if (!key && nk < 64) { strcpy(keep[nk], full); key = keep[nk++]; }
+    if (!key && nk < 128) { strcpy(keep[nk], full); key = keep[nk++]; }
     if (!key) return false;
     int c = sfxFor(key);
     if (c < 0) return false;

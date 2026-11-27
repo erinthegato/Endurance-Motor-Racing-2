@@ -13,7 +13,10 @@ const char* MAP_NAME[MAP_COUNT] = {"Safety car", "Normal", "Attack"};
 const char* RADIO_FILE[RADIO_COUNT] = {"bestlap", "box", "box_ack", "contact", "damage", "drivethrough", "finish",
     "formation", "fuel", "giveback", "go", "green", "lastlap", "lemans", "limits", "overtake", "penalty", "sc", "sc_in", "tyres",
     "engine", "gearbox", "turbo", "suspension", "puncture", "wheel", "leak", "throttle", "brakes", "steering", "overheat",
-    "finish_bad", "finish_bad_swear", "retired", "retired_swear"};
+    "res_awful", "res_tough", "res_dnf", "res_points", "res_notwanted", "res_last",
+    "ret_sister", "ret_leader", "ret_hyper_wall", "ret_gt3_stopped", "ret_ahead", "ret_ahead_engine", "ret_big", "ret_another",
+    "rain_soon", "rain_wets", "drying", "radar_rain", "radar_dry", "tyres_warm", "tyres_cold", "tyres_hot",
+    "fcy", "slowzone", "hyper_behind", "blue_leaders", "night", "sunrise", "tired", "driver_limit", "hour_left", "ten_left"};
 const char* SFX_FILE[SFX_COUNT] = {"pit_airjack_up", "pit_jack_drop", "pit_refuel", "pit_wheelgun", "podium_champagne",
     "podium_crowd", "thunder_close", "thunder_mid", "thunder_far1", "thunder_far2"};
 
@@ -196,7 +199,7 @@ void Race::driverUpdate(Car& c, float dt) {
     bool near = stintH > MAX_STINT_H - 0.5f || c.drv[c.driver].hours > MAX_DRIVE_H - 0.5f;
     if (near && c.stintWarn == 0) {
         c.stintWarn = 1;
-        if (c.player) message("Driver time limit soon: change drivers at the next stop", RGBA(255, 215, 40));
+        if (c.player) message("Driver time limit soon: change drivers at the next stop", RGBA(255, 215, 40), RADIO_DRIVER_LIMIT);
     }
     if (over && c.stintWarn < 2) {
         c.stintWarn = 2;
@@ -207,7 +210,7 @@ void Race::driverUpdate(Car& c, float dt) {
         c.tiredWarn = 1;
         char nm[24]; driverName(c, c.driver, nm, sizeof nm);
         char b[64]; snprintf(b, sizeof b, "%s %s tired: think about a driver change", nm, c.driver == 0 ? "are" : "is");
-        message(b, RGBA(255, 180, 60));
+        message(b, RGBA(255, 180, 60), RADIO_TIRED);
     }
 }
 
@@ -223,6 +226,64 @@ void Race::message(const char* text, u32 color, int radio) {
     msgs.insert(msgs.begin(), m);
     if (msgs.size() > 4) msgs.pop_back();
     if (radio >= 0) radioPending = radio;
+}
+
+// ------------------------------------------------------------------ the engineer's commentary
+// Things he says by himself, once each: the radar early in the race, the tyres coming up to temperature
+// after a stop (or cooking), night falling and the sun coming up, one hour and ten minutes to go.
+void Race::engineer(float dt) {
+    Car& me = player();
+    if (formation || countdown > 0 || me.finished || me.rel.retired || set.timeTrial) return;
+    float raceT = time - greenTime;
+    // the radar, 40 s in: rain on the way, or a dry race
+    if (!rs.radar && raceT > 40 && set.weather != WX_STORM) {
+        rs.radar = true;
+        bool wetLater = set.weather == WX_WET || (set.weather == WX_SIMULATED && (nextRain > 0.05f || rainTarget > 0.05f));
+        if (rain < 0.05f && radioPending < 0) radioPending = wetLater ? RADIO_RADAR_RAIN : RADIO_RADAR_DRY;
+    }
+    // tyres: cold out of the pits, then up to temperature; too hot for a while
+    if (real.on(real.tyres) && me.tyre <= TY_HARD) {
+        float T = me.tyreTemp();
+        if (me.pit == PIT_OUT && T < 70 && rs.tyres == 0) { rs.tyres = 1; if (radioPending < 0) radioPending = RADIO_TYRES_COLD; }
+        if (me.pit == PIT_NONE && rs.tyres == 1 && T >= 80) { rs.tyres = 2; if (radioPending < 0) radioPending = RADIO_TYRES_WARM; }
+        if (me.pit == PIT_STOP) rs.tyres = 0;
+        rs.hotT = T > 108 && me.pit == PIT_NONE ? rs.hotT + dt : 0;
+        rs.hotCool -= dt;
+        if (rs.hotT > 6 && rs.hotCool <= 0) { rs.hotCool = 90; message("Tyres overheating - look after them", RGBA(255, 150, 60), RADIO_TYRES_HOT); }
+    }
+    // night and day (the sun, not the floodlights)
+    float sun = sunLevel();
+    if (rs.sun >= 0 && raceT > 30) {
+        if (rs.sun < 0.5f && sun >= 0.5f) message("Night is falling", RGBA(140, 160, 255), RADIO_NIGHT);
+        if (rs.sun > 0.5f && sun <= 0.5f) message("The sun is coming up", RGBA(255, 210, 120), RADIO_SUNRISE);
+    }
+    rs.sun = sun;
+    // the clock (race time, so a 6 h race in 30 min still says "one hour to go" at 5 h)
+    float left = raceLeft();
+    if (left >= 0) {
+        float raceLeftS = left * timeScale, length = set.raceMin * 60.0f * timeScale;
+        if (rs.clock < 1 && length > 3 * 3600 && raceLeftS < 3600) { rs.clock = 1; message("One hour to go", RGBA(255, 255, 255), RADIO_HOUR_LEFT); }
+        if (rs.clock < 2 && length > 1800 && raceLeftS < 600) { rs.clock = 2; message("Ten minutes to go", RGBA(255, 255, 255), RADIO_TEN_LEFT); }
+    }
+}
+
+// another car is out of the race: the engineer tells the player if it matters to us
+void Race::retireCall(const Car& c) {
+    const Car& me = player();
+    if (c.player || session != SES_RACE || me.finished || me.rel.retired || time - rs.retireT < 45) return;
+    int r = -1;
+    bool sameCls = c.def->cls == me.def->cls;
+    int myPos = classPosition(me), itsPos = classPosition(c);
+    bool wreck = c.rel.cause < 0 || c.damage() > 0.6f;
+    if (c.mgr.team) r = RADIO_RET_SISTER;
+    else if (sameCls && itsPos == 1 && myPos > 1) r = RADIO_RET_LEADER;
+    else if (sameCls && itsPos < myPos && myPos - itsPos <= 2) r = c.rel.cause == MF_ENGINE || c.rel.cause == MF_LEAK ? RADIO_RET_AHEAD_ENGINE : RADIO_RET_AHEAD;
+    else if (wreck) r = c.def->cls == CLASS_HYPER && fabsf(lapGap(me.s, c.s)) < 2000 ? RADIO_RET_HYPER_WALL : RADIO_RET_BIG;
+    else if (c.def->cls == CLASS_GT3 && !sameCls && fabsf(lapGap(me.s, c.s)) < 2000) r = RADIO_RET_GT3_STOPPED;
+    else if (sameCls) r = RADIO_RET_ANOTHER;
+    if (r < 0) return;
+    rs.retireT = time;
+    if (radioPending < 0) radioPending = r;
 }
 
 // ------------------------------------------------------------------ pit lane layout
@@ -308,7 +369,8 @@ void Race::blueFlags(float dt) {
         const Car& c = cars[by];
         if (o.player && was <= 0 && o.blueMsgT <= 0) {
             o.blueMsgT = 25;
-            message(c.def->cls != o.def->cls ? "Blue flag: Hypercar behind, let it by" : "Blue flag: the leaders are lapping you", RGBA(80, 150, 255));
+            message(c.def->cls != o.def->cls ? "Blue flag: Hypercar behind, let it by" : "Blue flag: the leaders are lapping you", RGBA(80, 150, 255),
+                    c.def->cls != o.def->cls ? RADIO_HYPER_BEHIND : RADIO_BLUE_LEADERS);
         }
         // the player holding a faster car up: close behind and not getting by
         if (o.player && o.human && bg < 25 && c.v < o.v + 2) {
@@ -574,7 +636,7 @@ void Race::weather(float dt) {
             rainTarget = rnd() < nextChance ? nextRain : (nextRain > 0 ? 0 : 0.2f + rnd() * 0.3f);
             rainTimer = 900 + rnd() * 2700;      // race seconds
             rollNextRain();
-            if (rainTarget > 0 && rain < 0.05f && session == SES_RACE) message("Rain expected in a few minutes", RGBA(140, 190, 255));
+            if (rainTarget > 0 && rain < 0.05f && session == SES_RACE) message("Rain expected in a few minutes", RGBA(140, 190, 255), RADIO_RAIN_SOON);
         }
         storm = rainTarget > 0.75f;
     } else if (set.weather == WX_DRY) rainTarget = 0;
@@ -672,7 +734,7 @@ bool Race::slowAt(float s) const { return (fcy > 0 && fcyWarn <= 0) || zoneAt(s)
 void Race::callFcy(float seconds) {
     if (session != SES_RACE || formation || sc.state || fcy > 0 || fcyWarn > 0 || scCooldown > 0) return;
     fcyWarn = 5; fcy = seconds;       // fcy counts down only once the warning is over
-    message("FULL COURSE YELLOW in 5 s - 80 km/h", RGBA(255, 215, 40), RADIO_SC);
+    message("FULL COURSE YELLOW in 5 s - 80 km/h", RGBA(255, 215, 40), RADIO_FCY);
 }
 
 // a slow zone from ~300 m before the spot to just after it
@@ -685,9 +747,10 @@ void Race::addSlowZone(float s, float seconds) {
     const Car& me = player();
     float ahead = track.wrap(from - me.s);
     char t[64];
-    if (ahead < track.length * 0.5f) snprintf(t, sizeof t, "SLOW ZONE %d m ahead - 80 km/h", ((int)ahead / 100) * 100 + 100);
+    bool near = ahead < track.length * 0.5f;
+    if (near) snprintf(t, sizeof t, "SLOW ZONE %d m ahead - 80 km/h", ((int)ahead / 100) * 100 + 100);
     else snprintf(t, sizeof t, "SLOW ZONE on track - 80 km/h");
-    message(t, RGBA(255, 215, 40));
+    message(t, RGBA(255, 215, 40), near && !me.finished && !me.rel.retired ? RADIO_SLOWZONE : -1);
 }
 
 // ------------------------------------------------------------------ race control
@@ -742,6 +805,7 @@ void Race::raceControl(float dt) {
         }
     }
     if (rain > 0.85f) deploySC(*this, true);
+    engineer(dt);
     if (sc.state == 1 && sc.rain) sc.lapsLeft = rain > 0.7f ? 1 : sc.lapsLeft;
 }
 
@@ -825,8 +889,8 @@ void Race::strategy(Car& c) {
         // the engineer tells the player (they choose to come in with Select)
         if (c.driveThrough) return;
         if (fuelLow) message("Fuel is low - box this lap", RGBA(255, 200, 60), RADIO_FUEL);
-        else if (wrongTyre) message(want == TY_MEDIUM ? "Track is drying - slicks now" : "It's raining - box for wet tyres", RGBA(140, 190, 255), RADIO_TYRES);
-        else if (worn) message("Tyres are finished - box this lap", RGBA(255, 200, 60), RADIO_BOX);
+        else if (wrongTyre) message(want == TY_MEDIUM ? "Track is drying - slicks now" : "It's raining - box for wet tyres", RGBA(140, 190, 255), want == TY_MEDIUM ? RADIO_DRYING : RADIO_RAIN_WETS);
+        else if (worn) message("Tyres are finished - box this lap", RGBA(255, 200, 60), RADIO_TYRES);
         else if (broken) message("Damage - box for repairs", RGBA(255, 120, 60), RADIO_DAMAGE);
         else if (driverDue && !lastLaps) message("Driving time limit - box this lap for a driver change", RGBA(255, 200, 60), RADIO_BOX);
         return;

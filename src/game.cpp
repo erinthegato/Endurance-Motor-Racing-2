@@ -430,7 +430,7 @@ void Game::raceEvents() {
         const Car& me = race.player();
         if (race.session == SES_RACE && me.rel.retired && !dnfCalled && race.time - me.rel.retireT > 1.0f && (!sound::radioBusy() || race.time - me.rel.retireT > 4.5f)) {
             dnfCalled = true;
-            if (race.radioPending < 0) race.radioPending = RADIO_RETIRED;
+            if (race.radioPending < 0) race.radioPending = RADIO_RES_DNF;
         }
     }
     if (race.radioPending >= 0 && race.radioPending < RADIO_COUNT) {
@@ -438,16 +438,16 @@ void Game::raceEvents() {
             // the same engineer in every era; the radio itself sounds of its time
             static const char* ERA_RADIO[ERA_COUNT] = {"16", "16"};     // (one engineer for both classes: the 2016 voice and its radio beeps)
             const char* era = ERA_RADIO[race.player().def->era % ERA_COUNT];
-            // a bad day: the swearing take if it's switched on; if a clip hasn't been recorded yet, the
-            // clean take, then the plain line
-            int tries[3] = {race.radioPending, -1, -1};
-            if (race.radioPending == RADIO_FINISH_BAD) { tries[1] = RADIO_FINISH; if (cfg.swearing) { tries[0] = RADIO_FINISH_BAD_SWEAR; tries[1] = RADIO_FINISH_BAD; tries[2] = RADIO_FINISH; } }
-            if (race.radioPending == RADIO_RETIRED && cfg.swearing) { tries[0] = RADIO_RETIRED_SWEAR; tries[1] = RADIO_RETIRED; }
-            for (int r : tries) {
-                if (r < 0) break;
-                char name[40]; snprintf(name, sizeof name, "%s_%s", era, RADIO_FILE[r]);
-                if (sound::radio(name)) break;
-            }
+            // a bad result: the swearing take when it's on; a line with two takes: either one; a clip
+            // that isn't there: the clean take, then (at the flag) the plain finish line
+            int r = race.radioPending;
+            const char* f = RADIO_FILE[r];
+            char tries[4][48]; int n = 0;
+            if (radioSwears(r) && cfg.swearing) snprintf(tries[n++], 48, "%s_%s_swear", era, f);
+            if (rand() & 1) snprintf(tries[n++], 48, "%s_%s_b", era, f);
+            snprintf(tries[n++], 48, "%s_%s", era, f);
+            if (radioSwears(r) && r != RADIO_RES_DNF) snprintf(tries[n++], 48, "%s_%s", era, RADIO_FILE[RADIO_FINISH]);
+            for (int k = 0; k < n; k++) if (sound::radio(tries[k])) break;
         }
         race.radioPending = -1;
     }
@@ -1452,7 +1452,7 @@ void Game::updateOptions(const Pad& p, int dx, int dy, bool ok, bool back) {
         if (id == 5) autoLevel = 0;
         cfg.apply(autoLevel);
         if (id == 4) sound::radio("16_box");          // hear the new level
-        if (id == 20 && !sound::radio(cfg.swearing ? "16_finish_bad_swear" : "16_finish_bad")) sound::radio("16_finish");   // hear how he talks
+        if (id == 20) sound::radio(cfg.swearing ? "16_res_tough_swear" : "16_res_tough");   // hear how he talks
         if (id == 3) sound::play("pit_wheelgun", 0.8f, 0);
     }
 }

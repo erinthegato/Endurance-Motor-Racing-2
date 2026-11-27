@@ -234,8 +234,8 @@ def main():
         print(f'wheel_{era}', write_emm(os.path.join(out, f'wheel_{era}.emm'),
                                         [(wheel(R, hw, 10, 16, pairs=True), t, S), (wheel(R, hw, 6, 12), t, 128), (wheel(R, hw, 0, 8), t, 64)]))
     NEW_DASH = (0.0, 0.0, 0.0, 0.0, 2)        # EMX1 flags bit 1: the Vita's dash instruments
-    print('cockpit_hypercar', write_emm(os.path.join(out, 'cockpit_hypercar.emm'), [(G.hd_hyper_interior(), t, S)], emx=NEW_DASH))
-    print('cockpit_gt3', write_emm(os.path.join(out, 'cockpit_gt3.emm'), [(G.hd_gt_interior(), t, S)], emx=NEW_DASH))
+    print('cockpit_hypercar', write_emm(os.path.join(out, 'cockpit_hypercar.emm'), [(B.proto_interior(), t, S)], emx=NEW_DASH))
+    print('cockpit_gt3', write_emm(os.path.join(out, 'cockpit_gt3.emm'), [(B.gt_interior(), t, S)], emx=NEW_DASH))
     print('steering_hyper', write_emm(os.path.join(out, 'steering_hyper.emm'), [(G.hd_steering(True), t, S)], emx=NEW_DASH))
     print('steering_gt3', write_emm(os.path.join(out, 'steering_gt3.emm'), [(G.hd_steering(False), t, S)], emx=NEW_DASH))
     # the front tyres against the rears, for src/render.cpp (FRONT_W, FRONT_R)

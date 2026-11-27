@@ -466,3 +466,151 @@ def _gt_lights(m, spec, fns, s):
 def gt_side_w(spec, z=0.50):
     W, top, fend = gt_fns(spec)
     return lambda x: W(x)
+
+
+# ====================================================================== cockpits (Art. 13 of the LMH / LMDh rules)
+# Cabin coordinates: metres, +X forward, +Y left, +Z up from the ground; the reference plane of the survival
+# cell (Zsc) sits on the floor at z 0.05. They match COCKPIT in src/render.cpp and the dash displays in
+# Renderer::drawNewInstruments.
+ZSC = 0.05
+XSC = -0.62                      # Xsc: the front face of the rear rollover structure
+DRV_Y = 0.17                     # the driver sits on the left; wheel centre >= 165 mm (LMDh) / 150 mm (LMH) out
+PROTO_EYE = (-0.30, DRV_Y, 0.78)
+PROTO_WHEEL = (0.15, DRV_Y, 0.612)
+
+
+def proto_interior():
+    """The prototype cockpit to Art. 13 / 14 / 15.1: a two-place carbon survival cell, the driver on the
+    left; H2 leg volumes for both occupants (355 mm wide, 350 mm high, floor <= Zsc + 200, front face
+    1570 mm ahead of Xsc); H3/H4 room up to Zsc + 500 with the cell's sides at least that high; the
+    headrest padding 85 mm ahead of Xsc; the wheel's top >= Zsc + 650 and the dash >= 50 mm from it; front
+    and rear rollover structures (>= Zsc + 935 / 945, >= 600 mm apart); the ESS compartment, auxiliary
+    battery and electronics in the passenger place; pedals >= 250 mm behind the front bulkhead."""
+    m = Mesh(5.0)
+    cw, ct = canopy_fns({})
+    yd = DRV_Y
+    floor = ZSC + 0.012
+    x_ped = XSC + 1.57               # H2's forward face: the foremost pedal
+    x_bulk = x_ped + 0.30            # the front bulkhead of the cell
+    sill = ZSC + 0.56                # the cell's sides beside H3 (>= Zsc + 500)
+    # the survival cell: an open U section from the rear bulkhead (Xsc) to the front bulkhead, its sides rolling
+    # over at the top into the door openings; narrowing into the foot wells
+    rings = []
+    for x in np.linspace(XSC, x_bulk, 12):
+        f = float(sstep(0.25, x_ped, x))
+        hw = 0.50 - 0.07 * f                         # half width inside the cell
+        sz = sill + 0.05 * f                         # the sills rise a little towards the dash
+        prof = [(-hw - 0.06, sz - 0.03), (-hw - 0.03, sz + 0.02), (-hw, sz), (-hw, floor + 0.10), (-hw + 0.06, floor),
+                (hw - 0.06, floor), (hw, floor + 0.10), (hw, sz), (hw + 0.03, sz + 0.02), (hw + 0.06, sz - 0.03)]
+        rings.append([(x, y, z) for y, z in prof])
+    m.sheet(rings, uv='carbon', shade=0.75)
+    m.quad((XSC, -0.50, floor), (XSC, 0.50, floor), (XSC, 0.50, sill), (XSC, -0.50, sill), uv='carbon', shade=0.55)   # rear bulkhead
+    m.quad((x_bulk, -0.43, floor), (x_bulk, 0.43, floor), (x_bulk, 0.43, sill + 0.05), (x_bulk, -0.43, sill + 0.05), uv='carbon', shade=0.5)
+    # the central tunnel between the two leg volumes (their inboard faces are symmetric, not overlapping)
+    m.box((0.0, -0.012, floor), (x_bulk, 0.012, floor + 0.20), uv='carbon', shade=0.6)
+    # orange trim along both sills and round the driver's foot well
+    for s in (-1, 1):
+        m.quad((XSC + 0.05, s * 0.505, sill + 0.005), (x_bulk - 0.05, s * 0.435, sill + 0.055),
+               (x_bulk - 0.05, s * 0.448, sill + 0.058), (XSC + 0.05, s * 0.518, sill + 0.008), uv='orange', shade=1.5)
+    m.quad((0.25, yd - 0.18, floor + 0.002), (x_ped, yd - 0.18, floor + 0.002), (x_ped, yd - 0.165, floor + 0.002), (0.25, yd - 0.165, floor + 0.002), uv='orange', shade=1.4)
+    m.quad((0.25, yd + 0.165, floor + 0.002), (x_ped, yd + 0.165, floor + 0.002), (x_ped, yd + 0.18, floor + 0.002), (0.25, yd + 0.18, floor + 0.002), uv='orange', shade=1.4)
+    # leg padding either side of the driver's leg volume (Art. 14.7), clear of the 355 mm volume
+    for s in (-1, 1):
+        y0 = yd + s * 0.18
+        m.box((0.05, min(y0, y0 + s * 0.05), floor + 0.10), (x_ped - 0.05, max(y0, y0 + s * 0.05), floor + 0.33), uv='grey', shade=0.65)
+    # the dash cowl: its face towards the driver 50 mm clear of the wheel (the wheel's plate ends at x 0.19)
+    x_dash = PROTO_WHEEL[0] + 0.04 + 0.06
+    cow = []
+    for x in np.linspace(x_dash, x_bulk, 6):
+        prof = []
+        for y in np.linspace(-0.44, 0.44, 13):
+            hump = 0.03 * np.exp(-((y - yd) / 0.20) ** 2)            # over the driver's display
+            prof.append((x, y, sill + 0.02 + hump + 0.02 * float(sstep(x_dash, 0.7, x)) - 0.05 * (abs(y) / 0.44) ** 2))
+        cow.append(prof)
+    m.sheet(cow, uv='grey', shade=0.85)
+    m.sheet([[(x_dash, y, floor + 0.36) for y in np.linspace(-0.44, 0.44, 13)], cow[0]], uv='carbon', shade=0.6)
+    m.quad((x_dash - 0.005, yd - 0.24, sill + 0.035), (x_dash - 0.005, yd + 0.24, sill + 0.035),
+           (x_dash - 0.005, yd + 0.24, sill + 0.047), (x_dash - 0.005, yd - 0.24, sill + 0.047), uv='orange', shade=1.6)
+    # the housing behind the driver's display (the game draws the display on its face at x 0.43)
+    m.box((0.445, yd - 0.19, 0.64), (0.56, yd + 0.19, 0.72), uv='carbon', shade=0.55)
+    # switch panels either side of the wheel, the master switch (Art. 13.20: a red spark in a blue triangle) and the
+    # extinguisher button on the dash
+    for s in (-1, 1):
+        y0 = yd + s * 0.27
+        m.box((x_dash, y0 - 0.06, floor + 0.38), (x_dash + 0.06, y0 + 0.06, floor + 0.52), uv='carbon', shade=0.65)
+        for k in range(3):
+            yk = y0 + s * (k - 1) * 0.035
+            m.box((x_dash - 0.008, yk - 0.010, floor + 0.45), (x_dash, yk + 0.010, floor + 0.47), uv=('green', 'red', 'blue')[k], shade=1.5)
+    m.part(np.array([[x_dash - 0.006, yd - 0.39, sill - 0.03], [x_dash - 0.006, yd - 0.36, sill - 0.03], [x_dash - 0.006, yd - 0.375, sill - 0.005]]),
+           [[0, 1, 2]], uv='blue', flat=True, shade=1.5)
+    m.cyl((x_dash, yd - 0.33, sill - 0.02), (x_dash - 0.012, yd - 0.33, sill - 0.02), 0.014, sides=12, uv='red', shade=1.3)
+    # the driver's seat on its own centre line: back, cushion, side bolsters with orange edges
+    sx = XSC + 0.10
+    m.quad((sx, yd - 0.20, floor + 0.05), (sx, yd + 0.20, floor + 0.05), (sx + 0.14, yd + 0.20, floor + 0.62), (sx + 0.14, yd - 0.20, floor + 0.62), uv='grey', shade=0.7)
+    m.quad((sx + 0.02, yd - 0.20, floor + 0.06), (sx + 0.02, yd + 0.20, floor + 0.06), (0.05, yd + 0.20, floor + 0.12), (0.05, yd - 0.20, floor + 0.12), uv='grey', shade=0.75)
+    for s in (-1, 1):
+        m.box((sx, yd + s * 0.22 - 0.035, floor + 0.05), (0.05, yd + s * 0.22 + 0.035, floor + 0.26), uv='carbon', shade=0.7)
+        m.box((sx + 0.02, yd + s * 0.22 - 0.04, floor + 0.26), (0.05, yd + s * 0.22 + 0.04, floor + 0.275), uv='orange', shade=1.3)
+    # the headrest padding (Art. 14.6): behind the helmet, its front 85 mm ahead of Xsc, and either side of it
+    hz = PROTO_EYE[2]
+    m.box((XSC, yd - 0.13, hz - 0.16), (XSC + 0.085, yd + 0.13, hz + 0.08), uv='blue', shade=0.75)
+    for s in (-1, 1):
+        m.box((XSC, yd + s * 0.17 - 0.05, hz - 0.20), (XSC + 0.26, yd + s * 0.17 + 0.05, hz - 0.02), uv='blue', shade=0.65)
+    # harness: two shoulder straps over the seat back
+    for y in (yd - 0.08, yd + 0.08):
+        m.quad((sx + 0.13, y - 0.022, floor + 0.60), (sx + 0.13, y + 0.022, floor + 0.60), (sx + 0.38, y + 0.022, floor + 0.20),
+               (sx + 0.38, y - 0.022, floor + 0.20), uv='red', shade=1.0)
+    # the passenger place: the ESS compartment's top, the auxiliary battery and the electronics (Art. 13.6.2)
+    yp = -yd
+    m.box((XSC + 0.05, yp - 0.20, floor), (0.10, yp + 0.20, floor + 0.20), uv='carbon', shade=0.55)
+    m.box((XSC + 0.05, yp - 0.185, floor + 0.20), (0.10, yp + 0.185, floor + 0.205), uv='orange', shade=1.2)   # the HV warning edge
+    m.box((0.15, yp - 0.12, floor), (0.42, yp + 0.06, floor + 0.16), uv='grey', shade=0.6)
+    for k in range(3):
+        m.box((0.48 + k * 0.12, yp - 0.13, floor), (0.58 + k * 0.12, yp + 0.10, floor + 0.11), uv='carbon', shade=0.7)
+    m.cyl((XSC + 0.12, yp + 0.16, floor + 0.21), (XSC + 0.12, yp + 0.16, floor + 0.48), 0.06, sides=12, uv='red', shade=1.1)   # extinguisher
+    # the rollover structures: the front one (the canopy's front hoop) and the rear one at Xsc, both padded in
+    # the middle, and the canopy frame between them
+    r = 0.030
+    xfh = XSC + 0.64
+    for x, top in ((xfh, ZSC + 0.935), (XSC + 0.02, ZSC + 0.945)):
+        z = min(top, ct(x) - 0.035)
+        w_ = cw(x) - 0.05
+        m.tube([(x, -w_, sill), (x, -w_ * 0.80, z - 0.05), (x, 0.0, z), (x, w_ * 0.80, z - 0.05), (x, w_, sill)], r * 1.2, sides=8, uv='grey', shade=0.9)
+    for s in (-1, 1):
+        pts = [(x, s * (cw(x) - 0.03), sill + 0.06 + (ct(x) - sill) * 0.12) for x in np.linspace(1.0, 0.62, 3)]
+        pts += [(x, s * (cw(x) - 0.045), ct(x) - 0.05) for x in np.linspace(0.40, XSC, 6)]
+        m.tube(pts, r, sides=8, uv='grey', shade=0.85)
+    m.tube([(x, 0.0, ct(x) - 0.04) for x in np.linspace(xfh, XSC, 5)], r * 1.1, sides=8, uv='grey', shade=0.95)
+    # the rear-view camera screen on the passenger side of the dash (the game draws its picture on the face)
+    m.box((0.50, -0.33, 0.64), (0.54, -0.11, 0.72), uv='carbon', shade=0.5)
+    # the pedals in the driver's foot well: throttle, brake (no clutch pedal: paddle clutch)
+    for k, y in enumerate((yd - 0.07, yd + 0.07)):
+        m.box((x_ped, y - 0.04, floor + 0.04), (x_ped + 0.03, y + 0.04, floor + 0.17), uv='grey' if k == 0 else 'carbon', shade=0.8)
+    m.box((x_ped - 0.10, yd - 0.17, floor), (x_ped - 0.02, yd + 0.17, floor + 0.03), uv='rubber', shade=0.6)     # foot rest
+    # the steering column from the wheel to the bulkhead
+    m.tube([(PROTO_WHEEL[0] + 0.04, yd, PROTO_WHEEL[2] - 0.01), (x_bulk, yd, floor + 0.42)], 0.022, sides=8, uv='grey', shade=0.6)
+    return m
+
+
+def mirror_y(m):
+    """swap a mesh left for right (the GT3 interior was laid out right-hand drive)"""
+    out = []
+    for P, n, u, g, fn, sh in m.tris:
+        P = P[[0, 2, 1]] * np.array([1, -1, 1]); n = n[[0, 2, 1]] * np.array([1, -1, 1])
+        if not isinstance(u, str):
+            u = u[[0, 2, 1]]
+        out.append((P, n, u, g, fn * np.array([1, -1, 1]), sh))
+    m.tris = out
+    return m
+
+
+GT_EYE = (-0.28, 0.38, 1.05)     # LMGT3: left-hand drive, as all the WEC cars run
+GT_WHEEL = (0.14, 0.38, 0.86)
+
+
+def gt_interior():
+    """the LMGT3 cockpit: the production car's cabin with the FIA GT3 cage, seat, window net and the
+    compulsory rear-view camera screen; left-hand drive"""
+    m = mirror_y(G.hd_gt_interior())
+    m.box((0.66, -0.13, 1.08), (0.70, 0.13, 1.15), uv='carbon', shade=0.5)      # the rear-view camera screen
+    return m

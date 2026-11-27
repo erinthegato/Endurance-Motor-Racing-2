@@ -17,8 +17,11 @@ static const float FAR_TRACK = 820, FAR_TERRAIN = 1300, FAR_CARS = 650;
 struct CockpitLayout { V3 eye; V3 wheel; float wheelTilt; };
 // Endurance Motor Racing 2.0: the closed cockpits (tools/gen_cars.py hd_hyper_interior / hd_gt_interior)
 static const CockpitLayout COCKPIT[ERA_COUNT] = {
-    {V3(-0.20f, 0.0f, 0.80f), V3(0.12f, 0.0f, 0.625f), 0.35f},     // Hypercar: one seat in the middle under the canopy
-    {V3(-0.28f, -0.38f, 1.05f), V3(0.14f, -0.38f, 0.86f), 0.25f},  // LMGT3: the driver on the right
+    // Hypercar (LMH / LMDh Art. 13): the driver on the left, the wheel's centre 170 mm out from the car's centre
+    // line (>= 165 mm) and its top 660 mm above the cell's floor (>= 650 mm); the helmet 85 mm ahead of the
+    // rear rollover structure, its top under the line between the two rollover structures
+    {V3(-0.30f, 0.17f, 0.78f), V3(0.15f, 0.17f, 0.612f), 0.35f},
+    {V3(-0.28f, 0.38f, 1.05f), V3(0.14f, 0.38f, 0.86f), 0.25f},    // LMGT3: left-hand drive
 };
 // (no DRS in WEC: the cars carry no flap model; drawFlap draws nothing)
 static const V3 FLAP_PIVOT[ERA_COUNT] = {V3(-2.4f, 0, 0.95f), V3(-2.3f, 0, 1.25f)};
@@ -1166,9 +1169,36 @@ void Renderer::drawNewInstruments(const Race& r, const Car& c, const M4& car, co
         else w.bar(-W + 0.006f, -H + 0.004f, 2 * W - 0.012f, 0.005f, c.fuel, c.fuel > 0.15f ? cyan : red);
     }
 
+    // ---------------- the rear-view camera (compulsory on both classes): the nearest car within 150 m behind,
+    // drawn as a mirror would show it -- bigger as it closes, on the side it is on, in its class colour
+    {
+        Display rv{*this, hy ? panel(V3(0.498f, -0.22f, 0.68f), 0, 0.10f) : panel(V3(0.658f, 0.0f, 1.115f), 0, -0.05f)};
+        float W = hy ? 0.105f : 0.125f, H = hy ? 0.036f : 0.032f;
+        rv.box(-W - 0.004f, -H - 0.004f, W + 0.004f, H + 0.004f, frame, 0.0008f);
+        rv.box(-W, -H, W, H, RGBA(18, 22, 30));
+        rv.box(-W, -H, W, -H * 0.35f, RGBA(40, 42, 46), 0.0005f);                  // the road behind
+        const Car* best = nullptr; float gap = 150;
+        float L = r.track.length;
+        for (const Car& o : r.cars) {
+            if (&o == &c || o.rel.retired || r.inPitLane(o)) continue;
+            float g = fmodf(c.s - o.s + 2 * L, L);
+            if (g > 0.5f && g < gap) { gap = g; best = &o; }
+        }
+        if (best) {
+            float k = clampf(1.0f - gap / 150.0f, 0.08f, 1.0f);
+            float x = clampf((best->d - c.d) * 0.018f, -W * 0.7f, W * 0.7f);
+            float bw = W * (0.10f + 0.45f * k * k), bh = H * (0.12f + 0.55f * k * k);
+            u32 col = best->def->cls == CLASS_HYPER ? RGBA(230, 60, 50) : RGBA(255, 170, 30);
+            rv.box(x - bw, -H * 0.55f, x + bw, -H * 0.55f + bh * 2, col, 0.0010f);
+            snprintf(b, sizeof b, "%.0fm", gap);
+            rv.text(W * 0.72f, H * 0.62f, b, H * 0.32f, gap < 30 ? amber : dim);
+        }
+        rv.text(-W * 0.74f, H * 0.62f, "REAR", H * 0.30f, dim);
+    }
+
     if (hy) {
-        // ---------------- hypercar: one wide display on the dash under the canopy
-        Display d{*this, panel(V3(0.43f, 0, 0.655f), 0, 0.32f)};
+        // ---------------- hypercar: one wide display on the dash in front of the driver
+        Display d{*this, panel(V3(0.443f, 0.17f, 0.68f), 0, 0.32f) * M4::scale(0.85f, 0.85f, 0.85f)};
         float W = 0.205f, H = 0.040f;
         d.box(-W - 0.006f, -H - 0.006f, W + 0.006f, H + 0.006f, frame, 0.0008f);
         d.box(-W, -H, W, H, bg);
@@ -1194,8 +1224,8 @@ void Renderer::drawNewInstruments(const Race& r, const Car& c, const M4& car, co
             d.bar(0.153f, -0.030f, 0.040f, 0.008f, c.ers, ec);
         }
     } else {
-        // ---------------- LMGT3: instrument cluster behind the wheel (right-hand drive)
-        Display d{*this, panel(V3(0.45f, -0.38f, 0.955f), 0, 0.42f)};
+        // ---------------- LMGT3: instrument cluster behind the wheel (left-hand drive)
+        Display d{*this, panel(V3(0.45f, 0.38f, 0.955f), 0, 0.42f)};
         float W = 0.130f, H = 0.044f;
         d.box(-W - 0.006f, -H - 0.006f, W + 0.006f, H + 0.006f, frame, 0.0008f);
         d.box(-W, -H, W, H, bg);
@@ -1212,7 +1242,7 @@ void Renderer::drawNewInstruments(const Race& r, const Car& c, const M4& car, co
         snprintf(b, sizeof b, "%.1f LAPS", fuelLaps); d.text(0.060f, -0.034f, b, 0.009f, white);
 
         // ---------------- centre screen on top of the dash, turned towards the driver
-        Display m{*this, panel(V3(0.40f, 0.02f, 0.985f), 0.55f, 0.35f)};
+        Display m{*this, panel(V3(0.40f, -0.02f, 0.985f), -0.55f, 0.35f)};
         float MW = 0.105f, MH = 0.062f;
         m.box(-MW - 0.006f, -MH - 0.006f, MW + 0.006f, MH + 0.006f, frame, 0.0008f);
         m.box(-MW, -MH, MW, MH, bg);

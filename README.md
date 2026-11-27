@@ -96,6 +96,37 @@ Memory: a full 40-car grid at Le Mans peaks at 19.8 MB on the PC test (`FL_MEM=1
 stretches of road are meshed coarser; Le Mans' terrain cells are 1.6x larger; models and circuits are
 stored packed (`tools/pack_files.py`).
 
+## PC edition (Windows), for streaming to the PS Vita
+The same game for Windows (and Linux), made to be streamed from the PC to **Moonlight on the PS Vita**
+(Sunshine on the PC), with a higher-detail set of models and textures in `PC/`.
+* **Get it**: GitHub Actions builds `EnduranceMotorRacing2-Windows.zip` on every push (the run's
+  Artifacts; releases carry it too). Unzip anywhere and run `EnduranceMotorRacing2.exe`; keep `DATA`,
+  `HD` and `PC` next to it. Saves and settings: `%APPDATA%\CODE4\EnduranceMotorRacing2\`.
+* **Build it**: `cmake -S . -B build && cmake --build build` with SDL2, zlib and OpenGL (Windows: MSYS2
+  MinGW64 with `mingw-w64-x86_64-{gcc,cmake,SDL2,zlib}`). `src/platform_desktop.cpp` is the PC layer.
+* **Streaming to the Vita**: add the exe to Sunshine as an application. The game is laid out at the
+  Vita's own screen shape (480:272 = 960 x 544), so it fills the Vita's screen. It runs at a steady 60
+  frames a second (capped at 60 on faster monitors, as Moonlight streams at 60: `--fps N` changes the
+  cap, `--fps 0` removes it), with 4x anti-aliasing and filtered textures so the picture stays clean
+  through the video stream.
+* **Controls**: the Vita arrives through Moonlight as an Xbox pad: X / O / Square / Triangle as on
+  the Vita, the left stick steers, the right stick is analogue throttle (up) and brake (down); in
+  Moonlight's settings you can put L2 / R2 (analogue brake / throttle) on the Vita's rear touch pad.
+  Keyboard: arrows, Enter, Backspace, Esc, W / S throttle / brake, Q / E = L / R. Alt + Enter: window.
+  Command line: `--windowed [WxH]`, `--msaa N` (0, 2, 4, 8), `--novsync`, `--fps N`.
+* **What's higher on the PC** (the Vita's set is unchanged):
+  * models (`python3 tools/build_pc_set.py` -> `PC/`, `tools/pc_refine.py`): every model's curved
+    surfaces split onto their curves, flat faces kept: Hypercars ~30,700 triangles up close (Vita
+    2,970), LMGT3s ~19,800 (2,300), road wheels 3,908 (560), the cockpits and steering wheels with round
+    tubes and rims, the pit crew 11,136 a pose (696), the driver 11,096, trackside objects up to 15x
+    (tyre stacks, trees, the TV tower, the crane, the fuel rig, the footbridge) with three levels of detail;
+    liveries painted at 2048 px; ground textures 2048 px (Vita 512) with finer grit and grass
+  * 60 % further draw distance, the close-up models kept ~80 % further out, a finer landscape (20 m
+    cells), every point of the road kept
+  * sound: the nearest 8 opponents' engines (Vita 3), Doppler as cars pass, the treble fading with
+    distance, smoother engine pitching (cubic), equal-power stereo
+* The PC test build reads `PC/` with `EMR_PCSET=1`.
+
 ## PC test build
 `make -f Makefile.pc`, then from this folder e.g. `./emr_test race lemans 0 3 39 shots 20 60` (car 0, 39
 opponents, screenshots at 20 s and 60 s), `./emr_test physlap spa 1 3` (an LMGT3's lap times),

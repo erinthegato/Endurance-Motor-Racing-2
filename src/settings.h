@@ -5,7 +5,7 @@
 
 // L and R are not bindable: they brake (L) and accelerate (R) while driving (the rear touch pad skips songs in the menus)
 enum Button { BTN_NONE = -1, BTN_CROSS = 0, BTN_CIRCLE, BTN_SQUARE, BTN_TRIANGLE, BTN_SELECT, BTN_UP, BTN_DOWN, BTN_COUNT };
-enum Action { ACT_ACCEL = 0, ACT_BRAKE, ACT_GEAR_UP, ACT_GEAR_DOWN, ACT_CAMERA, ACT_LOOK_BACK, ACT_PIT, ACT_MAP, ACT_DRS, ACT_COUNT };
+enum Action { ACT_ACCEL = 0, ACT_BRAKE, ACT_GEAR_UP, ACT_GEAR_DOWN, ACT_CAMERA, ACT_LOOK_BACK, ACT_PIT, ACT_MAP, ACT_DRS, ACT_HUD, ACT_COUNT };
 extern const char* BUTTON_NAME[BTN_COUNT];
 extern const char* ACTION_NAME[ACT_COUNT];
 
@@ -26,8 +26,14 @@ struct Config {
     // PS Vita: steer by turning the console (0 off, 1 gentle, 2 normal, 3 strong); reversed if it turns the wrong way
     int tilt = 0; bool tiltInvert = false;
     bool mirror = true;      // PS Vita: rear-view mirror at the top of the screen
-    // cockpit: hide the steering wheel (and its screen); with it hidden, the normal HUD can be shown in the cockpit
-    bool hideWheel = false, cockpitHud = true;   // cockpitHud: the timing boxes and map in the cockpit view
+    // cockpit: hide the steering wheel (and its screen); hidden, the cockpit always shows the virtual HUD
+    bool hideWheel = false;
+    // what the cockpit view shows: 0 the car's own instruments only, 1 instruments + the timing boxes and
+    // map, 2 instruments + every HUD element (speed and gear too), 3 virtual HUD (the car's screens off)
+    int cockpitShow = 1;
+    // the HUD: 0 light (position, lap, speed and gear), 1 full, 2 telemetry (full + the car's live data).
+    // In a race the HUD button (ACT_HUD; the Vita: a tap on the screen, the PC: H) steps through them
+    int hudMode = 1;
     // steering help: 0 off, 1 light (default; -1 = not set yet), 2 strong (no slides or spins)
     int steerHelp = -1;
     // button (d-pad) steering: 0 quick, 1 smooth, 2 extra smooth (the wheel winds on and back more gently)
@@ -37,7 +43,7 @@ struct Config {
     int pitCam = 0;          // pit stops and the garage: 0 cinematic camera, 1 your own camera        // seconds idle on the main menu before the highlights start (5..30)
     // BTN_NONE = the action has no button
     Realism real;            // car realism and mechanical problems (settings > Car realism)
-    int bind[ACT_COUNT] = {BTN_CROSS, BTN_SQUARE, BTN_NONE, BTN_NONE, BTN_TRIANGLE, BTN_CIRCLE, BTN_SELECT, BTN_UP, BTN_DOWN};
+    int bind[ACT_COUNT] = {BTN_CROSS, BTN_SQUARE, BTN_NONE, BTN_NONE, BTN_TRIANGLE, BTN_CIRCLE, BTN_SELECT, BTN_UP, BTN_DOWN, BTN_NONE};
 
     void load();
     void save() const;

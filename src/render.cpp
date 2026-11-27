@@ -1214,7 +1214,9 @@ void Renderer::drawCockpit(const Race& r, const Camera& cam) {
     const char* fw; u32 fc = flagColour(r, c, fw);
     // both cockpits carry the wheel screen and dash displays (Formula Legends' 1980 dials and its older
     // per-era screens are gone: every 2027 cockpit has the new instruments)
-    drawNewInstruments(r, c, car, wheelM, rpmF, fc, fw);
+    // (Settings > Cockpit display: Virtual HUD -- the screens stay dark, the HUD shows it all)
+    // (with the steering wheel hidden the dash displays stay, as before)
+    if (cfg.hideWheel || cfg.cockpitShow != 3) drawNewInstruments(r, c, car, wheelM, rpmF, fc, fw);
 }
 
 // ------------------------------------------------------------------ new instruments (Unity AI interiors)
@@ -1493,9 +1495,15 @@ void Renderer::drawHUD(const Race& r, int mode) {
     gfx::setBlend(true);
     char b[48];
     u32 panel = RGBA(0, 0, 0, 120), white = RGBA(255, 255, 255), dim = RGBA(190, 200, 215);
-    // Settings > HUD in cockpit: Off -- the dash and the wheel screen already show the position, the
-    // times and the race progress, so the cockpit view drops those boxes and the map
-    const bool lean = mode == CAM_COCKPIT && !cfg.hideWheel && !cfg.cockpitHud;
+    // Settings > Cockpit display: the car's own instruments only (the dash and the wheel screen already
+    // show the position, the times and the race progress: no boxes, no map), with the timing boxes and
+    // map, with every HUD element, or the virtual HUD (the car's screens off; also with the wheel hidden)
+    const bool inCockpit = mode == CAM_COCKPIT;
+    const int show = cfg.hideWheel ? 3 : cfg.cockpitShow;
+    const bool lean = inCockpit && show == 0;
+    // Settings > HUD (or the HUD button): light -- position, lap, speed and gear; full; telemetry
+    const bool light = cfg.hudMode == 0;
+    hudLight = light || lean;
     if (!lean) {
     // position + lap
     gfx::drawFill2D(6, 6, 136, 40, panel);
@@ -1534,6 +1542,7 @@ void Renderer::drawHUD(const Race& r, int mode) {
         font.draw(48, 30, r.chequered ? (r.session == SES_PRACTICE ? "PRAC  FLAG" : "QUALI FLAG") : b, r.chequered ? RGBA(255, 255, 255) : dim, 0.8f);
     }
     // times
+    if (!light) {
     gfx::drawFill2D(SCREEN_W - 128, 6, 122, 46, panel);
     formatTime(b, r.countdown > 0 ? 0 : r.time - c.lapStart);
     font.drawRight(SCREEN_W - 12, 7, b, white, 1.15f);
@@ -1544,10 +1553,11 @@ void Renderer::drawHUD(const Race& r, int mode) {
     snprintf(b, sizeof b, "LAST %s", t2);
     font.drawRight(SCREEN_W - 12, 37, b, dim, 0.8f);
     }
-    // speed + gear (the cockpit has its own displays, unless its wheel is hidden)
-    if ((mode != CAM_COCKPIT || cfg.hideWheel) && !hudManage) drawSpeedBox(c);
+    }
+    // speed + gear (in the cockpit: with every HUD element, or the virtual HUD)
+    if ((!inCockpit || show >= 2) && !hudManage) drawSpeedBox(c);
     // map
-    if (!lean && !hudManage) {
+    if (!lean && !light && !hudManage) {
         gfx::drawFill2D(6, SCREEN_H - 86, 80, 80, RGBA(0, 0, 0, 90));
         drawMap(r.track, &r, 10, SCREEN_H - 82, 72, RGBA(230, 230, 230, 200));
     }
@@ -1571,6 +1581,7 @@ void Renderer::drawHUD(const Race& r, int mode) {
         font.drawCentre(SCREEN_W / 2, 130, b, RGBA(255, 220, 60), 0.9f);
     }
     drawRaceInfo(r);
+    if (cfg.hudMode == 2 && !lean && !hudManage && r.session == SES_RACE) drawTelemetry(r);
     drawQte(r);
     drawLaunch(r);
     gfx::setBlend(true); gfx::setDepthTest(false);

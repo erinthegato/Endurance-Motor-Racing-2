@@ -1153,7 +1153,7 @@ void Game::screenOptions(Panel& P) {
     header(P, "SETTINGS");
     static const char* PRESET[4] = {"Quality", "Balanced", "Performance", "Custom"};
     static const char* DISTN[3] = {"Far", "Medium", "Near"};
-    char v[21][56];
+    char v[22][56];
     auto vol = [](char* o, const char* name, int x) {
         char bar[12]; for (int i = 0; i < 10; i++) bar[i] = i < x ? '|' : '.'; bar[10] = 0;
         snprintf(o, 56, "%-9s < %s >  %d", name, bar, x);
@@ -1172,7 +1172,10 @@ void Game::screenOptions(Panel& P) {
     snprintf(v[15], 56, "Controls...");   // (not a row now: a category)
     snprintf(v[16], 56, "Back");
     snprintf(v[17], 56, "Steering wheel:  < %s >", cfg.hideWheel ? "Hidden" : "Shown");
-    snprintf(v[18], 56, "HUD in cockpit:  < %s >", cfg.hideWheel ? "On (wheel hidden)" : (cfg.cockpitHud ? "On" : "Off"));
+    static const char* CKS[4] = {"Instruments", "Instruments + timing", "Instruments + full HUD", "Virtual HUD"};
+    snprintf(v[18], 56, "Cockpit display:  < %s >", cfg.hideWheel ? "Virtual HUD (wheel hidden)" : CKS[cfg.cockpitShow]);
+    static const char* HUDN[3] = {"Light", "Full", "Telemetry"};
+    snprintf(v[21], 56, "HUD:  < %s >", HUDN[cfg.hudMode]);
     snprintf(v[19], 56, "Rear-view mirror:  < %s >", cfg.mirror ? "On" : "Off");
     snprintf(v[20], 56, "Engineer on a bad day:  < %s >", cfg.swearing ? "Swears" : "Clean");
     if (optCat < 0) {

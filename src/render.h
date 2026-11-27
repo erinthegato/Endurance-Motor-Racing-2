@@ -20,6 +20,8 @@ struct Renderer {
     // (mesh != 0: a Blender car's glass, indices [first, first + count) drawn with texture mtex)
     struct GlassDraw { const ModelVertex* v; const Texture* tex; int count; M4 mm; float d; int mesh = 0, mtex = 0, first = 0; };
     std::vector<GlassDraw> glassQueue;               // (PC) see-through glass, drawn after everything solid
+    bool hudLight = false;                           // drawHUD -> drawRaceInfo: the light HUD (no car status panel)
+    void drawTelemetry(const Race& r);               // the telemetry HUD's panel (Settings: HUD, or the HUD button)
     bool hudManage = false;                          // drawHUD: managing (the team panel and the controls take the bottom)
     int hideCar = -1;                                // drawScene: leave this car out (the manager's dashcam is inside it)
     bool sceneLite = false;                          // drawScene: road and cars only (the mirror)

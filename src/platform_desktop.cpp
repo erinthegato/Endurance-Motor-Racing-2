@@ -1219,6 +1219,7 @@ void poll(Pad& p) {
     p.circle |= k[SDL_SCANCODE_BACKSPACE] != 0;
     p.start |= k[SDL_SCANCODE_ESCAPE] != 0; p.select |= k[SDL_SCANCODE_TAB] != 0;
     p.l |= k[SDL_SCANCODE_Q] != 0; p.r |= k[SDL_SCANCODE_E] != 0;
+    p.hudKey |= k[SDL_SCANCODE_H] != 0;
     if (k[SDL_SCANCODE_W]) p.trigR = 1;
     if (k[SDL_SCANCODE_S]) p.trigL = 1;
     p.hasTilt = false; p.touches = 0;

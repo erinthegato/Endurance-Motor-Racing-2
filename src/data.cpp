@@ -186,7 +186,14 @@ bool CarMesh::load(const char* id, bool hd) {
             int ts = 0; void* tb = sys::loadFile(tp, &ts);
             std::vector<uint8_t> px; int w = 0, h = 0;
             if (tb && png::decode(tb, (size_t)ts, px, w, h)) {
-                if (!hd && w >= 2048 && h >= 2048) png::halve(px, w, h);   // (mipmaps would never reach the top level anyway)
+                // the AI cars' pictures at half size (mipmaps would never reach the top level anyway). The PC's
+                // come at 2048-4096 px; the Vita's set (HD/cars) is made at 512-1024 px and halved from 512
+#if PLATFORM_VITA
+                const int HALVE_FROM = 512;
+#else
+                const int HALVE_FROM = 2048;
+#endif
+                if (!hd && w >= HALVE_FROM && h >= HALVE_FROM) png::halve(px, w, h);
                 t.id = gfx::createTextureRGBA(px.data(), w, h);
                 t.kb = gfx::textureKB(t.id); textureKB += t.kb;
             } else sys::log("car %s: texture %s missing or not a PNG this reader takes\n", id, tp);
@@ -240,7 +247,10 @@ void CarMesh::unload() {
 int CarMesh::texFor(const Mat& m, int number, int compound) const {
     int want = (m.flags & MAT_LIVERY) ? TEX_LIVERY : (m.flags & MAT_BOARD) ? TEX_BOARD : (m.flags & MAT_TYRE) ? TEX_TYRE : -1;
     if (want >= 0) {
-        int arg = want == TEX_TYRE ? compound : number;
+        // a livery baked for one level of detail carries that level in its arg's high bits (number |
+        // level << 16): the other car numbers' pictures of the same level go with this material
+        int fam = (want == TEX_LIVERY && m.tex >= 0 && m.tex < (int)texs.size()) ? (texs[m.tex].arg >> 16) : 0;
+        int arg = want == TEX_TYRE ? compound : (number | fam << 16);
         for (const Tex& t : texs) if (t.role == want && t.arg == arg && t.id) return t.id;
     }
     return m.tex >= 0 && m.tex < (int)texs.size() ? texs[m.tex].id : 0;

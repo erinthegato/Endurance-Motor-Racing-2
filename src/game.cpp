@@ -377,11 +377,12 @@ void Game::raceAudio() {
             int g = o.gear; bool shifted = g != prevGear[i] && g >= 1 && prevGear[i] >= 1;
             prevGear[i] = g;
             if (!shifted || o.def->cls != CLASS_GT3 || !o.engineOn || o.pit != PIT_NONE || quiet || race.timeAccel > 1.01f) continue;
-            if (i == race.playerIdx) { sound::play("gt_shift", manage ? 0.4f : 0.95f, 0); continue; }
+            // subtle: just under the engine (which plays at 0.45-0.9), heard more than noticed
+            if (i == race.playerIdx) { sound::play("gt_shift", manage ? 0.06f : 0.15f, 0); continue; }
             float d = len(o.pos - me.pos);
             if (d > 40) continue;
             float pan = dot(norm(o.pos - me.pos), me.left * -1.0f) * 0.8f;
-            sound::play("gt_shift", 0.75f / (1 + d / 8.0f), pan);
+            sound::play("gt_shift", 0.12f / (1 + d / 8.0f), pan);
         }
     }
     // rain on the car (quieter inside the cockpit)
@@ -521,6 +522,15 @@ void Game::updateRace(float dt, const Pad& p) {
         } else if (bindPressed(p, ACT_CAMERA)) cam = (cam + 1) % CAM_COUNT;
     }
     if (bindPressed(p, ACT_MAP) && !manage && !race.qte.on) race.cycleMap();
+    // the HUD: light -> full -> telemetry (its button, the PC's H, or a tap on the Vita's screen)
+    {
+        bool tap = input::hasTouch() && p.touches > 0 && prev.touches == 0 && !race.qte.on && !manage;
+        if (bindPressed(p, ACT_HUD) || (p.hudKey && !prev.hudKey) || tap) {
+            static const char* HN[3] = {"HUD: light", "HUD: full", "HUD: telemetry"};
+            cfg.hudMode = (cfg.hudMode + 1) % 3; cfg.save();
+            race.message(HN[cfg.hudMode], RGBA(150, 200, 255));
+        }
+    }
     if (bindPressed(p, ACT_DRS) && !manage && !race.qte.on) race.drsPress = true;
     // pit request: box this lap (press again to cancel)
     if (bindPressed(p, ACT_PIT) && me.pit == PIT_NONE && !me.finished && !manage) {
@@ -1442,10 +1452,11 @@ void Game::updateOptions(const Pad& p, int dx, int dy, bool ok, bool back) {
     if ((dx || ok) && id == 19) { cfg.mirror = !cfg.mirror; cfg.save(); return; }
     if ((dx || ok) && id == 17) { cfg.hideWheel = !cfg.hideWheel; cfg.save(); return; }
     if ((dx || ok) && id == 18) {
-        if (!cfg.hideWheel) { cfg.cockpitHud = !cfg.cockpitHud; cfg.save(); }
+        if (!cfg.hideWheel) { cfg.cockpitShow = (cfg.cockpitShow + (dx ? dx : 1) + 4) % 4; cfg.save(); }
         else { snprintf(note, sizeof note, "Show the steering wheel first"); noteT = 1.5f; }
         return;
     }
+    if ((dx || ok) && id == 21) { cfg.hudMode = (cfg.hudMode + (dx ? dx : 1) + 3) % 3; cfg.save(); return; }
     if (dx) {
         auto step = [&](int& v, int lo, int hi) { v += dx; if (v < lo) v = lo; if (v > hi) v = hi; };
         bool custom = false;
@@ -1480,7 +1491,7 @@ int Game::optRows(int* ids) const {
     int n = 0;
     if (optCat == OC_SOUND) { for (int i = 0; i <= 4; i++) ids[n++] = i; ids[n++] = 20; }
     if (optCat == OC_DISPLAY) for (int i = 5; i <= 12; i++) ids[n++] = i;
-    if (optCat == OC_CAMERA) { ids[n++] = 13; ids[n++] = 14; ids[n++] = 17; ids[n++] = 18; if (gfx::highDetail()) ids[n++] = 19; }
+    if (optCat == OC_CAMERA) { ids[n++] = 13; ids[n++] = 14; ids[n++] = 21; ids[n++] = 17; ids[n++] = 18; if (gfx::highDetail()) ids[n++] = 19; }
     ids[n++] = 16;   // Back
     return n;
 }

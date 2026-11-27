@@ -896,8 +896,10 @@ void Renderer::drawRaceInfo(const Race& r) {
     }
     if (c.startDelay > 0 && r.countdown <= 0) font.drawCentre(SCREEN_W / 2, 150, "RUNNING TO THE CAR...", RGBA(255, 220, 60), 1.1f);
     if (r.session != SES_RACE) { gfx::setBlend(false); gfx::setDepthTest(true); return; }
-    // car status panel (left): tyres, fuel, damage
+    // car status panel (left): tyres, fuel, damage (not in the light HUD)
     float x = 6, y = 52;
+    if (hudLight) y = -44;                          // (what follows the panel moves up to where it was)
+    if (!hudLight) {
     gfx::drawFill2D(x, y, 80, 92, panel);
     static const u32 TYC[TY_COUNT] = {RGBA(235, 40, 40), RGBA(250, 210, 30), RGBA(240, 240, 240), RGBA(40, 200, 60), RGBA(40, 120, 255)};
     gfx::drawFill2D(x + 5, y + 5, 8, 8, TYC[c.tyre]);
@@ -921,6 +923,7 @@ void Renderer::drawRaceInfo(const Race& r) {
         }
     }
     if (input::hasTouch()) drawRelative(r);
+    }
     // penalties / pit requests
     float py = y + 96;
     if (c.penalty > 0) { snprintf(b, sizeof b, "+%.0fs PEN", c.penalty); font.draw(x, py, b, RGBA(255, 120, 60), 0.75f); py += 13; }
@@ -932,6 +935,67 @@ void Renderer::drawRaceInfo(const Race& r) {
     if (c.wantPit) { font.draw(x, py, ((int)(r.time * 3) & 1) ? "BOX THIS LAP" : "", RGBA(255, 220, 60), 0.75f); py += 13; }
     if (c.pit == PIT_IN || c.pit == PIT_OUT) font.drawCentre(SCREEN_W / 2, SCREEN_H - 50, "PIT LIMITER 60", RGBA(255, 220, 60), 0.9f);
     if (r.timeAccel > 1) { snprintf(b, sizeof b, "x%d", (int)r.timeAccel); font.drawRight(SCREEN_W - 12, 56, b, RGBA(120, 200, 255), 1.0f); }
+    gfx::setBlend(false); gfx::setDepthTest(true);
+}
+
+// ------------------------------------------------------------------ the telemetry HUD
+// Bottom middle, between the map and the speed box: pedals, revs, the four tyres (temperature, the
+// set's wear), fuel (and how many laps it lasts), the hybrid battery (Hypercars), grip and damage.
+void Renderer::drawTelemetry(const Race& r) {
+    const Car& c = r.player();
+    gfx::setDepthTest(false); gfx::setBlend(true); gfx::bindTexture(nullptr);
+    char b[48];
+    const u32 white = RGBA(235, 240, 248), dim = RGBA(160, 172, 190), track = RGBA(50, 52, 60, 220);
+    const float x = 92, y = SCREEN_H - 60, w = SCREEN_W - 92 - 118, h = 54;
+    gfx::drawFill2D(x, y, w, h, RGBA(0, 0, 0, 140));
+    // pedals: throttle and brake, filling upwards
+    auto vbar = [&](float bx, float v, u32 col, const char* label) {
+        gfx::drawFill2D(bx, y + 6, 8, 36, track);
+        float f = clampf(v, 0, 1) * 36;
+        gfx::drawFill2D(bx, y + 42 - f, 8, f, col);
+        font.drawCentre(bx + 4, y + 43, label, dim, 0.5f);
+    };
+    vbar(x + 6, c.throttle, RGBA(80, 220, 100), "T");
+    vbar(x + 18, c.brake, RGBA(250, 70, 50), "B");
+    // steering: a marker that slides left and right
+    gfx::drawFill2D(x + 30, y + 6, 54, 4, track);
+    gfx::drawFill2D(x + 30 + 27 + clampf(c.steer, -1, 1) * 25 - 2, y + 4, 4, 8, white);
+    // revs (shift point in red)
+    float rpmF = clampf((c.rpm - c.def->idleRpm) / (c.def->maxRpm - c.def->idleRpm), 0, 1);
+    gfx::drawFill2D(x + 30, y + 16, 54, 5, track);
+    gfx::drawFill2D(x + 30, y + 16, 54 * rpmF, 5, rpmF > 0.92f ? RGBA(255, 60, 40) : RGBA(80, 200, 255));
+    snprintf(b, sizeof b, "%d RPM", (int)c.rpm);
+    font.draw(x + 30, y + 22, b, dim, 0.5f);
+    // grip: how much the tyres slide
+    snprintf(b, sizeof b, "SLIP %d%%", (int)(clampf(c.slip, 0, 1) * 100));
+    font.draw(x + 30, y + 32, b, c.slip > 0.5f ? RGBA(255, 160, 60) : dim, 0.5f);
+    float dm = c.damage();
+    if (dm > 0.01f) { snprintf(b, sizeof b, "DMG %d%%", (int)(dm * 100)); font.draw(x + 30, y + 41, b, RGBA(255, 110, 70), 0.5f); }
+    // the tyres: front left, front right / rear left, rear right, coloured by temperature
+    float tx = x + 92;
+    for (int k = 0; k < 4; k++) {
+        float T = c.tyreT[k];
+        u32 tc = T < 65 ? RGBA(70, 130, 255) : (T < 80 ? RGBA(90, 200, 230) : (T <= 105 ? RGBA(80, 220, 90) : (T < 115 ? RGBA(250, 190, 40) : RGBA(250, 60, 40))));
+        float cx = tx + (k & 1) * 30, cy = y + 6 + (k >> 1) * 18;
+        gfx::drawFill2D(cx, cy, 27, 15, RGBA(20, 22, 28, 230));
+        gfx::drawFill2D(cx, cy, 3, 15, tc);
+        snprintf(b, sizeof b, "%d", (int)(T + 0.5f));
+        font.drawCentre(cx + 15, cy + 1, b, tc, 0.62f);
+    }
+    snprintf(b, sizeof b, "%s %d%%", TYRE_NAME[c.tyre], (int)((1 - c.wear) * 100 + 0.5f));
+    font.draw(tx, y + 42, b, dim, 0.5f);
+    // fuel and the hybrid battery
+    float fx = x + 160;
+    float perLap = r.lapFuel(c);
+    snprintf(b, sizeof b, "FUEL %d%%", (int)(c.fuel * 100 + 0.5f));
+    font.draw(fx, y + 4, b, white, 0.6f);
+    if (perLap > 1e-5f) { snprintf(b, sizeof b, "%.1f LAPS", c.fuel / perLap); font.draw(fx, y + 15, b, c.fuel / perLap < 2 ? RGBA(255, 110, 70) : dim, 0.55f); }
+    if (c.def->cls == CLASS_HYPER) {
+        snprintf(b, sizeof b, "ERS %d%%", (int)(c.ers * 100 + 0.5f));
+        font.draw(fx, y + 28, b, c.boosting ? RGBA(255, 240, 120) : RGBA(80, 210, 255), 0.6f);
+        gfx::drawFill2D(fx, y + 40, w - (fx - x) - 6, 4, track);
+        gfx::drawFill2D(fx, y + 40, (w - (fx - x) - 6) * clampf(c.ers, 0, 1), 4, c.boosting ? RGBA(255, 240, 120) : RGBA(80, 210, 255));
+    }
     gfx::setBlend(false); gfx::setDepthTest(true);
 }
 

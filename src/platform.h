@@ -133,6 +133,7 @@ struct Pad {
     float backX = 0;                    // where on it (0..480, left to right as seen from the front)
     // PC game controllers: analogue triggers, 0..1 (left = brake, right = throttle)
     float trigL = 0, trigR = 0;
+    bool hudKey = false;                // the PC keyboard's H: step through the HUD modes
 };
 namespace input {
 void poll(Pad& p);

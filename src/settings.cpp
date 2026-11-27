@@ -8,7 +8,7 @@
 
 Config cfg;
 const char* BUTTON_NAME[BTN_COUNT] = {"X", "O", "Square", "Triangle", "Select", "D-pad up", "D-pad down"};
-const char* ACTION_NAME[ACT_COUNT] = {"Accelerate", "Brake", "Gear up", "Gear down", "Change camera", "Look behind", "Pit request", "Engine map", "Hybrid boost"};
+const char* ACTION_NAME[ACT_COUNT] = {"Accelerate", "Brake", "Gear up", "Gear down", "Change camera", "Look behind", "Pit request", "Engine map", "Hybrid boost", "HUD mode"};
 const char* buttonName(int b) { return b >= 0 && b < BTN_COUNT ? BUTTON_NAME[b] : "None"; }
 
 bool held(const Pad& p, int b) {
@@ -63,7 +63,7 @@ void Config::apply(int autoLevel) const {
 #endif
 }
 
-static const int VERSION = 7;
+static const int VERSION = 8;
 const char* MECH_NAME[MF_COUNT] = {"Engine failure", "Gearbox and clutch failure", "Turbo failure", "Suspension failure",
     "Puncture", "Lose wheel", "Oil and water leak", "Throttle and brake problems", "Broken steering rod"};
 
@@ -73,12 +73,12 @@ void Config::save() const {
     fprintf(f, "v %d\nsound %d %d %d %d %d\nperf %d %d %d %d %d %d %d %d %d %d\nbind", VERSION, master, music, engine, effects, radio,
             preset, (int)vsync, fps, distance, (int)scenery, (int)effects3d, (int)showFps, attract, pitCam, (int)autoQuality);
     for (int a = 0; a < ACT_COUNT; a++) fprintf(f, " %d", bind[a]);
-    fprintf(f, "\ndrive %d\nvita %d %d %d %d\ncockpit %d %d\nsteering %d %d %d\n", (int)spins, tilt, (int)tiltInvert, (int)mirror, 0 /* (was: rear pad looks behind) */, (int)hideWheel, cockpitHud ? 2 : 1, 1, steerHelp, 1);
+    fprintf(f, "\ndrive %d\nvita %d %d %d %d\ncockpit %d %d\nsteering %d %d %d\n", (int)spins, tilt, (int)tiltInvert, (int)mirror, 0 /* (was: rear pad looks behind) */, (int)hideWheel, cockpitShow + 10, 1, steerHelp, 1);
     fprintf(f, "buttons %d\n", padSteer);
     fprintf(f, "realism %d %d %d %d %d %d %d %d %d %d", (int)real.full, (int)real.opponents, (int)real.tyres, (int)real.brakes,
             (int)real.cooling, (int)real.slipstream, (int)real.blowTyre, (int)real.ground, (int)real.fuel, real.damagePct);
     for (bool m : real.mech) fprintf(f, " %d", (int)m);
-    fprintf(f, "\nengineer %d\n", (int)swearing);
+    fprintf(f, "\nengineer %d\nhud %d\n", (int)swearing, hudMode);
     fclose(f);
 }
 
@@ -86,12 +86,12 @@ void Config::load() {
     FILE* f = fopen("settings.cfg", "rb");
     if (!f) return;
     Config c; int v = 0, vs = 1, sc = 1, ef = 1, sf = 0, aq = 1;
-    bool ok = fscanf(f, "v %d\n", &v) == 1 && (v == VERSION || v == 6 || v == 5 || v == 4)
+    bool ok = fscanf(f, "v %d\n", &v) == 1 && (v == VERSION || v == 7 || v == 6 || v == 5 || v == 4)
            && fscanf(f, "sound %d %d %d %d %d\n", &c.master, &c.music, &c.engine, &c.effects, &c.radio) == 5
            && (v == 4 ? fscanf(f, "perf %d %d %d %d %d %d %d %d %d\n", &c.preset, &vs, &c.fps, &c.distance, &sc, &ef, &sf, &c.attract, &c.pitCam) == 9
                       : fscanf(f, "perf %d %d %d %d %d %d %d %d %d %d\n", &c.preset, &vs, &c.fps, &c.distance, &sc, &ef, &sf, &c.attract, &c.pitCam, &aq) == 10)
            && fscanf(f, "bind") == 0;
-    int nb = v < 7 ? ACT_DRS : ACT_COUNT;    // files before v7 have no DRS bind
+    int nb = v < 7 ? ACT_DRS : (v < 8 ? ACT_HUD : ACT_COUNT);    // files before v7 have no DRS bind, before v8 no HUD one
     for (int a = 0; ok && a < nb; a++) ok = fscanf(f, " %d", &c.bind[a]) == 1 && c.bind[a] >= BTN_NONE && c.bind[a] < BTN_COUNT;
     int sp = 1;
     if (ok && v >= 6) ok = fscanf(f, "\ndrive %d", &sp) == 1;     // (older files: spins on)
@@ -99,7 +99,8 @@ void Config::load() {
     int tl = 0, ti = 0, mi = 1, rl = 0;
     if (ok && fscanf(f, "\nvita %d %d %d %d", &tl, &ti, &mi, &rl) >= 2) { c.tilt = tl < 0 ? 0 : (tl > 3 ? 3 : tl); c.tiltInvert = ti != 0; c.mirror = mi != 0; (void)rl; }
     int hw = 0, ch = 0;
-    if (ok && fscanf(f, "\ncockpit %d %d", &hw, &ch) == 2) { c.hideWheel = hw != 0; if (ch) c.cockpitHud = ch == 2; }   // (optional line; 0: an older file, HUD on)
+    // (optional line) 10..13: what the cockpit shows; older files: 2 HUD on, 1 off (0: older still, on)
+    if (ok && fscanf(f, "\ncockpit %d %d", &hw, &ch) == 2) { c.hideWheel = hw != 0; c.cockpitShow = ch >= 10 ? ch - 10 : (ch == 1 ? 0 : 1); }
     int scv = -1, shp = -1, hdl = 1;
     if (ok && fscanf(f, "\nsteering %d %d %d", &scv, &shp, &hdl) >= 2) {
         (void)scv; (void)hdl; c.steerHelp = shp < -1 ? -1 : (shp > 2 ? 2 : shp); }   // (optional line)
@@ -116,12 +117,15 @@ void Config::load() {
     }
     int sw = 0;
     if (ok && fscanf(f, "\nengineer %d", &sw) == 1) c.swearing = sw != 0;   // (optional line: off in older files)
+    int hm = 1;
+    if (ok && fscanf(f, "\nhud %d", &hm) == 1) c.hudMode = hm;                // (optional line: full in older files)
     fclose(f);
     if (!ok) return;
     auto in = [](int x, int lo, int hi) { return x < lo ? lo : (x > hi ? hi : x); };
     c.master = in(c.master, 0, 10); c.music = in(c.music, 0, 10); c.engine = in(c.engine, 0, 10); c.effects = in(c.effects, 0, 10); c.radio = in(c.radio, 0, 10);
     c.attract = in(c.attract / 5 * 5, 5, 30);
     c.pitCam = in(c.pitCam, 0, 1);
+    c.cockpitShow = in(c.cockpitShow, 0, 3); c.hudMode = in(c.hudMode, 0, 2);
     c.preset = in(c.preset, 0, 3); c.fps = in(c.fps, 0, 1); c.distance = in(c.distance, 0, 2);
     c.vsync = vs != 0; c.scenery = sc != 0; c.effects3d = ef != 0; c.showFps = sf != 0; c.autoQuality = aq != 0;
     // two actions on one button would make one of them unusable

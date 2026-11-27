@@ -1,17 +1,15 @@
-"""The music pack: every piece of music in the game (intro, headquarters themes, race playlist,
-attract and podium music), outside the VPK.
+"""The music pack: the race playlist, the attract and podium music, outside the VPK.
 
   python3 make_music_pack.py out.zip DATA/music
 
 Extract the zip at the root of ux0: (VitaShell: open it, select all, copy, paste in ux0:). It puts the
 music in ux0:data/EnduranceMotorRacing2/DATA/music/, where the game looks for any data file the app itself
 doesn't carry. Install it once: game updates (the VPK) then stay small, and the music stays where it is.
-The VPK carries no music at all, so it installs in seconds; without the pack the game runs silent
-(the intro keeps its own time).
+The intro and headquarters music stay in the VPK, so the game is never silent at the start.
 """
 import os, sys, zipfile
 
-IN_VPK = set()          # (nothing: all the music is in the pack)
+IN_VPK = {'intro.emu', 'hq_1980.emu', 'hq_2010.emu', 'hq_2016.emu', 'hq_2025.emu'}
 
 out, src = sys.argv[1], sys.argv[2]
 n = size = 0

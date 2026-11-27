@@ -63,9 +63,8 @@ endurance racing of the original EMR put back. Not for distribution.
 ## PS Vita
 `cmake -S vita -B build-vita && cmake --build build-vita` with VitaSDK + vitaGL (GitHub Actions builds
 the VPK on every push). Two files:
-* `EnduranceMotorRacing2.vpk`: the game, with no music in it, so it installs in seconds. Install with VitaShell.
-* `EnduranceMotorRacing2-music.zip`: all the music (intro, headquarters themes, race playlist). Install **once**
-  (updates to the game don't need it again; without it the game runs silent): copy it to the Vita, open it in
+* `EnduranceMotorRacing2.vpk`: the game. Install with VitaShell.
+* `EnduranceMotorRacing2-music.zip`: the music. Install **once**: copy it to the Vita, open it in
   VitaShell, select all, copy, paste at the root of `ux0:` (it unpacks to
   `ux0:data/EnduranceMotorRacing2/DATA/music/`).
 

@@ -27,6 +27,10 @@ sys.path.insert(0, HERE)
 from build_models import swizzle, quantise          # noqa: E402
 
 OUT = os.path.join(ROOT, 'HD')
+import pc_refine                                    # noqa: E402
+PCSET = pc_refine.pc_mode()       # --pc: the PC edition's set (PC/tex): 2048 px ground, 1024 px kerbs
+if PCSET:
+    OUT = pc_refine.pc_dir()
 TTF = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'
 
 
@@ -61,6 +65,7 @@ def wrap_draw(d, n, fn, x, y, r):
 
 def asphalt(n=512):
     rng = np.random.RandomState(1)
+    k = n / 512                                      # detail sizes are in 512 px units
     base = 0.24 + 0.05 * (noise(n, 6, 2) - 0.5) + 0.06 * (noise(n, 60, 3, 3) - 0.5)
     grit = rng.rand(n, n)
     base += np.where(grit > 0.985, 0.18 * rng.rand(n, n), 0) - np.where(grit < 0.02, 0.05, 0)
@@ -75,23 +80,23 @@ def asphalt(n=512):
     for k in range(5):
         x = rng.randint(0, n); y = rng.randint(0, n); pts = []
         for s in range(14):
-            pts.append((x, y)); x += rng.randint(-6, 7); y += rng.randint(8, 22)
+            pts.append((x, y)); x += rng.randint(-6, 7) * k; y += rng.randint(8, 22) * k
         for dx in (-n, 0, n):
             for dy in (-n, 0, n):
-                d.line([(px + dx, py + dy) for px, py in pts], fill=(30, 30, 33), width=2)
+                d.line([(px + dx, py + dy) for px, py in pts], fill=(30, 30, 33), width=max(1, round(2 * k)))
     for k in range(2):
-        x0 = rng.randint(0, n); y0 = rng.randint(0, n); w = rng.randint(40, 90); h = rng.randint(60, 140)
+        x0 = rng.randint(0, n); y0 = rng.randint(0, n); w = rng.randint(40, 90) * k; h = rng.randint(60, 140) * k
         wrap_draw(d, n, lambda dd, x, y: dd.rectangle((x, y, x + w, y + h), fill=(52, 53, 57), outline=(34, 34, 37)), x0, y0, max(w, h))
     for k in range(9):
-        x = rng.randint(0, n); y = rng.randint(0, n); r = rng.randint(2, 5)
+        x = rng.randint(0, n); y = rng.randint(0, n); r = rng.randint(2, 5) * k
         wrap_draw(d, n, lambda dd, xx, yy: dd.ellipse((xx - r, yy - r * 1.4, xx + r, yy + r * 1.4), fill=(38, 38, 41)), x, y, r * 2)
     # faint skid marks along the road
     for k in range(4):
-        x = rng.randint(n // 5, 4 * n // 5); y = rng.randint(0, n); L = rng.randint(80, 220)
+        x = rng.randint(n // 5, 4 * n // 5); y = rng.randint(0, n); L = int(rng.randint(80, 220) * k)
         for t in range(L):
-            xx = x + int(6 * np.sin(t / 40.0)); yy = (y + t) % n
-            a = 0.85 + 0.1 * np.sin(t / 9.0)
-            for w_ in (-4, 4):
+            xx = x + int(6 * k * np.sin(t / (40.0 * k))); yy = (y + t) % n
+            a = 0.85 + 0.1 * np.sin(t / (9.0 * k))
+            for w_ in [o for o in range(-int(5 * k), int(5 * k) + 1) if abs(o) >= int(3 * k)]:
                 px = img.getpixel(((xx + w_) % n, yy))
                 img.putpixel(((xx + w_) % n, yy), tuple(int(c * a) for c in px))
     return img
@@ -99,19 +104,24 @@ def asphalt(n=512):
 
 def grass(n=512):
     rng = np.random.RandomState(5)
+    k = n / 512
     v = noise(n, 5, 6) * 0.5 + noise(n, 40, 7, 3) * 0.5
     soil = np.stack([0.20 + 0.1 * v, 0.30 + 0.12 * v, 0.08 + 0.05 * v], -1)
     img = to_img(soil)
     d = ImageDraw.Draw(img)
-    for k in range(9000):
-        x = rng.rand() * n; y = rng.rand() * n; L = 3 + rng.rand() * 7; ang = (rng.rand() - 0.5) * 0.9
+    # the same blades over the same 10 m (sizes in 512 px units); a sharper texture adds a layer of
+    # finer, shorter blades in between (k > 1 only)
+    nb = 9000 + int(9000 * 0.8 * (k - 1))
+    for b in range(nb):
+        fine = b >= 9000
+        x = rng.rand() * n; y = rng.rand() * n; L = (3 + rng.rand() * 7) * (0.45 if fine else 1.0) * k; ang = (rng.rand() - 0.5) * 0.9
         g = 0.55 + rng.rand() * 0.6
         col = (int(60 * g), int(125 * g), int(28 * g)) if rng.rand() > 0.08 else (int(120 * g), int(130 * g), int(50 * g))
         x2 = x + np.sin(ang) * L; y2 = y - np.cos(ang) * L
         for dx in (-n, 0, n):
             for dy in (-n, 0, n):
-                if -12 < x + dx < n + 12 and -12 < y + dy < n + 12:
-                    d.line((x + dx, y + dy, x2 + dx, y2 + dy), fill=col, width=1)
+                if -12 * k < x + dx < n + 12 * k and -12 * k < y + dy < n + 12 * k:
+                    d.line((x + dx, y + dy, x2 + dx, y2 + dy), fill=col, width=1 if fine else max(1, int(k * 0.6)))
     a = np.asarray(img, np.float32) / 255
     # mowing stripes: two 5 m bands per 10 m tile (v direction), plus a soft brightness wobble
     yy = (np.arange(n) + 0.5) / n
@@ -122,12 +132,17 @@ def grass(n=512):
 
 def gravel(n=512):
     rng = np.random.RandomState(9)
+    k = n / 512
     base = 0.62 + 0.08 * (noise(n, 8, 10) - 0.5)
     img = to_img(np.stack([base * 1.0, base * 0.92, base * 0.80], -1))
     d = ImageDraw.Draw(img)
     stones = []
-    for k in range(5200):
-        r = rng.choice([1.5, 2.2, 3.0, 4.2, 5.5], p=[0.35, 0.3, 0.2, 0.1, 0.05])
+    for _ in range(5200):
+        r = rng.choice([1.5, 2.2, 3.0, 4.2, 5.5], p=[0.35, 0.3, 0.2, 0.1, 0.05]) * k
+        stones.append((rng.rand() * n, rng.rand() * n, r, rng.rand()))
+    # a sharper texture: grit between the stones, pebbles too small for 512 px (k > 1 only)
+    for _ in range(int(9000 * (k - 1))):
+        r = (0.8 + rng.rand() * 1.2) * min(k, 2.0)
         stones.append((rng.rand() * n, rng.rand() * n, r, rng.rand()))
     stones.sort(key=lambda s: s[2])
     for x, y, r, t in stones:
@@ -136,7 +151,7 @@ def gravel(n=512):
         sh = (int(120 * tone), int(108 * tone), int(92 * tone))
         hi = tuple(min(255, int(c * 1.18)) for c in col)
         def stone(dd, xx, yy):
-            dd.ellipse((xx - r + 1, yy - r * 0.8 + 1.2, xx + r + 1, yy + r * 0.8 + 1.2), fill=sh)
+            dd.ellipse((xx - r + k, yy - r * 0.8 + 1.2 * k, xx + r + k, yy + r * 0.8 + 1.2 * k), fill=sh)
             dd.ellipse((xx - r, yy - r * 0.8, xx + r, yy + r * 0.8), fill=col)
             dd.ellipse((xx - r * 0.5, yy - r * 0.6, xx + r * 0.1, yy - r * 0.1), fill=hi)
         wrap_draw(d, n, stone, x, y, r)
@@ -214,12 +229,15 @@ def font2x(dst):
 def main():
     prev = sys.argv[1] if len(sys.argv) > 1 else None
     os.makedirs(os.path.join(OUT, 'tex'), exist_ok=True)
+    sizes = {'asphalt': 2048, 'grass': 2048, 'gravel': 2048, 'kerb': 1024} if PCSET else {}
     for name, fn in (('asphalt', asphalt), ('grass', grass), ('gravel', gravel), ('kerb', kerb)):
-        img = fn()
+        img = fn(sizes[name]) if name in sizes else fn()
         write_tex(img, os.path.join(OUT, 'tex', name + '.tex'))
         print('texture', name, img.size)
         if prev:
             img.save(os.path.join(prev, f'tex_{name}.png'))
+    if PCSET:
+        return                     # (the PC keeps the Vita's 2x font: the stream to the Vita is 960 x 544)
     at = font2x(os.path.join(OUT, 'font.bin'))
     print('font 2x', at.size)
     if prev:

@@ -27,7 +27,7 @@ M4 proj = M4::identity(), view = M4::identity();
 bool fogOn = false; float fogNear = 0, fogFar = 1; u32 fogCol = 0;
 const Texture* tex = nullptr;
 bool blendOn = false, depthTest = true, depthWrite = true;
-std::vector<u8> scratch(4 << 20);
+std::vector<u8> scratch(32 << 20);   // (the PC edition's models: a 30,000-triangle car clipped up close)
 size_t scratchUsed = 0;
 
 struct CV { float x, y, z, w; float u, v; float r, g, b, a; float fogd; };

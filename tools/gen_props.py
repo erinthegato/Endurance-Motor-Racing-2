@@ -16,6 +16,11 @@ from PIL import Image, ImageDraw, ImageFont
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 OUT = os.path.join(ROOT, 'HD', 'models')
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import pc_refine                                    # noqa: E402
+PCSET = pc_refine.pc_mode()                         # --pc: the PC edition's set (PC/models), every model refined
+if PCSET:
+    OUT = pc_refine.pc_dir('models')
 sys.path.insert(0, HERE)
 from gen_cars import quantise, swizzle   # noqa: E402  (same palette / swizzle as the cars)
 
@@ -116,6 +121,8 @@ class Kit:
             self.quad((x0, y1, z0), (x1, y1, z0), (x1, y0, z0), (x0, y0, z0), r, shade * 0.6)
 
     def cyl(self, a, b, r, sides, rr, caps=True, shade=1.0, r2=None):
+        if PCSET and sides >= 5:
+            sides *= 3                                  # the PC: rounder poles, drums, pipes
         a = np.array(a, float); b = np.array(b, float); r2 = r if r2 is None else r2
         t = b - a; t /= np.linalg.norm(t)
         ref = np.array([0, 0, 1.0]) if abs(t[2]) < 0.9 else np.array([1.0, 0, 0])
@@ -136,6 +143,13 @@ class Kit:
                 if r > 0:
                     self._add([a, pb, pa], [(cu, cv), (u1, cv), (cu, v0)], shade * 0.7)
 
+    def refined(self, levels=1, uniform=False):
+        """a copy with its curved triangles split onto their surface (tools/pc_refine.py). uniform: every
+        triangle split the same way whatever its normals (models whose poses blend vertex by vertex)"""
+        k = Kit()
+        k.tris = pc_refine.refine_tris(self.tris, levels, uv_index=2, n_index=1, keep_flat=not uniform)
+        return k
+
     def tube(self, pts, r, sides, rr, shade=1.0):
         for a, b in zip(pts, pts[1:]):
             self.cyl(a, b, r, sides, rr, caps=False, shade=shade)
@@ -155,8 +169,26 @@ class Kit:
         return P, np.clip(UV, 0.001, 0.999), LT
 
 
+def pc_lods(lods, uniform=False):
+    """the PC set: the near level refined twice onto its curves, then once, and the old far level
+    refined once (uniform: the crew's poses, split identically so they still blend)"""
+    if not uniform:
+        # flat-shaded exports (the Blender props): smooth the shallow angles first so round things refine round
+        sm = []
+        for k, img, ts in lods:
+            k2 = Kit(); k2.tris = pc_refine.auto_smooth(k.tris, 50.0); sm.append((k2, img, ts))
+        lods = sm
+    near = lods[0]
+    out = [(near[0].refined(2, uniform), near[1], near[2]), (near[0].refined(1, uniform), None, near[2])]
+    for k, img, ts in lods[1:]:
+        out.append((k.refined(1, uniform), None, ts))
+    return out[:4]
+
+
 def write_emm(path, lods, emx=None, shared_bbox=None):
     """lods: list of (Kit, Image or None, texture size). Positions stored -1..1 of the bounding box."""
+    if PCSET:
+        lods = pc_lods(lods, uniform=shared_bbox is not None)
     P0 = np.concatenate([k.arrays()[0].reshape(-1, 3) for k, _, _ in lods]) if shared_bbox is None else shared_bbox
     mn, mx = P0.min(0), P0.max(0)
     centre = (mn + mx) / 2; scale = np.maximum((mx - mn) / 2, 1e-4)

@@ -43,14 +43,24 @@ void Config::setPreset(int p) {
 void Config::apply(int autoLevel) const {
     sound::setMaster(master / 10.0f * 1.1f);
     sound::setVolumes(music / 10.0f, engine / 10.0f, effects / 10.0f, radio / 10.0f);
+#ifdef PLATFORM_DESKTOP
+    // the PC edition: 60 % further draw distance (the fog moves out with it), the close-up models kept
+    // ~80 % further out (they are the PC set's denser ones: PC/models)
+    static const float DIST[3] = {1.6f, 1.2f, 0.8f}, LOD[3] = {1.8f, 1.4f, 1.0f};
+#else
     static const float DIST[3] = {1.0f, 0.75f, 0.55f}, LOD[3] = {1.0f, 0.8f, 0.6f};
+#endif
     // automatic quality: 1 effects reduced, 2 scenery reduced, 3-4 draw distance one / two steps nearer
     int d = distance + (autoLevel > 2 ? autoLevel - 2 : 0); if (d > 2) d = 2;
     perf.distance = DIST[d]; perf.lodBias = LOD[d];
     perf.scenery = scenery && autoLevel < 2; perf.effects = effects3d && autoLevel < 1;
     gfx::setSync(vsync, fps == 1 ? 2 : 1);
     // the terrain mesh (built when a circuit loads): coarser with the near draw distance (Performance)
+#ifdef PLATFORM_DESKTOP
+    Track::terrainCell = distance >= 2 ? 33.0f : 20.0f;      // the PC: a finer landscape
+#else
     Track::terrainCell = distance >= 2 ? 50.0f : 33.0f;
+#endif
 }
 
 static const int VERSION = 7;

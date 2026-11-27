@@ -99,6 +99,17 @@ def shorter_neck(lods):
     return out
 
 
+def main_pc():
+    """the PC edition's driver (PC/models/driver.emm): the Blender driver refined onto his curves --
+    up close twice, then once, the far level once (rounder helmet, shoulders, arms)"""
+    import pc_refine
+    d = json.load(open(SRC))
+    lods = shorter_neck(d['driver'])
+    lods = [pc_refine.refine_part(lods[0], 2), pc_refine.refine_part(lods[0], 1)] + [pc_refine.refine_part(l, 1) for l in lods[1:]]
+    size, tris, dims = write(os.path.join(pc_refine.pc_dir('models'), 'driver.emm'), lods[:4], d['palette'], ROLES)
+    print(f'PC driver: triangles {tris}, {dims} m, {size / 1024:.0f} KB')
+
+
 def main(prev=None):
     d = json.load(open(SRC))
     # the 1980 era (internal id 90s) has its own parts, built in code (tools/gen_parts_1980.py)
@@ -126,5 +137,7 @@ def main(prev=None):
             print(f'flap {year}: triangles {tris}, {dims} m, {size / 1024:.0f} KB')
 
 
-if __name__ == '__main__':
+if __name__ == '__main__' and '--pc' in sys.argv:
+    main_pc()
+elif __name__ == '__main__':
     main(sys.argv[1] if len(sys.argv) > 1 else None)

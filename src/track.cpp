@@ -467,7 +467,12 @@ void Track::buildMesh() {
             // memory: on a straight, level stretch with nothing changing at the sides, one quad spans up to
             // four points (Le Mans' long straights: ~30 % fewer vertices; the cars drive on pts, not this)
             stride = 1;
+#ifdef PLATFORM_DESKTOP
+            // (the PC edition keeps every point: the full detail of the road everywhere)
+            while (false) {
+#else
             while (stride < 4 && i + stride + 1 <= c1 && i != 0) {
+#endif
                 const TrackPoint &P0 = pts[i], &Q = pts[(i + stride) % n], &Q1 = pts[(i + stride + 1) % n];
                 if (fabsf(Q.curv) > 1.0f / 1500 || fabsf(Q1.curv) > 1.0f / 1500 || fabsf(P0.curv) > 1.0f / 1500) break;
                 if (Q.kerb || P0.kerb || Q1.kerb || Q.gravelL != P0.gravelL || Q.gravelR != P0.gravelR) break;

@@ -475,7 +475,10 @@ void Renderer::drawScene(const Race& r, const Camera& cam, bool hidePlayer) {
         rad = (rad > md.scale[2] ? rad : md.scale[2]) * p.scale * 1.2f;
         if (!visible(rel + V3(0, 0, md.scale[2] * p.scale), rad, cam, tanH, tanV, maxD)) continue;
         float d2 = dot(rel, rel);
-        int lod = md.lodCount > 1 && d2 > 110.0f * 110 ? 1 : 0;
+        // two levels (the Vita's props): near / far at 110 m; three (the PC's): 45 / 110 m (x the detail bias)
+        float lb = perf.lodBias * perf.lodBias;
+        int lod = md.lodCount >= 3 ? (d2 < 45.0f * 45 * lb ? 0 : (d2 < 110.0f * 110 * lb ? 1 : 2))
+                                   : (md.lodCount > 1 && d2 > 110.0f * 110 ? 1 : 0);
         gfx::bindTexture(&md.lod[lod].tex);
         M4 place = M4::translate(rel) * M4::rotZ(p.yaw) * M4::scale(p.scale, p.scale, p.scale);
         statVerts[2] += md.lod[lod].count;

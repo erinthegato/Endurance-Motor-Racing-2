@@ -67,10 +67,26 @@ def main(prev=None):
         uv[i * 3:i * 3 + 3] = cell[d['materials'][mi]]
     uv16 = np.clip(np.round(uv * 32767), 0, 65535).astype(np.uint16)
     sw = swizzle(pix.reshape(-1), TEX, TEX)
-    print('teams with a second colour:', team_header())
+    import pc_refine
+    PCSET = pc_refine.pc_mode()
+    if not PCSET:
+        print('teams with a second colour:', team_header())
 
     poses = {(an, f): (np.array(fr['p'], np.float32).reshape(-1, 3), np.array(fr['n'], np.float32).reshape(-1, 3))
              for an in ANIMS for f, fr in enumerate(d['anims'][an])}
+    if PCSET:
+        # the PC: every pose refined onto its curves, split the same way in every pose (so they still
+        # blend vertex by vertex): rounder heads, helmets, limbs
+        LV = 2 if len(tris) < 2000 else 1
+        for key, (p, n) in list(poses.items()):
+            part = pc_refine.refine_part({'p': p.reshape(-1).tolist(), 'n': n.reshape(-1).tolist(), 'm': list(range(len(tris)))}, LV, keep_flat=False)
+            src_tri = part['m']
+            poses[key] = (np.array(part['p'], np.float32).reshape(-1, 3), np.array(part['n'], np.float32).reshape(-1, 3))
+        tris = tris[np.array(src_tri)]
+        uv = np.zeros((len(tris) * 3, 2))
+        for i, mi in enumerate(tris):
+            uv[i * 3:i * 3 + 3] = cell[d['materials'][mi]]
+        uv16 = np.clip(np.round(uv * 32767), 0, 65535).astype(np.uint16)
     # one shared scale for every pose; each motion stood on the ground by its lowest point
     grounded = {}
     for an in ANIMS:
@@ -101,8 +117,8 @@ def main(prev=None):
             fo.write(rec.tobytes())
 
     total = 0
-    for folder in ('DATA/models', 'HD/models'):
-        out = os.path.join(ROOT, folder)
+    for folder in (('PC/models',) if PCSET else ('DATA/models', 'HD/models')):
+        out = os.path.join(ROOT, folder); os.makedirs(out, exist_ok=True)
         for (an, f), p in grounded.items():
             fn = os.path.join(out, f'crew_{an}_{f}.emm')
             write(fn, p, poses[(an, f)][1], (an, f) == ('idle', 0))     # only the first pose carries the texture

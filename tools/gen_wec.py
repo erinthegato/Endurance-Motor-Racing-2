@@ -35,9 +35,9 @@ PC edition set (PC/models, read first by the PC build; denser at every level of 
 Axes: +X forward, +Y left, +Z up, metres, origin on the ground under the middle of the car.
 """
 import os, sys
-PCSET = '--pc' in sys.argv
-if PCSET:
-    sys.argv.remove('--pc')
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import pc_refine
+PCSET = pc_refine.pc_mode()
 sys.argv.insert(1, '--hd')                 # gen_cars: the Vita's high-detail set (HD/models)
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -183,7 +183,7 @@ def main():
         if not c['hyper']:
             spec['bonnet_x'] = spec['axles'][0] - 0.05
         c = dict(c, L=spec['L'])
-        p = Paint(c['L'], S=1024)
+        p = Paint(c['L'], S=2048 if PCSET else 1024)     # drawn at 2x, shrunk = smooth edges
         G.livery(p, c, spec, c['hyper'])
         G.hd_details(p, c, spec, c['hyper'])
         build = B.build_proto if c['hyper'] else B.build_gt
@@ -191,13 +191,18 @@ def main():
         top_mesh = build(spec, -1); G.decal_quads(top_mesh, c, spec, fns)
         mid_mesh = build(spec, 0); G.decal_quads(mid_mesh, c, spec, fns)
         far_mesh = build(spec, 2)
+        if PCSET:
+            # the PC: every level one step denser -- the dense body refined onto its curves up close,
+            # the dense body at mid distance, the Vita's mid level far away
+            top_mesh, mid_mesh, far_mesh = top_mesh.refined(1), top_mesh, mid_mesh
         # 2000 mm overall width: the mirrors and dive planes squeezed in with the rest
         wmax = max(np.abs(m_.arrays()[0].reshape(-1, 3)[:, 1]).max() for m_ in (top_mesh, mid_mesh, far_mesh))
         if wmax > 0.999:
             k = 0.999 / wmax
             for m_ in (top_mesh, mid_mesh, far_mesh):
                 m_.tris = [(np.array(t[0]) * np.array([1, k, 1]),) + tuple(t[1:]) for t in m_.tris]
-        lods = [(top_mesh, p.img, 512), (mid_mesh, p.img, 256), (far_mesh, p.img, 128)]
+        TS = (1024, 512, 256) if PCSET else (512, 256, 128)
+        lods = [(top_mesh, p.img, TS[0]), (mid_mesh, p.img, TS[1]), (far_mesh, p.img, TS[2])]
         px = spec['panel'][0]
         meta = (0.0 if c['hyper'] else spec['cab'], min(fns(px - 0.2), fns(px + 0.2)) + 0.012, px)
         fa, ra = G.HY_AXLES if c['hyper'] else G.gt_axles(c['L'])
@@ -206,7 +211,8 @@ def main():
         # two files: car_<id>_hd.emm (512 px livery) for your own car, the showroom and the menus;
         # car_<id>.emm (256 px) for the rest of the field -- 40 % less memory per car on a 40-car grid
         n = write_emm(os.path.join(out, f"car_{c['id']}_hd.emm"), lods, meta=meta, emx=(fa, ra, wy, 0.0, 0), share_tex=True)
-        write_emm(os.path.join(out, f"car_{c['id']}.emm"), [(top_mesh, p.img, 256), (mid_mesh, p.img, 256), (far_mesh, p.img, 256)],
+        AI = 512 if PCSET else 256
+        write_emm(os.path.join(out, f"car_{c['id']}.emm"), [(top_mesh, p.img, AI), (mid_mesh, p.img, AI), (far_mesh, p.img, AI)],
                   meta=meta, emx=(fa, ra, wy, 0.0, 0), share_tex=True)
         P = top_mesh.arrays()[0].reshape(-1, 3)
         dims = P.max(0) - P.min(0)
@@ -225,12 +231,12 @@ def main():
         if rule != 'GT3':
             assert dims[2] <= REG[rule]['hmax'] + 0.002, f"{rule} height {dims[2]:.3f}"
         if c['id'].startswith('career'):
-            G.write_livery_set(os.path.join(out, f"livery_{c['id']}.lvy"), c, spec, (512, 256, 128))
+            G.write_livery_set(os.path.join(out, f"livery_{c['id']}.lvy"), c, spec, TS)
         if prev:
             os.makedirs(prev, exist_ok=True)
             p.img.save(os.path.join(prev, f"livery_{c['id']}.png"))
     # each class's road wheel (the rear tyre; the game narrows / shrinks the fronts: FRONT_W, FRONT_R)
-    S = 256
+    S = 512 if PCSET else 256
     pt = Paint(5.0, S)
     pt.base((0.1, 0.1, 0.1))
     pt.swatches(dict(glass=(0.08, 0.11, 0.16), white=(0.92, 0.92, 0.88), red=(0.85, 0.08, 0.06), carbon=(0.09, 0.09, 0.10),
@@ -239,13 +245,18 @@ def main():
     for era, rule in (('hyper', 'LMDh'), ('gt3', 'GT3')):
         w, d = REG[rule]['tyre_r']
         R, hw = d / 2, w / 2
-        print(f'wheel_{era}', write_emm(os.path.join(out, f'wheel_{era}.emm'),
-                                        [(wheel(R, hw, 10, 32 if PCSET else 16, pairs=True), t, S), (wheel(R, hw, 6, 12), t, 128), (wheel(R, hw, 0, 8), t, 64)]))
+        if PCSET:       # the PC: 48 sides refined onto the curve up close, the Vita's near wheel at mid distance
+            wl = [(wheel(R, hw, 10, 48, pairs=True).refined(1), t, S), (wheel(R, hw, 10, 16, pairs=True), t, 256), (wheel(R, hw, 6, 12), t, 128)]
+        else:
+            wl = [(wheel(R, hw, 10, 16, pairs=True), t, S), (wheel(R, hw, 6, 12), t, 128), (wheel(R, hw, 0, 8), t, 64)]
+        print(f'wheel_{era}', write_emm(os.path.join(out, f'wheel_{era}.emm'), wl))
     NEW_DASH = (0.0, 0.0, 0.0, 0.0, 2)        # EMX1 flags bit 1: the Vita's dash instruments
-    print('cockpit_hypercar', write_emm(os.path.join(out, 'cockpit_hypercar.emm'), [(B.proto_interior(), t, S)], emx=NEW_DASH))
-    print('cockpit_gt3', write_emm(os.path.join(out, 'cockpit_gt3.emm'), [(B.gt_interior(), t, S)], emx=NEW_DASH))
-    print('steering_hyper', write_emm(os.path.join(out, 'steering_hyper.emm'), [(G.hd_steering(True), t, S)], emx=NEW_DASH))
-    print('steering_gt3', write_emm(os.path.join(out, 'steering_gt3.emm'), [(G.hd_steering(False), t, S)], emx=NEW_DASH))
+    # the cockpits and steering wheels: the PC's refined onto their curves (rounder rims, grips, seats, dash)
+    ref = (lambda m: m.refined(1)) if PCSET else (lambda m: m)
+    print('cockpit_hypercar', write_emm(os.path.join(out, 'cockpit_hypercar.emm'), [(ref(B.proto_interior()), t, S)], emx=NEW_DASH))
+    print('cockpit_gt3', write_emm(os.path.join(out, 'cockpit_gt3.emm'), [(ref(B.gt_interior()), t, S)], emx=NEW_DASH))
+    print('steering_hyper', write_emm(os.path.join(out, 'steering_hyper.emm'), [(ref(G.hd_steering(True)), t, S)], emx=NEW_DASH))
+    print('steering_gt3', write_emm(os.path.join(out, 'steering_gt3.emm'), [(ref(G.hd_steering(False)), t, S)], emx=NEW_DASH))
     # the front tyres against the rears, for src/render.cpp (FRONT_W, FRONT_R)
     for rule in ('LMDh', 'GT3'):
         (wf, df), (wr, dr) = REG[rule]['tyre_f'], REG[rule]['tyre_r']

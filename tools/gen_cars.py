@@ -117,6 +117,9 @@ class Mesh:
 
     def tube(self, pts, r, sides=4, uv='cage', shade=1.0):
         """A bar through the given points (square or hexagonal section)."""
+        import pc_refine
+        if pc_refine.pc_mode() and sides >= 5:
+            return self._round_tube(pts, r, sides * 3, uv, shade)
         pts = [np.array(p, float) for p in pts]
         rings = []
         for i, p in enumerate(pts):
@@ -135,6 +138,40 @@ class Mesh:
         # the outward test in part() uses the part centre, which fails for bent tubes: light them flat-ish
         self.part(V, F, uv, 'body', flat=True, shade=shade)
 
+    def _round_tube(self, pts, r, sides, uv, shade):
+        """the PC's round tube: more sides, the path smoothed through its points (Catmull-Rom, 3 steps a
+        span), and each corner lit by its own outward normal so the tube shades round"""
+        P = [np.array(p, float) for p in pts]
+        if len(P) > 2:
+            Q = []
+            for i in range(len(P) - 1):
+                p0 = P[max(i - 1, 0)]; p1 = P[i]; p2 = P[i + 1]; p3 = P[min(i + 2, len(P) - 1)]
+                for j in range(3):
+                    t = j / 3
+                    Q.append(0.5 * (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (-p0 + 3 * p1 - 3 * p2 + p3) * t ** 3))
+            Q.append(P[-1]); P = Q
+        rings, norms = [], []
+        for i, p in enumerate(P):
+            a = P[max(i - 1, 0)]; b = P[min(i + 1, len(P) - 1)]
+            t = b - a; t /= max(np.linalg.norm(t), 1e-12)
+            ref = np.array([0, 0, 1.0]) if abs(t[2]) < 0.9 else np.array([1.0, 0, 0])
+            u = np.cross(t, ref); u /= np.linalg.norm(u)
+            w = np.cross(t, u)
+            ns = [np.cos(k * 2 * np.pi / sides + 0.785) * u + np.sin(k * 2 * np.pi / sides + 0.785) * w for k in range(sides)]
+            norms.append(ns); rings.append([p + r * n for n in ns])
+        for i in range(len(P) - 1):
+            for k in range(sides):
+                k2 = (k + 1) % sides
+                for tri in ((i, k), (i, k2), (i + 1, k2)), ((i, k), (i + 1, k2), (i + 1, k)):
+                    Pt = np.array([rings[a][b] for a, b in tri]); Nt = np.array([norms[a][b] for a, b in tri])
+                    fn = np.cross(Pt[1] - Pt[0], Pt[2] - Pt[0]); ar = np.linalg.norm(fn)
+                    if ar < 1e-12:
+                        continue
+                    fn /= ar
+                    if np.dot(fn, Nt.mean(0)) < 0:          # face the way the normals point
+                        Pt = Pt[[0, 2, 1]]; Nt = Nt[[0, 2, 1]]; fn = -fn
+                    self.tris.append((Pt, Nt, uv, 'body', fn, shade))
+
     def sheet(self, rings, uv='carbon', shade=1.0, flat=False):
         """an open surface through rows of points (rows not joined end to start)"""
         n = len(rings[0])
@@ -148,6 +185,9 @@ class Mesh:
 
     def cyl(self, a, b, r, sides=10, uv='grey', shade=1.0, caps=True):
         """a closed cylinder from a to b"""
+        import pc_refine
+        if pc_refine.pc_mode():
+            sides *= 3                  # the PC: rounder discs, hubs, pipes
         a = np.array(a, float); b = np.array(b, float)
         t = b - a; t /= np.linalg.norm(t)
         ref = np.array([0, 0, 1.0]) if abs(t[2]) < 0.9 else np.array([1.0, 0, 0])
@@ -177,6 +217,13 @@ class Mesh:
         self.part(V, F, uv, group, glass_faces=gl)
 
     # ---- output
+    def refined(self, levels=1):
+        """a copy with every triangle split into four on its curved surface (tools/pc_refine.py; the PC set)"""
+        import pc_refine
+        m = Mesh(self.L)
+        m.tris = pc_refine.refine_tris(self.tris, levels, uv_index=2, n_index=1)
+        return m
+
     def arrays(self):
         """-> positions (m,3,3), uv (m,3,2), light (m,3), glass mask (m)"""
         m = len(self.tris)

@@ -134,6 +134,10 @@ jobs:
         run: |
           set -o pipefail
           ./emr_test_asan manager imola 2 shots 2>&1 | grep -E "^manager"
+      - name: Strong steering help never spins (both classes, abuse at Spa)
+        run: |
+          ./emr_test nospin spa 3 2
+          ./emr_test nospin spa 11 2
       - name: Cars, replay, steering help
         env:
           ASAN_OPTIONS: detect_leaks=0

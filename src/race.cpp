@@ -362,10 +362,11 @@ float Race::wallHit(Car& c, float sg) {
     c.v = sqrtf(along * along + out * out);
     if (c.v < 0.5f) { c.v = 0; nt = 0; }
     // the hit turns the nose away from the wall: a glancing blow is a twitch, a big one can spin it
-    float kick = c.human && !c.spinning ? -sg * clampf(into * 0.018f, 0, 0.7f) : 0;
+    // (steering help Strong, spinsOn off: a hit only twitches the nose, the car never spins)
+    float kick = c.human && !c.spinning ? -sg * clampf(into * 0.018f, 0, spinsOn || !c.player ? 0.7f : 0.2f) : 0;
     c.drift = wrapPi(c.drift * 0.4f + kick);
     c.yaw = wrapPi(nt + c.drift);
-    if (c.human && fabsf(c.drift) > 0.62f && c.v > 12) c.spinning = true;
+    if (c.human && fabsf(c.drift) > 0.62f && c.v > 12 && (spinsOn || !c.player)) c.spinning = true;
     return into;
 }
 
@@ -563,6 +564,7 @@ void Race::physics(Car& c, float dt) {
         // be caught with opposite lock; past ~35 degrees the car spins. The nose turns by the extra
         // drift while the car keeps going where the grip takes it (travel = yaw - drift).
         float rot = 0;
+        if (c.player && !spinsOn && c.spinning) c.spinning = false;   // steering help Strong: never in a spin (even one begun before it)
         if (c.human && !c.spinning && spinsOn) {
             const EraFeel& F = FEEL[c.def->era % ERA_COUNT];
             const float STEP_OUT = F.stepOut, SPIN = F.spin;

@@ -25,3 +25,5 @@ built in code to the 2027 technical regulations, on the nine circuits of the 202
 - New engine sounds (ElevenLabs), much louder: a high hybrid whine on every Hypercar; LMGT3s with a muffled
   rumble underneath and a high gear whine on each shift
 - The game's folder (saves, settings, music pack) on uma0 when the Vita has one
+- New LiveArea: icon, background and start gate with the game's own Hypercar and LMGT3
+- Steering help Strong: the car can never spin, not even from a hard barrier hit

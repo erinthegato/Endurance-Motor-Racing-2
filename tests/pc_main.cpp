@@ -775,6 +775,19 @@ int main(int argc, char** argv) {
         }
         return 0;
     }
+    if (mode == "art") {
+        // art <outdir> <car id> <yaw> ...: cars on magenta, to be cut out for the LiveArea pictures
+        std::string out = argv[2];
+        for (int k = 3; k + 1 < argc; k += 2) {
+            int i = 0; for (int c = 0; c < CAR_COUNT; c++) if (!strcmp(CARS[c].id, argv[k])) i = c;
+            g.R.hdCar = i; g.R.hdAll = true;
+            gfx::beginFrame(RGBA(255, 0, 255));
+            { float sz = getenv("ART_SZ") ? atof(getenv("ART_SZ")) : 300; g.R.drawCarShowroom(i, (float)atof(argv[k + 1]), 240 - sz / 2, 136 - sz / 2 - sz * 0.1f, sz, sz); }
+            gfx::endFrame();
+            pc::saveShot((out + "/art_" + argv[k] + ".ppm").c_str());
+        }
+        return 0;
+    }
     if (mode == "cars") {
         // every car on the turntable from two sides
         std::string out = argv[2];
@@ -1103,6 +1116,41 @@ int main(int argc, char** argv) {
         }
         printf("help %d: from %.0f km/h  spun %s  max slide %.2f rad  now %.0f km/h\n", help, v0, spun ? "YES" : "no", maxDrift, me.v * 3.6f);
         return 0;
+    }
+    if (mode == "nospin") {
+        // nospin <track> <car> <help 0-2>: AI drives 30 s, then 25 s of abuse -- full lock flung side to
+        // side, the throttle stabbed, the brakes slammed mid-corner, held lock into the barriers.
+        // Strong help (2) must never spin.
+        std::string tid = argv[2]; int car = atoi(argv[3]), help = atoi(argv[4]);
+        for (int i = 0; i < TRACK_COUNT; i++) if (tid == TRACKS[i].id) g.set.track = i;
+        g.set.car = car; g.set.laps = 5; g.set.opponents = 0; g.set.weather = WX_DRY;
+        cfg.steerHelp = help;
+        g.aiDrivesPlayer = true;
+        g.startRace();
+        for (float simT = 0; simT < 30; simT += 1.0f / 60) { Pad z{}; g.step(1.0f / 60, z); }
+        g.aiDrivesPlayer = false;
+        const Car& me = g.race.player();
+        int spins = 0, hits = 0; bool was = false; float maxDrift = 0, prevV = me.v;
+        unsigned rng = 12345;
+        float side = 1, t = 0;
+        for (float simT = 0; simT < 25; simT += 1.0f / 60, t += 1.0f / 60) {
+            rng = rng * 1103515245u + 12345u;
+            if (t > 0.35f + (rng >> 24) / 255.0f * 0.5f) { side = -side; t = 0; }     // fling the wheel the other way
+            Pad pp{};
+            float phase = fmodf(simT, 6.0f);
+            pp.stickX = phase < 4.5f ? side : 1.0f;                                  // (and 1.5 s held into a barrier)
+            bool stab = fmodf(simT, 1.3f) < 0.25f;
+            if (stab || phase > 4.5f) pp.r = true;                                   // throttle stabs
+            if (fmodf(simT, 2.7f) < 0.3f) { pp.r = false; pp.l = true; }             // brakes slammed
+            g.step(1.0f / 60, pp);
+            if (me.spinning && !was) spins++;
+            was = me.spinning;
+            if (prevV - me.v > 3.0f) hits++;
+            prevV = me.v;
+            maxDrift = fmaxf(maxDrift, fabsf(me.drift));
+        }
+        printf("nospin %s %s help %d: %d spins, biggest slide %.2f rad, %d hard hits\n", tid.c_str(), CARS[car].id, help, spins, maxDrift, hits);
+        return help >= 2 && spins > 0 ? 1 : 0;
     }
     if (mode == "replay") {     // replay <track> <outdir>: 40 s of racing, then the replay (TV + cockpit), then photo mode
         std::string tid = argv[2], out = argv[3];

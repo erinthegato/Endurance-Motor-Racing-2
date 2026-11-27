@@ -63,6 +63,8 @@ void frameTrim(void* p, int keepBytes);
 void flushCache(const void* p, int bytes);   // make data written by the CPU visible to the GPU
 // true where the graphics chip clips big triangles itself (the Vita): clip.h then draws straight through
 bool gpuClips();
+// true on the stronger machines (the PS Vita, the PS3): the rear-view mirror, the denser rain on the glass
+bool highDetail();
 // Copy a texture's pixels into video memory (faster for the GPU to read). Returns false when full.
 // fastMark / fastRelease free everything moved after a mark (used for the cars of one race).
 bool moveToFastMemory(Texture& t);

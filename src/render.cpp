@@ -1,4 +1,5 @@
 #include "render.h"
+#include "endian.h"
 #include "team_colours.h"
 #include "clip.h"
 #include "settings.h"
@@ -150,6 +151,9 @@ void Renderer::applyLivery(int idx) {
         if (!all) return;
         const u8* a = (const u8*)all;
         if (size < 288 || memcmp(a, "LVY1", 4)) { sys::freeFile(all); return; }
+#if EMR_SWAP
+        endian::fixLvy(all, size, true);
+#endif
         u32 h[7]; memcpy(h, a + 4, 28);
         int ns = (int)h[0] ? (int)h[0] : 1;
         size_t per = 0; for (u32 l = 0; l < h[1] && l < 4; l++) per += (size_t)h[3 + l] * h[3 + l];
@@ -829,7 +833,7 @@ void Renderer::drawWindscreen(const Car& c, const Camera& cam, const Race* race)
     float L = fminf(s.h * 0.95f, s.halfW * 1.05f);
     // drops land at random and are blown up the glass with speed
     if (race && dt > 0) {
-        bool vita = input::hasTouch();
+        bool vita = gfx::highDetail();
         int maxDrops = vita ? 240 : 96;
         float want = rain * (vita ? 70.0f : 34.0f) * dt;
         while (want > 0 && dropCount < maxDrops) {
@@ -863,7 +867,7 @@ void Renderer::drawWindscreen(const Car& c, const Camera& cam, const Race* race)
     WorldVertex* w = (WorldVertex*)gfx::frameAlloc(dropCount * 6 * sizeof(WorldVertex));
     if (!w) return;
     int o = 0;
-    bool vitaDrops = input::hasTouch();
+    bool vitaDrops = gfx::highDetail();
     // at speed the air pushes the drops up the glass: they stretch into streaks (Vita)
     float stretch = vitaDrops ? 1.4f + fminf(c.v / 35.0f, 2.6f) : 1.4f;
     for (int i = 0; i < dropCount; i++) {

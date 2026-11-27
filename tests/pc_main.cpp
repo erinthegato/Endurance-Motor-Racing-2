@@ -8,6 +8,8 @@
 // "race" lets the AI drive your car too, takes screenshots (chase, far, cockpit) at the given
 // race times, writes 8 s of the engine mix to race_audio.wav and prints the lap times.
 #include "../src/game.h"
+#include "../src/endian.h"
+#include <dirent.h>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -41,6 +43,51 @@ static void writeWav(const char* path, const std::vector<int16_t>& s) {
     fclose(f);
 }
 
+// swapcheck <dir>...: every data file turned round to big-endian (as on the PS3) and back again. Each
+// walk must end exactly at the end of the file, and the round trip must give back the same bytes.
+static void listFiles(const std::string& dir, std::vector<std::string>& out) {
+    DIR* d = opendir(dir.c_str());
+    if (!d) return;
+    while (dirent* e = readdir(d)) {
+        std::string n = e->d_name;
+        if (n == "." || n == "..") continue;
+        std::string p = dir + "/" + n;
+        if (DIR* sub = opendir(p.c_str())) { closedir(sub); listFiles(p, out); } else out.push_back(p);
+    }
+    closedir(d);
+}
+static int swapCheck(int argc, char** argv) {
+    int checked = 0, bad = 0;
+    for (int a = 2; a < argc; a++) {
+        std::vector<std::string> files; listFiles(argv[a], files);
+        std::sort(files.begin(), files.end());
+        for (const std::string& path : files) {
+            auto ends = [&](const char* x) { size_t k = strlen(x); return path.size() >= k && !path.compare(path.size() - k, k, x); };
+            bool (*fix)(void*, size_t, bool) = nullptr;
+            if (ends(".emm")) fix = endian::fixEmm;
+            else if (ends(".tex")) fix = endian::fixTex;
+            else if (ends("font.bin")) fix = endian::fixFont;
+            else if (ends(".emt")) fix = endian::fixEmt;
+            else if (ends(".lvy")) fix = endian::fixLvy;
+            else if (ends(".raw")) fix = endian::fixRaw;
+            if (!fix) continue;
+            int size = 0;
+            void* p = sys::loadFile(("./" + path).c_str(), &size);     // ("./": no HD/ swap)
+            if (!p) { printf("swapcheck: can't read %s\n", path.c_str()); bad++; continue; }
+            std::vector<uint8_t> orig((uint8_t*)p, (uint8_t*)p + size);
+            bool there = fix(p, size, true);
+            bool changed = memcmp(orig.data(), p, size) != 0;
+            bool back = fix(p, size, false);
+            bool same = memcmp(orig.data(), p, size) == 0;
+            if (!there || !back || !same || !changed) { printf("swapcheck: %s FAILED (to BE %d, back %d, same %d, changed %d)\n", path.c_str(), there, back, same, changed); bad++; }
+            checked++;
+            sys::freeFile(p);
+        }
+    }
+    printf("swapcheck: %d files, %d bad\n", checked, bad);
+    return bad ? 1 : 0;
+}
+
 int main(int argc, char** argv) {
     if (argc < 3) { fprintf(stderr, "usage: see source\n"); return 1; }
     sys::init();
@@ -48,6 +95,7 @@ int main(int argc, char** argv) {
     if (!g.init()) { fprintf(stderr, "init failed (run from the folder that holds DATA/)\n"); return 1; }
     g.autoAllowed = false;          // fixed time steps here: the automatic quality would react to them
     std::string mode = argv[1];
+    if (mode == "swapcheck") return swapCheck(argc, argv);
     if (mode != "intro") { sound::musicFile(nullptr); g.screen = SCR_TITLE; }
     if (mode == "intro") {
         // play the intro with the real audio clock and grab frames at the sync points

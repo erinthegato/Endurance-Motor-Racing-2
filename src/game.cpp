@@ -1050,9 +1050,9 @@ void Game::drawRaceView() {
         }
     }
     R.drawWeather(race, cockpit);
-    // PS Vita: rear-view mirror strip at the top (a second, lighter view of the scene); off while the
+    // PS Vita / PS3: rear-view mirror strip at the top (a second, lighter view of the scene); off while the
     // start lights show, in the pit-stop cinematics, and when automatic quality has had to step in
-    if (input::hasTouch() && cfg.mirror && autoLevel < 2 && !manage && !cine && !wall && (screen == SCR_RACE || screen == SCR_PAUSE) && race.countdown <= 0 && race.time > 1.5f) {
+    if (gfx::highDetail() && cfg.mirror && autoLevel < 2 && !manage && !cine && !wall && (screen == SCR_RACE || screen == SCR_PAUSE) && race.countdown <= 0 && race.time > 1.5f) {
         const float MX = SCREEN_W / 2 - 72, MY = 4, MW = 144, MH = 32;
         if (gfx::beginInset(MX, MY, MW, MH, R.skyColour(race))) {
             Camera m;
@@ -1461,7 +1461,7 @@ int Game::optRows(int* ids) const {
     int n = 0;
     if (optCat == OC_SOUND) { for (int i = 0; i <= 4; i++) ids[n++] = i; ids[n++] = 20; }
     if (optCat == OC_DISPLAY) for (int i = 5; i <= 12; i++) ids[n++] = i;
-    if (optCat == OC_CAMERA) { ids[n++] = 13; ids[n++] = 14; ids[n++] = 17; ids[n++] = 18; if (input::hasTouch()) ids[n++] = 19; }
+    if (optCat == OC_CAMERA) { ids[n++] = 13; ids[n++] = 14; ids[n++] = 17; ids[n++] = 18; if (gfx::highDetail()) ids[n++] = 19; }
     ids[n++] = 16;   // Back
     return n;
 }

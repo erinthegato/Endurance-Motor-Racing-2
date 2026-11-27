@@ -1,4 +1,5 @@
 #include "data.h"
+#include "endian.h"
 #include <cstdlib>
 #include <cstring>
 
@@ -87,6 +88,9 @@ bool Model::load(const char* path) {
     int size = 0;
     blob = sys::loadFile(path, &size);
     if (!blob) return false;
+#if EMR_SWAP
+    if (!endian::fixEmm(blob, size, true)) { sys::log("bad model %s\n", path); unload(); return false; }
+#endif
     const u8* p = (const u8*)blob;
     if (memcmp(p, "EMM1", 4) != 0) { unload(); return false; }
     p += 4;
@@ -125,6 +129,9 @@ bool TexFile::load(const char* path) {
     if (!blob) return false;
     const u8* p = (const u8*)blob;
     if (memcmp(p, "TEX1", 4) != 0) { unload(); return false; }
+#if EMR_SWAP
+    if (!endian::fixTex(blob, size, true)) { unload(); return false; }
+#endif
     uint32_t s; memcpy(&s, p + 4, 4);
     tex.w = tex.h = (int)s; tex.palette = (const u32*)(p + 16); tex.pixels = p + 16 + 1024;
     gfx::flushCache(blob, size);
@@ -139,6 +146,9 @@ bool Font::load(const char* path) {
     const u8* p = (const u8*)blob;
     bool v2 = memcmp(p, "FNT2", 4) == 0;
     if (!v2 && memcmp(p, "FNT1", 4) != 0) return false;
+#if EMR_SWAP
+    if (!endian::fixFont(blob, size, true)) return false;
+#endif
     uint32_t w, h, lh; memcpy(&w, p + 4, 4); memcpy(&h, p + 8, 4); memcpy(&lh, p + 12, 4);
     texScale = v2 ? (int)(lh >> 16) : 1;
     if (texScale < 1) texScale = 1;

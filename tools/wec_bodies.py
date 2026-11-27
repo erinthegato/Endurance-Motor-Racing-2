@@ -26,6 +26,28 @@ from gen_cars import Mesh, curve, sstep
 
 R_TYRE = 0.355          # 71 cm tyres (both classes, near enough: GT3 fronts 68 cm)
 
+# PS3: the top level of detail (lod -1) is built denser still (tools/gen_wec.py --ps3 -> ps3/data/models):
+# twice the stations along the body, the cross-sections' curved upper half subdivided (rounder),
+# a finer canopy. The Vita's set (HD/models) is unchanged.
+PS3 = False
+
+
+def smooth_half(half, start, k=2):
+    """Catmull-Rom subdivision of a half profile's points from `start` on (the curved upper body):
+    k-1 new points between each pair, on a smooth curve through the old ones (the old ones are kept)"""
+    if k < 2 or len(half) - start < 3:
+        return half
+    P = [np.array(p, float) for p in half]
+    out = [tuple(p) for p in half[:start]]
+    for i in range(start, len(P) - 1):
+        p0 = P[max(i - 1, start)]; p1 = P[i]; p2 = P[i + 1]; p3 = P[min(i + 2, len(P) - 1)]
+        for j in range(k):
+            t = j / k
+            q = 0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (-p0 + 3 * p1 - 3 * p2 + p3) * t ** 3)
+            out.append((float(q[0]), float(q[1])))
+    out.append(tuple(P[-1]))
+    return out
+
 
 def arch_z(x, axles, base):
     """the top of the wheel arch opening at x (base where there is no wheel)"""
@@ -122,6 +144,8 @@ def proto_ring(x, spec, fns, lod):
             (w * 0.69, f - 0.04), (w * 0.60, max(d + 0.05, f - 0.16)), (w * 0.52, d + 0.025), (w * 0.28, d + 0.008), (0.0, d)]
     if lod >= 2:
         half = [half[i] for i in (0, 1, 2, 3, 4, 6, 8, 10, 12)]
+    elif PS3 and lod < 0:
+        half = smooth_half(half, 4)
     return mirror_ring(x, half)
 
 
@@ -139,13 +163,15 @@ def build_proto(spec, lod):
     fns = proto_fns(spec)
     W, deck, fend, under = fns
     m = Mesh(L)
-    n_body = {-1: 30, 0: 16, 2: 7}[lod]
+    n_body = {-1: 60 if PS3 else 30, 0: 16, 2: 7}[lod]
     xs = stations(xf, xr, (fa, ra) if lod < 2 else (), n_body)
     m.loft([proto_ring(x, spec, fns, lod) for x in xs])
     # the canopy: a teardrop over the central seat; glass from the screen to behind the driver's head
     cw, ct = canopy_fns(spec)
     cxs = {-1: list(np.linspace(1.05, -1.75, 14)), 0: list(np.linspace(1.05, -1.75, 8)), 2: [1.05, 0.3, -0.5, -1.75]}[lod]
     angs = {-1: [0, 15, 30, 45, 60, 75, 90], 0: [0, 30, 60, 90], 2: [0, 50, 90]}[lod]
+    if PS3 and lod < 0:
+        cxs = list(np.linspace(1.05, -1.75, 28)); angs = [a * 7.5 for a in range(13)]
     rings = []
     for x in cxs:
         w = cw(x); zt = ct(x); zb = deck(x) - 0.03
@@ -327,6 +353,8 @@ def gt_ring(x, spec, fns, lod):
             (w * 0.62, t + 0.01 + bulge * 0.5), (w * 0.30, t + bulge), (0.0, t + bulge)]
     if lod >= 2:
         half = [half[i] for i in (0, 1, 2, 3, 4, 6, 8, 10)]
+    elif PS3 and lod < 0:
+        half = smooth_half(half, 4)
     return mirror_ring(x, half)
 
 
@@ -353,7 +381,7 @@ def build_gt(spec, lod):
     fns = gt_fns(spec)
     W, top, fend = fns
     m = Mesh(L)
-    n_body = {-1: 28, 0: 15, 2: 7}[lod]
+    n_body = {-1: 56 if PS3 else 28, 0: 15, 2: 7}[lod]
     xs = stations(xf, xr, (fa, ra) if lod < 2 else (), n_body)
     m.loft([gt_ring(x, spec, fns, lod) for x in xs])
     # the glass house: belt -> roof, glass on the windscreen, side windows and rear glass, the roof painted

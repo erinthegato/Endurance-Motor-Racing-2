@@ -1,4 +1,5 @@
 #include "sound.h"
+#include "endian.h"
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>
@@ -93,6 +94,9 @@ inline int decodeNibble(int* st, int code) {
     return st[0];
 }
 
+// a music file's header (8 numbers, little-endian in the file) -> this machine's numbers
+void musicHeader(uint32_t* h) { for (int i = 0; i < 8; i++) h[i] = endian::fromFile32(h[i]); }
+
 void loadPlaylist() {
     mLoaded = true;
     int size = 0;
@@ -132,7 +136,7 @@ void openNext() {
         std::string path = "DATA/music/" + mForce;
         mFile = fopen(path.c_str(), "rb");
         uint32_t h[8];
-        if (mFile && (fread(h, 4, 8, mFile) != 8 || h[0] != 0x31554D45u)) { fclose(mFile); mFile = nullptr; }
+        if (mFile && (fread(h, 4, 8, mFile) != 8 || (musicHeader(h), h[0] != 0x31554D45u))) { fclose(mFile); mFile = nullptr; }
         if (mFile && h[2] != 1 && h[2] != 2) { fclose(mFile); mFile = nullptr; }
         if (mFile) { mFrames = h[3]; mCh = (int)h[2]; mDone = 0; mStart = sys::timeSec(); }
         return;
@@ -159,7 +163,7 @@ void openNext() {
     mFile = fopen(path.c_str(), "rb");
     if (!mFile) return;
     uint32_t h[8];
-    if (fread(h, 4, 8, mFile) != 8 || h[0] != 0x31554D45u || (h[2] != 1 && h[2] != 2)) { fclose(mFile); mFile = nullptr; return; }
+    if (fread(h, 4, 8, mFile) != 8 || (musicHeader(h), h[0] != 0x31554D45u) || (h[2] != 1 && h[2] != 2)) { fclose(mFile); mFile = nullptr; return; }
     mFrames = h[3]; mCh = (int)h[2]; mDone = 0;
     mStart = sys::timeSec();
 }
@@ -173,6 +177,9 @@ int sfxFor(const char* name) {
     int size = 0;
     void* p = sys::loadFile(path, &size);
     if (!p) return -1;
+#if EMR_SWAP
+    endian::fixRaw(p, size, true);
+#endif
     Clip& c = sfx[sfxCount];
     c.name = name; c.data = (int16_t*)p; c.len = size / 2; c.adp = c.ulaw = nullptr; c.step = 0.5f;
     bool adp = size >= 12 && !memcmp(p, "ADP1", 4), mu = size >= 12 && !memcmp(p, "ULW1", 4);
@@ -193,6 +200,9 @@ int clipFor(const char* name) {
     int size = 0;
     void* p = sys::loadFile(path, &size);
     if (!p) return -1;
+#if EMR_SWAP
+    endian::fixRaw(p, size, true);
+#endif
     clips[clipCount].name = name; clips[clipCount].data = (int16_t*)p; clips[clipCount].len = size / 2;
     return clipCount++;
 }
@@ -412,7 +422,7 @@ void update() {
             openNext(); if (!mFile) return; continue;
         }
         int ch = mCh;
-        for (int c = 0; c < ch; c++) { int16_t p; memcpy(&p, blk + c * 4, 2); mState[c][0] = p; mState[c][1] = blk[c * 4 + 2] > 88 ? 88 : blk[c * 4 + 2]; }
+        for (int c = 0; c < ch; c++) { int16_t p; memcpy(&p, blk + c * 4, 2); p = endian::fromFile16(p); mState[c][0] = p; mState[c][1] = blk[c * 4 + 2] > 88 ? 88 : blk[c * 4 + 2]; }
         int n = (int)(mFrames - mDone < 2048 ? mFrames - mDone : 2048);
         int w = ringW;
         const uint8_t* data = blk + ch * 4;

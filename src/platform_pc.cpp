@@ -160,6 +160,7 @@ void blendPixel(int x, int y, u32 c) {
 namespace pc { float fakeWait = 0; }   // tests: pretend the frame waited this long for the screen
 namespace gfx {
 bool gpuClips() { return false; }
+bool highDetail() { return ::pc::touchUi; }      // (the PC test plays the Vita when it plays the touch screen)
 void beginFrame(u32 clear) {
     for (int i = 0; i < SCREEN_W * SCREEN_H; i++) { fb[i] = clear | 0xFF000000; zb[i] = 1e9f; }
     scratchUsed = 0; trisDrawn = 0; drawCalls = 0; vertsSent = 0;
@@ -280,7 +281,9 @@ double timeSec() { return std::chrono::duration<double>(std::chrono::steady_cloc
 void* loadFile(const char* path, int* size) {
     // EMR_HD=1: like the Vita, a model in HD/ replaces the one in DATA/
     FILE* f = nullptr;
-    if (!getenv("FL_LOWRES") && !strncmp(path, "DATA/", 5)) { std::string hd = std::string("HD/") + (path + 5); f = fopen(hd.c_str(), "rb"); }
+    // EMR_PS3=1: the PS3's set first (ps3/data/: the denser car models), as the PS3 build reads it
+    if (getenv("EMR_PS3") && !strncmp(path, "DATA/", 5)) { std::string ps3 = std::string("ps3/data/") + (path + 5); f = fopen(ps3.c_str(), "rb"); }
+    if (!f && !getenv("FL_LOWRES") && !strncmp(path, "DATA/", 5)) { std::string hd = std::string("HD/") + (path + 5); f = fopen(hd.c_str(), "rb"); }
     if (!f) f = fopen(path, "rb");
     if (!f) return nullptr;
     fseek(f, 0, SEEK_END); long n = ftell(f); fseek(f, 0, SEEK_SET);

@@ -1,0 +1,28 @@
+// Endurance Motor Racing 2.0 (PS3): the one vertex program. Does what the Vita's fixed-function
+// OpenGL did: position through the matrices, the vertex colour, the texture coordinates, and the
+// linear fog (worked out here, per vertex, so its numbers are plain vertex-program constants).
+void main
+(
+	float4 vPos : POSITION,
+	float4 vCol : COLOR0,            // the game's 0xAABBGGRR colour, read as bytes: A B G R
+	float2 vUv  : TEXCOORD0,
+
+	uniform float4x4 mvp,           // projection * view * model
+	uniform float4 mvz,             // the model-view matrix's third row: eye-space z = dot(mvz, pos)
+	uniform float4 fogp,            // x: fog end, y: 1 / (end - start), z: 1 = fog on
+	uniform float4 fogc,            // fog colour
+
+	out float4 oPos : POSITION,
+	out float4 oCol : COLOR0,
+	out float2 oUv  : TEXCOORD0,
+	out float4 oFog : TEXCOORD1
+)
+{
+	float4 p = float4(vPos.xyz, 1.0f);
+	oPos = mul(mvp, p);
+	oCol = vCol.wzyx;
+	oUv = vUv;
+	float d = abs(dot(mvz, p));
+	float clear = saturate((fogp.x - d) * fogp.y);
+	oFog = float4(fogc.xyz, (1.0f - clear) * fogp.z);
+}

@@ -1,4 +1,5 @@
 #include "track.h"
+#include "endian.h"
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>
@@ -34,6 +35,9 @@ bool Track::load(const TrackDef* d, bool scenery) {
     if (!f) { sys::log("missing %s\n", path); return false; }
     const u8* p = f;
     if (memcmp(p, "EMT1", 4) != 0) { sys::freeFile(f); return false; }
+#if EMR_SWAP
+    if (!endian::fixEmt(f, size, true)) { sys::freeFile(f); return false; }
+#endif
     uint32_t cnt; memcpy(&cnt, p + 4, 4); memcpy(&step, p + 8, 4); memcpy(&length, p + 12, 4); p += 16;
     n = (int)cnt;
     pts.resize(n);

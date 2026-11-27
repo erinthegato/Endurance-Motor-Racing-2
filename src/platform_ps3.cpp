@@ -30,7 +30,7 @@
 #include <sys/process.h>
 #include <sys/thread.h>
 #include <lv2/systime.h>
-#include <lv2/sysfs.h>
+#include <sys/stat.h>
 #include <rsx/rsx.h>
 #include <sysutil/video.h>
 #include <sysutil/sysutil.h>
@@ -456,7 +456,11 @@ static float waitSec = 0;
 static double lastFlip = 0;
 float lastWaitSec() { return waitSec; }
 float lastGpuWaitSec() { return 0; }
-void setSync(bool, int every) { syncEvery = every < 1 ? 1 : every; }
+// vsync off (the benchmark): flip at once, so the frame rate shows the real headroom above 60
+void setSync(bool vsync, int every) {
+    syncEvery = every < 1 ? 1 : every;
+    gcmSetFlipMode(vsync || syncEvery > 1 ? GCM_FLIP_VSYNC : GCM_FLIP_HSYNC);
+}
 
 void beginFrame(u32 clear) {
     // this frame's half of the frame memory was last used two frames ago: wait until the RSX is done with it
@@ -742,7 +746,7 @@ bool init() {
 
     ioPadInit(7);
     sysUtilRegisterCallback(0, onSysutil, nullptr);
-    sysFsMkdir(saveDir().c_str(), 0755);
+    mkdir(saveDir().c_str(), 0755);
     log("Endurance Motor Racing 2.0 (PS3): %ux%u, game folder %s\n", dispW, dispH, gameDir.c_str());
     return true;
 }

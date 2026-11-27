@@ -277,7 +277,7 @@ void Game::benchUpdate(float dt) {
     struct Scene { const char* what; float secs; };
     static const Scene S[] = {
         {"menus", 10}, {"ardennes chase", 40}, {"ardennes cockpit", 25}, {"sablons night", 35},
-        {"kagami storm", 35}, {"santerno pitwall", 25}, {"livery", 8}, {"end", 0}};
+        {"kagami storm", 35}, {"santerno pitwall", 25}, {"full grid", 40}, {"livery", 8}, {"end", 0}};
     const int N = sizeof S / sizeof S[0];
     benchT += dt; idle = 0;
     if (benchStep >= 0 && benchT < S[benchStep].secs) return;
@@ -315,6 +315,8 @@ void Game::benchUpdate(float dt) {
     if (!strcmp(w, "sablons night")) { s.track = track("lemans"); s.weather = WX_DRY; s.startType = START_ROLLING; s.eventHours = 24; }
     if (!strcmp(w, "kagami storm")) { s.track = track("fuji"); s.weather = WX_STORM; s.car = 12; }
     if (!strcmp(w, "santerno pitwall")) { s.track = track("imola"); s.weather = WX_DRY; }
+    // the heaviest real case: the whole 40-car WEC grid (both classes) at Le Mans, rolling start
+    if (!strcmp(w, "full grid")) { s.track = track("lemans"); s.weather = WX_DRY; s.opponents = 39; s.startType = START_ROLLING; s.eventHours = 24; }
     set = s; champMode = false; careerMode = false;
     aiDrivesPlayer = strcmp(w, "santerno pitwall") != 0;
     cam = CAM_CHASE;

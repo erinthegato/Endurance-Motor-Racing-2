@@ -131,6 +131,30 @@ jobs:
           path: ps3/build/EnduranceMotorRacing2.pkg
           compression-level: 0
 
+  # the ps3-port branch: its PS3 package as a test pre-release (tag ps3-test, never "latest"), so it can
+  # be fetched for testing in RPCS3 (each push replaces it)
+  ps3-test-release:
+    if: github.ref == 'refs/heads/ps3-port'
+    needs: ps3
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v6
+        with:
+          name: EnduranceMotorRacing2-PS3
+          path: out
+      - uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ps3-test
+          target_commitish: ${{ github.sha }}
+          name: PS3 test build (ps3-port branch)
+          body: "Test build of the PS3 port from the ps3-port branch (${{ github.sha }}). Install EnduranceMotorRacing2.pkg in RPCS3 (File > Install Packages) or on a PS3 with HEN / CFW."
+          prerelease: true
+          make_latest: false
+          overwrite_files: true
+          files: out/EnduranceMotorRacing2.pkg
+
   pc-test:
     runs-on: ubuntu-latest
     steps:

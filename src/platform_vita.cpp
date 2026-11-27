@@ -408,6 +408,10 @@ bool gpuClips() { return true; }
 bool highDetail() { return true; }
 void setLighting(const Lighting&) {}
 void setLit(bool) {}
+void setEye(const V3&) {}
+void setSurface(int) {}
+bool beginShadow(const V3&, const V3&, float) { return false; }
+void endShadow() {}
 void setMaterial(float, float) {}
 void attachNormals(const ModelVertex*, const int8_t*, int) {}
 // The Vita has plenty of video memory; textures already live on the GPU once bound.

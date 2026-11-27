@@ -145,7 +145,7 @@ def proto_ring(x, spec, fns, lod):
     if lod >= 2:
         half = [half[i] for i in (0, 1, 2, 3, 4, 6, 8, 10, 12)]
     elif PCSET and lod < 0:
-        half = smooth_half(half, 4)
+        half = smooth_half(half, 7)
     return mirror_ring(x, half)
 
 
@@ -163,7 +163,7 @@ def build_proto(spec, lod):
     fns = proto_fns(spec)
     W, deck, fend, under = fns
     m = Mesh(L)
-    n_body = {-1: 60 if PCSET else 30, 0: 16, 2: 7}[lod]
+    n_body = {-1: 100 if PCSET else 30, 0: 16, 2: 7}[lod]
     xs = stations(xf, xr, (fa, ra) if lod < 2 else (), n_body)
     m.loft([proto_ring(x, spec, fns, lod) for x in xs])
     # the canopy: a teardrop over the central seat; glass from the screen to behind the driver's head
@@ -171,7 +171,7 @@ def build_proto(spec, lod):
     cxs = {-1: list(np.linspace(1.05, -1.75, 14)), 0: list(np.linspace(1.05, -1.75, 8)), 2: [1.05, 0.3, -0.5, -1.75]}[lod]
     angs = {-1: [0, 15, 30, 45, 60, 75, 90], 0: [0, 30, 60, 90], 2: [0, 50, 90]}[lod]
     if PCSET and lod < 0:
-        cxs = list(np.linspace(1.05, -1.75, 28)); angs = [a * 7.5 for a in range(13)]
+        cxs = list(np.linspace(1.05, -1.75, 44)); angs = [a * 5.0 for a in range(19)]
     rings = []
     for x in cxs:
         w = cw(x); zt = ct(x); zb = deck(x) - 0.03
@@ -233,6 +233,23 @@ def build_proto(spec, lod):
         # the roof antenna and the tow strap
         m.box((-0.36, -0.004, ct(-0.36)), (-0.30, 0.004, ct(-0.36) + 0.15), uv='carbon')
         m.box((xr - 0.03, -0.03, 0.30), (xr + 0.01, 0.03, 0.34), uv='yellow')
+    if lod < 0 and PCSET:
+        # the PC's close-up details: the wiper parked at the screen's foot, the roof's position
+        # lights, the refuelling and air-jack couplings, the front tow eye
+        def on_canopy(x, y, lift):
+            w = cw(x); zt = ct(x); zb = deck(x) - 0.03
+            c = min(abs(y) / max(w, 1e-3), 1.0)
+            return (x, y, zb + (zt - zb) * float(np.sqrt(max(1 - c * c, 0))) + lift)
+        xw = 0.93
+        m.tube([on_canopy(xw, -0.30, 0.012), on_canopy(xw - 0.015, -0.08, 0.014), on_canopy(xw - 0.03, 0.14, 0.012)], 0.006, sides=6, uv='carbon')
+        m.tube([on_canopy(xw - 0.02, -0.30, 0.004), on_canopy(xw - 0.02, -0.30, 0.03)], 0.012, sides=6, uv='carbon')      # its pivot
+        for s in (-1, 1):
+            m.box((-0.05, s * 0.06 - 0.012, ct(-0.05) - 0.004), (0.02, s * 0.06 + 0.012, ct(-0.05) + 0.012), uv='red' if s > 0 else 'white', shade=1.3)
+            # fuel and air couplings on the pod tops behind the doors
+            xc = -0.55; yc = s * W(xc) * 0.70
+            m.cyl((xc, yc, fend(xc) - 0.01), (xc, yc, fend(xc) + 0.025), 0.035, sides=12, uv='grey', shade=1.1)
+            m.cyl((xc, yc, fend(xc) + 0.025), (xc, yc, fend(xc) + 0.03), 0.022, sides=10, uv='red', shade=1.2)
+        m.tube([(xf - 0.02, 0.0, 0.10), (xf + 0.015, 0.0, 0.10), (xf + 0.015, 0.0, 0.14)], 0.009, sides=6, uv='yellow')     # tow eye
     return m
 
 
@@ -354,7 +371,7 @@ def gt_ring(x, spec, fns, lod):
     if lod >= 2:
         half = [half[i] for i in (0, 1, 2, 3, 4, 6, 8, 10)]
     elif PCSET and lod < 0:
-        half = smooth_half(half, 4)
+        half = smooth_half(half, 7)
     return mirror_ring(x, half)
 
 
@@ -381,7 +398,7 @@ def build_gt(spec, lod):
     fns = gt_fns(spec)
     W, top, fend = fns
     m = Mesh(L)
-    n_body = {-1: 56 if PCSET else 28, 0: 15, 2: 7}[lod]
+    n_body = {-1: 96 if PCSET else 28, 0: 15, 2: 7}[lod]
     xs = stations(xf, xr, (fa, ra) if lod < 2 else (), n_body)
     m.loft([gt_ring(x, spec, fns, lod) for x in xs])
     # the glass house: belt -> roof, glass on the windscreen, side windows and rear glass, the roof painted
@@ -451,6 +468,18 @@ def build_gt(spec, lod):
         m.box((xr - 0.03, -0.03, 0.30), (xr + 0.01, 0.03, 0.34), uv='yellow')
         rz = max(gt_cabin(spec, fns)[1])
         m.box((spec['cab'] - 0.35, -0.004, rz), (spec['cab'] - 0.29, 0.004, rz + 0.12), uv='carbon')    # antenna
+    if lod < 0 and PCSET:
+        # the PC's close-up details: twin exhausts under the tail, the refuelling coupling in the rear
+        # side window, the roof's position lights, the front tow eye
+        for s in (-1, 1):
+            m.cyl((xr + 0.22, s * 0.36, 0.20), (xr + 0.002, s * 0.36, 0.20), 0.048, sides=12, uv='grey', shade=1.1)
+            m.cyl((xr + 0.004, s * 0.36, 0.20), (xr + 0.24, s * 0.36, 0.20), 0.036, sides=12, uv='carbon', shade=0.3, caps=False)   # the dark inside
+        xs_, roof = gt_cabin(spec, fns)
+        xfc = spec['cab'] - 0.55; zfc = top(xfc) + 0.12
+        m.cyl((xfc, W(xfc) * 0.80, zfc), (xfc, W(xfc) * 0.80 + 0.03, zfc), 0.04, sides=12, uv='grey', shade=1.1)
+        for s in (-1, 1):
+            m.box((spec['cab'] + 0.05, s * 0.10 - 0.012, rz - 0.004), (spec['cab'] + 0.12, s * 0.10 + 0.012, rz + 0.012), uv='red' if s > 0 else 'white', shade=1.3)
+        m.tube([(xf - 0.02, 0.25, 0.16), (xf + 0.015, 0.25, 0.16), (xf + 0.015, 0.25, 0.20)], 0.009, sides=6, uv='yellow')
     return m
 
 

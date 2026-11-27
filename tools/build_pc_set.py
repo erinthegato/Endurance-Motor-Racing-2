@@ -32,6 +32,9 @@ def main():
     prev = sys.argv[1:2]
     run('tools/gen_wec.py', '--pc', *prev)
     run('tools/gen_trackside.py', '--pc', *prev)
+    # the circuit buildings: the PC uses the code-made versions (tools/gen_props.py) -- chamfered edges,
+    # real steps for every row, rails, trusses and floodlights, each with its own 1024 px picture
+    run('tools/gen_props.py', '--pc', 'grandstand', 'billboard', 'ad_bridge', 'race_control', 'hospitality')
     run('tools/gen_crew.py', '--pc')
     run('tools/gen_cockpit.py', '--pc')
     run('tools/gen_textures.py', '--pc', *prev)

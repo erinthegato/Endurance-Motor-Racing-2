@@ -163,6 +163,10 @@ bool gpuClips() { return false; }
 bool highDetail() { return ::pc::touchUi; }      // (the PC test plays the Vita when it plays the touch screen)
 void setLighting(const Lighting&) {}
 void setLit(bool) {}
+void setEye(const V3&) {}
+void setSurface(int) {}
+bool beginShadow(const V3&, const V3&, float) { return false; }
+void endShadow() {}
 void setMaterial(float, float) {}
 void attachNormals(const ModelVertex*, const int8_t*, int) {}
 void beginFrame(u32 clear) {

@@ -134,6 +134,12 @@ dusk), the sky and the ground light each surface by which way it faces, and car 
 clear-coat shine. The PC models carry their normals in an `EMN1` block (written by the tools with
 `--pc`). Start the game with the environment variable `EMR_NOLIGHT=1` to compare with the old look.
 
+The sun also casts shadows (a 4096 px shadow map around the camera): cars on the track and on each
+other, the stands, buildings, trees and walls, and the car's own bodywork over the cockpit.
+`EMR_NOSHADOW=1` turns them off; `EMR_SHADOWMAP=2048` uses a smaller map on a slower graphics card.
+The ground gets fine grain close up and soft patches further away (so the textures don't visibly
+repeat), and the road a sheen that turns into a mirror in the rain.
+
 To check the PC renderer without a Windows machine: `make -f Makefile.headless` builds `emr_gl`,
 which draws with OpenGL offscreen (EGL + Mesa) and saves screenshots, e.g.
 `mkdir -p /tmp/gl && EMR_WX=1 EMR_CLOCK=18.3 ./emr_gl race lemans 0 1 11 /tmp/gl 25`.

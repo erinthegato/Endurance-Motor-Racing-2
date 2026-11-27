@@ -129,6 +129,11 @@ def wheel(R, hw, spokes, sides, pairs=False):
     m = Mesh(1.0)
     rr = R - 0.12
     prof = [(-hw, rr + 0.02), (-hw, R - 0.03), (-hw + 0.03, R), (hw - 0.03, R), (hw, R - 0.03), (hw, rr + 0.02)]
+    if PCSET and sides >= 32:
+        # the PC's near tyre: rounded shoulders and a bulging sidewall
+        sh = [(-hw + 0.03 - 0.03 * np.cos(t), R - 0.03 + 0.03 * np.sin(t)) for t in np.linspace(0, np.pi / 2, 5)]
+        prof = [(-hw + 0.004, rr + 0.02), (-hw - 0.006, rr + 0.06), (-hw - 0.004, R - 0.07)] + sh + \
+               [(-y, z) for y, z in sh[::-1]] + [(hw + 0.004, R - 0.07), (hw + 0.006, rr + 0.06), (hw - 0.004, rr + 0.02)]
     rings = []
     for k in range(sides + 1):
         a = k * 2 * np.pi / sides
@@ -148,6 +153,16 @@ def wheel(R, hw, spokes, sides, pairs=False):
         m.cyl((0, hw - 0.005, 0), (0, hw + 0.012, 0), 0.028, sides=6, uv='red', shade=1.2)       # centre-lock nut
         m.cyl((0, -0.02, 0), (0, 0.0, 0), rr - 0.035, sides=sides, uv='cage', shade=0.7)        # brake disc (<= 381 mm)
         m.box((rr - 0.115, -0.035, -0.07), (rr - 0.03, 0.035, 0.07), uv='caliper', shade=1.2)
+        if PCSET and sides >= 32:
+            # the PC: a ventilated disc (two plates, vanes between) on its bell, five drive pegs on the hub
+            m.cyl((0, -0.055, 0), (0, -0.035, 0), rr - 0.035, sides=sides, uv='cage', shade=0.7)
+            for k in range(36):
+                a = k * 2 * np.pi / 36; c, s_ = np.cos(a), np.sin(a)
+                m.tube([((rr * 0.45) * c, -0.045, (rr * 0.45) * s_), ((rr - 0.04) * c, -0.045, (rr - 0.04) * s_)], 0.006, sides=4, uv='cage', shade=0.45)
+            m.cyl((0, -0.035, 0), (0, hw - 0.06, 0), rr * 0.42, sides=24, uv='grey', shade=0.8, caps=False)
+            for k in range(5):
+                a = k * 2 * np.pi / 5
+                m.cyl((0.075 * np.cos(a), hw - 0.03, 0.075 * np.sin(a)), (0.075 * np.cos(a), hw - 0.012, 0.075 * np.sin(a)), 0.009, sides=6, uv='grey', shade=1.2)
     else:
         m.cyl((0, hw - 0.012, 0), (0, hw, 0), rr, sides=sides, uv='grey', shade=0.9)              # far: a plain disc
     return m
@@ -251,8 +266,9 @@ def main():
             wl = [(wheel(R, hw, 10, 16, pairs=True), t, S), (wheel(R, hw, 6, 12), t, 128), (wheel(R, hw, 0, 8), t, 64)]
         print(f'wheel_{era}', write_emm(os.path.join(out, f'wheel_{era}.emm'), wl))
     NEW_DASH = (0.0, 0.0, 0.0, 0.0, 2)        # EMX1 flags bit 1: the Vita's dash instruments
-    # the cockpits and steering wheels: the PC's refined onto their curves (rounder rims, grips, seats, dash)
-    ref = (lambda m: m.refined(1)) if PCSET else (lambda m: m)
+    # the cockpits and steering wheels: the PC's refined twice onto their curves (rounder rims, grips,
+    # seats, dash: they are always right in front of you)
+    ref = (lambda m: m.refined(2)) if PCSET else (lambda m: m)
     print('cockpit_hypercar', write_emm(os.path.join(out, 'cockpit_hypercar.emm'), [(ref(B.proto_interior()), t, S)], emx=NEW_DASH))
     print('cockpit_gt3', write_emm(os.path.join(out, 'cockpit_gt3.emm'), [(ref(B.gt_interior()), t, S)], emx=NEW_DASH))
     print('steering_hyper', write_emm(os.path.join(out, 'steering_hyper.emm'), [(ref(G.hd_steering(True)), t, S)], emx=NEW_DASH))

@@ -77,21 +77,39 @@ def asphalt(n=512):
     img = to_img(rgb)
     d = ImageDraw.Draw(img)
     # sealant lines (dark, thin, wandering), a couple of patches and oil drops
-    for k in range(5):
+    for _i in range(5):
         x = rng.randint(0, n); y = rng.randint(0, n); pts = []
         for s in range(14):
             pts.append((x, y)); x += rng.randint(-6, 7) * k; y += rng.randint(8, 22) * k
         for dx in (-n, 0, n):
             for dy in (-n, 0, n):
                 d.line([(px + dx, py + dy) for px, py in pts], fill=(30, 30, 33), width=max(1, round(2 * k)))
-    for k in range(2):
-        x0 = rng.randint(0, n); y0 = rng.randint(0, n); w = rng.randint(40, 90) * k; h = rng.randint(60, 140) * k
+    for _i in range(2):
+        x0 = rng.randint(0, n); y0 = rng.randint(0, n); w = int(rng.randint(40, 90) * k); h = int(rng.randint(60, 140) * k)
         wrap_draw(d, n, lambda dd, x, y: dd.rectangle((x, y, x + w, y + h), fill=(52, 53, 57), outline=(34, 34, 37)), x0, y0, max(w, h))
-    for k in range(9):
+    for _i in range(9):
         x = rng.randint(0, n); y = rng.randint(0, n); r = rng.randint(2, 5) * k
         wrap_draw(d, n, lambda dd, xx, yy: dd.ellipse((xx - r, yy - r * 1.4, xx + r, yy + r * 1.4), fill=(38, 38, 41)), x, y, r * 2)
+    if n > 512:
+        # the PC: the stones of the aggregate (light and dark chips, each lit from above), and the
+        # fine pores between them -- what the surface looks like close up
+        a = np.asarray(img, np.float32) / 255
+        pores = noise(n, n / 6, 31, 2)
+        a *= (0.86 + 0.28 * pores)[..., None]
+        img = to_img(a); d = ImageDraw.Draw(img)
+        for _ in range(int(90000 * (n / 2048) ** 2)):
+            x = rng.rand() * n; y = rng.rand() * n; r = (0.5 + rng.rand() ** 2 * 1.3) * k / 2
+            t = rng.rand()
+            tone = 0.24 + 0.12 * t if t > 0.3 else 0.16 + 0.06 * t
+            col = (int(255 * tone), int(255 * tone * 0.99), int(255 * tone * 1.03))
+            hi = tuple(min(255, int(c * 1.18)) for c in col); sh = tuple(int(c * 0.7) for c in col)
+            def chip(dd, xx, yy):
+                dd.ellipse((xx - r, yy - r * 0.8 + r * 0.5, xx + r, yy + r * 0.8 + r * 0.5), fill=sh)
+                dd.ellipse((xx - r, yy - r * 0.8, xx + r, yy + r * 0.8), fill=col)
+                if r > 0.9: dd.ellipse((xx - r * 0.5, yy - r * 0.6, xx + r * 0.1, yy - r * 0.15), fill=hi)
+            wrap_draw(d, n, chip, x, y, r)
     # faint skid marks along the road
-    for k in range(4):
+    for _i in range(4):
         x = rng.randint(n // 5, 4 * n // 5); y = rng.randint(0, n); L = int(rng.randint(80, 220) * k)
         for t in range(L):
             xx = x + int(6 * k * np.sin(t / (40.0 * k))); yy = (y + t) % n
@@ -127,6 +145,23 @@ def grass(n=512):
     yy = (np.arange(n) + 0.5) / n
     stripe = 1.0 + 0.07 * np.sign(np.sin(yy * 2 * np.pi))[:, None, None]
     a = a * stripe * (0.92 + 0.16 * noise(n, 3, 8)[..., None])
+    if n > 512:
+        # the PC: a dense sward -- fine streaks along the blades (noise stretched one way) under the
+        # drawn blades, sun-dried yellow patches, damp darker hollows, and soil showing in the thin spots
+        dry = np.clip((noise(n, 7, 41) - 0.62) / 0.12, 0, 1)[..., None]
+        a = a * (1 - 0.45 * dry) + np.array([0.52, 0.48, 0.24]) * a.mean(-1, keepdims=True) / 0.3 * 0.45 * dry
+        damp = np.clip((0.36 - noise(n, 9, 42)) / 0.1, 0, 1)[..., None]
+        a *= 1 - 0.18 * damp
+        fy = np.fft.fftfreq(n)[:, None]; fx = np.fft.fftfreq(n)[None, :]
+        sward = np.zeros((n, n))
+        for o, (cx, cy) in enumerate(((n / 5, n / 40), (n / 3, n / 22))):
+            w = np.random.RandomState(50 + o).randn(n, n)
+            f = np.exp(-(fx / (cx / n)) ** 2 - (fy / (cy / n)) ** 2)
+            l = np.real(np.fft.ifft2(np.fft.fft2(w) * f)); sward += (l - l.mean()) / (l.std() + 1e-9) * (0.6 if o else 1.0)
+        sw = np.clip(sward * 0.22, -0.5, 0.5)[..., None]
+        a = a * (1 + sw) + np.array([0.02, 0.05, 0.0]) * np.clip(sw, 0, 1)
+        thin = noise(n, n / 30, 43, 2)
+        a = a * (1 - 0.25 * np.clip((thin - 0.7) / 0.1, 0, 1))[..., None]
     return to_img(a)
 
 

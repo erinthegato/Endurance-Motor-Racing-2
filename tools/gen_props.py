@@ -39,6 +39,8 @@ class Atlas:
     """A square texture cut into named rectangles; painters draw into them."""
 
     def __init__(self, S=512, cells=8):
+        if PCSET:
+            S *= 2                       # the PC: every prop's picture at twice the resolution
         self.S = S; self.n = cells
         self.img = Image.new('RGB', (S, S), (128, 128, 128))
         self.d = ImageDraw.Draw(self.img)
@@ -109,9 +111,84 @@ class Kit:
             self._add([c, b, a], [uv[2], uv[1], uv[0]], shade)
             self._add([d, c, a], [uv[3], uv[2], uv[0]], shade)
 
+    def _tri_out(self, P, UV, shade, out):
+        """a triangle turned to face `out`"""
+        P = [np.array(p, float) for p in P]
+        if np.dot(np.cross(P[1] - P[0], P[2] - P[0]), out) < 0:
+            P = [P[0], P[2], P[1]]; UV = [UV[0], UV[2], UV[1]]
+        self._add(P, UV, shade)
+
+    def bevel_box(self, lo, hi, r, top, front, shade, bottom, b):
+        """the PC: a box with its edges and corners chamfered (b metres), so the real lighting catches
+        a highlight along every edge as on a real building (the auto-smooth in pc_lods rounds them)"""
+        lo = np.array(lo, float); hi = np.array(hi, float)
+        ins_lo = np.array([b, b, b if bottom else 0.0]); ins_hi = np.array([b, b, b])
+        faces = [(0, 1, front), (0, -1, r), (1, -1, r), (1, 1, r), (2, 1, top)] + ([(2, -1, r)] if bottom else [])
+        def corner_on(k, s, pick):
+            """a point on face (axis k, side s): the other axes at their inset ends picked by pick[axis] (-1 / 1)"""
+            p = np.zeros(3)
+            for a in range(3):
+                if a == k: p[a] = hi[a] if s > 0 else lo[a]
+                else: p[a] = hi[a] - ins_hi[a] if pick[a] > 0 else lo[a] + ins_lo[a]
+            return p
+        def rect_uv(rr, k, s, p):
+            """the face's texture rect laid over the face (u along the face, v down from the top)"""
+            u0, v0, u1, v1 = rr
+            ax = [a for a in range(3) if a != k]
+            if k == 2: ua, va = 0, 1
+            else: ua, va = ax[0], 2
+            fu = (p[ua] - lo[ua]) / max(hi[ua] - lo[ua], 1e-9); fv = (p[va] - lo[va]) / max(hi[va] - lo[va], 1e-9)
+            if k != 2 and ((k == 0) == (s < 0)): fu = 1 - fu
+            return (u0 + (u1 - u0) * fu, v1 - (v1 - v0) * fv)
+        for k, s, rr in faces:
+            out = np.zeros(3); out[k] = s
+            ax = [a for a in range(3) if a != k]
+            pts = []
+            for pa, pb in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
+                pick = [0, 0, 0]; pick[ax[0]] = pa; pick[ax[1]] = pb
+                pts.append(corner_on(k, s, pick))
+            uv = [rect_uv(rr, k, s, p) for p in pts]
+            self._tri_out([pts[0], pts[1], pts[2]], [uv[0], uv[1], uv[2]], shade, out)
+            self._tri_out([pts[0], pts[2], pts[3]], [uv[0], uv[2], uv[3]], shade, out)
+        # the chamfers along the edges, then the corners
+        fs = [(k, s) for k, s, _ in faces]
+        rects = {(k, s): rr for k, s, rr in faces}
+        for i, (k, s) in enumerate(fs):
+            for (j, t) in fs[i + 1:]:
+                if j == k: continue
+                a = 3 - k - j
+                out = np.zeros(3); out[k] = s; out[j] = t
+                ends = []
+                for e in (-1, 1):
+                    pick = [0, 0, 0]; pick[j] = t; pick[a] = e
+                    p1 = corner_on(k, s, pick)
+                    pick = [0, 0, 0]; pick[k] = s; pick[a] = e
+                    p2 = corner_on(j, t, pick)
+                    ends.append((p1, p2))
+                (p1a, p2a), (p1b, p2b) = ends
+                if np.linalg.norm(p1a - p2a) < 1e-6: continue          # (the open bottom: sides reach the ground)
+                rr = rects[(k, s)]
+                uva = rect_uv(rr, k, s, p1a); uvb = rect_uv(rr, k, s, p1b)
+                self._tri_out([p1a, p1b, p2b], [uva, uvb, uvb], shade, out)
+                self._tri_out([p1a, p2b, p2a], [uva, uvb, uva], shade, out)
+        for sx in (-1, 1):
+            for sy in (-1, 1):
+                for sz in ((-1, 1) if bottom else (1,)):
+                    sg = (sx, sy, sz)
+                    P = []
+                    for k in range(3):
+                        pick = list(sg); P.append(corner_on(k, sg[k], pick))
+                    uv = rect_uv(rects[(2, sz)], 2, sz, P[2])
+                    self._tri_out(P, [uv, uv, uv], shade, np.array(sg, float))
+
     def box(self, lo, hi, r, top=None, front=None, shade=1.0, bottom=False):
         (x0, y0, z0), (x1, y1, z1) = lo, hi
         top = top or r; front = front or r
+        if PCSET:
+            d = min(abs(x1 - x0), abs(y1 - y0), abs(z1 - z0))
+            b = min(0.035, 0.12 * d)
+            if b >= 0.006:
+                return self.bevel_box((min(x0, x1), min(y0, y1), min(z0, z1)), (max(x0, x1), max(y0, y1), max(z0, z1)), r, top, front, shade, bottom, b)
         self.quad((x1, y0, z0), (x1, y1, z0), (x1, y1, z1), (x1, y0, z1), front, shade)         # +X
         self.quad((x0, y1, z0), (x0, y0, z0), (x0, y0, z1), (x0, y1, z1), r, shade)             # -X
         self.quad((x0, y0, z0), (x1, y0, z0), (x1, y0, z1), (x0, y0, z1), r, shade)             # -Y
@@ -197,6 +274,8 @@ def write_emm(path, lods, emx=None, shared_bbox=None):
         f.write(struct.pack('<3f', *scale)); f.write(struct.pack('<3f', *centre))
         emn = []
         for kit, tex, ts in lods:
+            if PCSET and tex is not None and kit is lods[0][0]:
+                ts = max(ts, tex.size[0])      # (the near level: the full-resolution picture)
             P, UV, LT = kit.arrays()
             emn.append((np.array([t[1] for t in kit.tris], float).reshape(-1, 3, 3),))
             vc = len(P) * 3
@@ -663,11 +742,12 @@ def grandstand(lod):
     rng = np.random.RandomState(7)
     a.d.rectangle((x0, y0, x1, y1), fill=(70, 72, 78))
     cols = [(230, 60, 50), (240, 240, 235), (40, 90, 200), (250, 200, 40), (30, 30, 35), (60, 160, 80), (230, 120, 40)]
-    for row in range(10):
-        yy = y0 + (y1 - y0) * (row + 0.5) / 10
-        for i in range(40):
+    kd = a.S // 512                      # (the PC's picture is twice as big: twice the rows, twice the people)
+    for row in range(10 * kd):
+        yy = y0 + (y1 - y0) * (row + 0.5) / (10 * kd)
+        for i in range(40 * kd):
             if rng.rand() < 0.82:
-                xx = x0 + (x1 - x0) * (i + 0.5 + (rng.rand() - 0.5) * 0.3) / 40
+                xx = x0 + (x1 - x0) * (i + 0.5 + (rng.rand() - 0.5) * 0.3) / (40 * kd)
                 c = cols[rng.randint(len(cols))]
                 a.d.ellipse((xx - 3, yy - 6, xx + 3, yy + 1), fill=c)
                 a.d.ellipse((xx - 2, yy - 10, xx + 2, yy - 6), fill=(225, 180, 150))
@@ -678,7 +758,7 @@ def grandstand(lod):
     text_panel(a, 'fascia', 'ENDURANCE MOTOR RACING', (0.10, 0.12, 0.25), (1.0, 0.55, 0.10), 4, 1, size=0.5)
     k = Kit(); R = a.rect
     L, D = 30.0, 9.0
-    tiers = 6 if lod == 0 else 1
+    tiers = (18 if PCSET else 6) if lod == 0 else 1      # (the PC: a real step for every row)
     # stepped seating (+X faces the track): each step's riser carries a strip of the crowd picture
     for t in range(tiers):
         f0, f1 = t / tiers, (t + 1) / tiers
@@ -700,8 +780,28 @@ def grandstand(lod):
                 xa, xb = D / 2 - f0 * D * 0.8, D / 2 - f1 * D * 0.8
                 k.box((xb, ya - 0.6, 0.8 + f0 * 6.0), (xa + 0.02, ya + 0.6, 0.8 + f1 * 6.0 + 0.02), R('concrete'))
         k.bar((D / 2 - 0.1, -L / 2, 1.8), (D / 2 - 0.1, L / 2, 1.8), 0.05, R('steel'))
-        for y in np.linspace(-L / 2 + 0.5, L / 2 - 0.5, 9):
+        for y in np.linspace(-L / 2 + 0.5, L / 2 - 0.5, 31 if PCSET else 9):
             k.bar((D / 2 - 0.1, y, 0.8), (D / 2 - 0.1, y, 1.8), 0.04, R('steel'))
+        if PCSET:
+            k.bar((D / 2 - 0.1, -L / 2, 1.3), (D / 2 - 0.1, L / 2, 1.3), 0.025, R('steel'))      # the middle rail
+            for ya in (-L / 6, L / 6):        # handrails up the aisles
+                for side in (-0.55, 0.55):
+                    p0 = (D / 2 - 0.3, ya + side, 1.8); p1 = (D / 2 - 0.3 - D * 0.8, ya + side, 7.8)
+                    k.bar(p0, p1, 0.022, R('steel'))
+                    for f in np.linspace(0.08, 0.92, 6):
+                        q = tuple(p0[i] + (p1[i] - p0[i]) * f for i in range(3))
+                        k.bar((q[0], q[1], q[2] - 1.0), q, 0.018, R('steel'))
+            # the back wall's ribs and the roof's trusses, floodlights and loudspeakers
+            for y in np.linspace(-L / 2 + 1, L / 2 - 1, 15):
+                k.box((-D / 2 + 0.4, y - 0.12, 0), (-D / 2 + 0.6, y + 0.12, 7.8), R('back'))
+            for y in np.linspace(-L / 2 + 1, L / 2 - 1, 5):
+                k.bar((-D / 2 + 0.9, y, 6.2), (0.0, y, 9.15), 0.07, R('steel'))
+                k.bar((0.0, y, 9.15), (D / 2 + 1.0, y, 8.9), 0.06, R('steel'))
+                k.box((-D / 2 + 1.05, y - 0.25, 7.0), (-D / 2 + 1.45, y + 0.25, 7.6), R('back'))
+            k.bar((-D / 2 + 0.9, -L / 2 - 0.4, 9.12), (-D / 2 + 0.9, L / 2 + 0.4, 9.12), 0.08, R('steel'))
+            k.bar((D / 2 + 1.0, -L / 2 - 0.4, 8.95), (D / 2 + 1.0, L / 2 + 0.4, 8.95), 0.06, R('steel'))
+            for y in np.linspace(-L / 2 + 2.5, L / 2 - 2.5, 6):
+                k.cyl((D / 2 + 0.7, y, 9.0), (D / 2 + 1.0, y, 8.75), 0.18, 8, R('steel'), shade=0.8)
     k.box((D / 2 - 0.3, -L / 2, 0), (D / 2, L / 2, 0.8), R('concrete'))
     k.box((-D / 2 + 0.6, -L / 2, 0), (-D / 2 + 1.2, L / 2, 7.8), R('back'))
     for sy in (-1, 1):

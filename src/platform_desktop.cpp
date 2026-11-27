@@ -120,6 +120,24 @@ static SH_GETSHADERIV sh_GetShaderiv, sh_GetProgramiv; static SH_GETINFOLOG sh_G
 static SH_CREATEPROGRAM sh_CreateProgram; static SH_ATTACHSHADER sh_AttachShader; static SH_LINKPROGRAM sh_LinkProgram;
 static SH_USEPROGRAM sh_UseProgram; static SH_GETUNIFORMLOCATION sh_GetUniformLocation;
 static SH_UNIFORM1F sh_Uniform1f; static SH_UNIFORM1I sh_Uniform1i; static SH_UNIFORM3F sh_Uniform3f;
+// the sun's shadow map: a depth texture drawn through a framebuffer object
+typedef void (APIENTRY* SH_UNIFORMMATRIX4FV)(GLint, GLsizei, GLboolean, const GLfloat*);
+typedef void (APIENTRY* SH_ACTIVETEXTURE)(GLenum);
+typedef void (APIENTRY* FB_GEN)(GLsizei, GLuint*);
+typedef void (APIENTRY* FB_BIND)(GLenum, GLuint);
+typedef void (APIENTRY* FB_TEX2D)(GLenum, GLenum, GLenum, GLuint, GLint);
+typedef GLenum (APIENTRY* FB_CHECK)(GLenum);
+static SH_UNIFORMMATRIX4FV sh_UniformMatrix4fv; static SH_ACTIVETEXTURE sh_ActiveTexture;
+static FB_GEN fb_GenFramebuffers; static FB_BIND fb_BindFramebuffer; static FB_TEX2D fb_FramebufferTexture2D; static FB_CHECK fb_CheckFramebufferStatus;
+static bool loadShadowProcs() {
+    sh_UniformMatrix4fv = glProc<SH_UNIFORMMATRIX4FV>("glUniformMatrix4fv", nullptr);
+    sh_ActiveTexture = glProc<SH_ACTIVETEXTURE>("glActiveTexture", "glActiveTextureARB");
+    fb_GenFramebuffers = glProc<FB_GEN>("glGenFramebuffers", "glGenFramebuffersEXT");
+    fb_BindFramebuffer = glProc<FB_BIND>("glBindFramebuffer", "glBindFramebufferEXT");
+    fb_FramebufferTexture2D = glProc<FB_TEX2D>("glFramebufferTexture2D", "glFramebufferTexture2DEXT");
+    fb_CheckFramebufferStatus = glProc<FB_CHECK>("glCheckFramebufferStatus", "glCheckFramebufferStatusEXT");
+    return sh_UniformMatrix4fv && sh_ActiveTexture && fb_GenFramebuffers && fb_BindFramebuffer && fb_FramebufferTexture2D && fb_CheckFramebufferStatus;
+}
 static bool loadShaderProcs() {
     sh_CreateShader = glProc<SH_CREATESHADER>("glCreateShader", nullptr);
     sh_ShaderSource = glProc<SH_SHADERSOURCE>("glShaderSource", nullptr);
@@ -233,7 +251,7 @@ bool texOn = false;
 
 // what the game asked for (2D drawing changes some of it for a moment)
 M4 projM = M4::identity(), viewM = M4::identity();
-bool fogWanted = false, depthWanted = true, in2D = false;
+bool fogWanted = false, depthWanted = true, depthWriteWanted = true, in2D = false;
 bool progOn = false;          // the lighting program is in use (see useLit)
 
 inline bool overlaps(const void* a, int an, const void* b, int bn) {
@@ -398,10 +416,13 @@ void setModel(const M4& model) {
 // The PC set's models bring their normals ('EMN1'); the circuit's strips have none and keep their
 // baked colours, scaled by how much sun and sky there is.
 const char* LIT_VS = R"(#version 120
-varying vec4 vCol; varying vec3 vN; varying vec3 vPos; varying vec2 vUV;
+varying vec4 vCol; varying vec3 vN; varying vec3 vPos; varying vec2 vUV; varying vec3 vSh; varying vec2 vW;
+uniform mat4 uShadowM, uEyeToWorld;
 void main() {
     vec4 e = gl_ModelViewMatrix * gl_Vertex;
     vPos = e.xyz;
+    vW = (uEyeToWorld * vec4(e.xyz, 1.0)).xy;
+    vSh = (uShadowM * vec4(e.xyz, 1.0)).xyz;
     vN = gl_NormalMatrix * gl_Normal;
     vCol = gl_Color;
     vUV = gl_MultiTexCoord0.xy;
@@ -409,10 +430,34 @@ void main() {
 }
 )";
 const char* LIT_FS = R"(#version 120
-varying vec4 vCol; varying vec3 vN; varying vec3 vPos; varying vec2 vUV;
+varying vec4 vCol; varying vec3 vN; varying vec3 vPos; varying vec2 vUV; varying vec3 vSh; varying vec2 vW;
 uniform sampler2D uTex;
-uniform float uTexOn, uHasN, uFog, uSpec, uGloss;
-uniform vec3 uSun, uUp, uSunCol, uSky, uGround, uWorldK;
+uniform float uSurf;          // the ground under this draw: 0 none, 1 road, 2 grass / earth, 3 gravel, 4 kerb
+uniform sampler2DShadow uShadow;
+uniform float uTexOn, uHasN, uFog, uSpec, uGloss, uShadowOn, uShTexel;
+uniform mat4 uShadowM;
+uniform vec3 uSun, uUp, uSunCol, uSky, uGround, uWorldA, uWorldB;
+// smooth value noise on the ground's own coordinates (metres; repeats every 256 m, so the origin
+// can move in whole 256 m steps without the pattern jumping)
+float hash2(vec2 p) { p = mod(p, 256.0); return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float vnoise(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash2(i), hash2(i + vec2(1.0, 0.0)), u.x), mix(hash2(i + vec2(0.0, 1.0)), hash2(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+// how much sun gets here: 1 in the open, 0 in shadow (five soft taps, faded out at the map's edge)
+float sunVis(vec3 p, float bias) {
+    if (uShadowOn < 0.5) return 1.0;
+    float edge = max(abs(p.x - 0.5), abs(p.y - 0.5)) * 2.0;
+    if (edge >= 1.0 || p.z >= 1.0) return 1.0;
+    float z = p.z - bias, t = uShTexel;
+    float s = shadow2D(uShadow, vec3(p.xy, z)).r * 2.0;
+    s += shadow2D(uShadow, vec3(p.xy + vec2(-t, -t) * 1.5, z)).r;
+    s += shadow2D(uShadow, vec3(p.xy + vec2( t, -t) * 1.5, z)).r;
+    s += shadow2D(uShadow, vec3(p.xy + vec2(-t,  t) * 1.5, z)).r;
+    s += shadow2D(uShadow, vec3(p.xy + vec2( t,  t) * 1.5, z)).r;
+    return mix(s / 6.0, 1.0, smoothstep(0.8, 1.0, edge));
+}
 void main() {
     vec4 c = vCol;
     if (uTexOn > 0.5) c *= texture2D(uTex, vUV);
@@ -426,24 +471,53 @@ void main() {
         if (dot(F, V) < 0.0) F = -F;
         if (dot(N, F) < 0.0) N = -N;
         vec3 amb = mix(uGround, uSky, dot(N, uUp) * 0.5 + 0.5);
-        float d = max(dot(N, uSun), 0.0);
+        float nl = dot(N, uSun);
+        // (looked up a little off the surface, along its normal: thin round things -- the halo, the
+        // rails -- don't shadow themselves)
+        vec3 sp = (uShadowM * vec4(vPos + N * (0.03 + 0.05 * (1.0 - nl)), 1.0)).xyz;
+        float d = max(nl, 0.0) * (nl > 0.0 ? sunVis(sp, 0.00004) : 0.0);
         vec3 H = normalize(uSun + V);
         float s = d > 0.0 ? pow(max(dot(N, H), 0.0), uGloss) * uSpec * (uGloss + 8.0) / 40.0 : 0.0;
         float fr = pow(1.0 - max(dot(N, V), 0.0), 5.0) * uSpec;
         col = c.rgb * (amb + uSunCol * d) + uSunCol * s + uSky * fr * 0.35;
     } else {
-        col = c.rgb * uWorldK;
+        vec3 alb = c.rgb;
+        float sv = sunVis(vSh, 0.00008);
+        if (uSurf > 0.5) {
+            // the ground: big soft patches so the picture's repeats don't show, and fine grain up
+            // close (faded out with distance before it can shimmer)
+            float dist = length(vPos);
+            float macro = vnoise(vW / 31.0) * 0.6 + vnoise(vW / 9.0) * 0.4;
+            float near = 1.0 - smoothstep(12.0, 45.0, dist);
+            float grain = (vnoise(vW * 7.0) - 0.5) * 0.6 + (vnoise(vW * 23.0) - 0.5) * 0.4;
+            float mk = uSurf < 1.5 ? 0.10 : (uSurf < 2.5 ? 0.30 : (uSurf < 3.5 ? 0.18 : 0.06));
+            float gk = uSurf < 1.5 ? 0.10 : (uSurf < 2.5 ? 0.22 : (uSurf < 3.5 ? 0.20 : 0.06));
+            alb *= 1.0 + (macro - 0.5) * mk * 2.0 + grain * gk * near;
+            if (uSurf > 1.5 && uSurf < 2.5) alb = mix(alb, alb * vec3(1.18, 1.08, 0.62), smoothstep(0.62, 0.85, vnoise(vW / 17.0 + 40.0)) * 0.45);   // dry patches
+        }
+        col = alb * (uWorldA + uWorldB * sv);
+        if (uSurf > 0.5 && uSurf < 1.5) {
+            // the road's sheen: the sun glints on it (more in the wet), the sky shines off it at a glancing look
+            vec3 N = normalize(uUp + gl_NormalMatrix * vec3((vnoise(vW * 3.1) - 0.5) * 0.06, (vnoise(vW * 3.1 + 17.0) - 0.5) * 0.06, 0.0));
+            vec3 H = normalize(uSun + V);
+            float s = pow(max(dot(N, H), 0.0), uGloss) * uSpec * (uGloss + 8.0) / 40.0 * sv;
+            float fr = pow(1.0 - max(dot(N, V), 0.0), 5.0) * uSpec;
+            col += uSunCol * s + uSky * fr * 0.5;
+        }
     }
     if (uFog > 0.5) col = mix(gl_Fog.color.rgb, col, clamp((gl_Fog.end - abs(vPos.z)) * gl_Fog.scale, 0.0, 1.0));
     gl_FragColor = vec4(col, c.a);
 }
 )";
 GLuint litProg = 0;
-GLint uTex = -1, uTexOn = -1, uHasN = -1, uFog = -1, uSpec = -1, uGloss = -1, uSun = -1, uUp = -1, uSunCol = -1, uSky = -1, uGround = -1, uWorldK = -1;
+GLint uEyeToWorld = -1, uSurfU = -1;
+GLint uShadowM = -1, uShadowU = -1, uShadowOn = -1, uShTexel = -1, uWorldA = -1, uWorldB = -1;
+GLint uTex = -1, uTexOn = -1, uHasN = -1, uFog = -1, uSpec = -1, uGloss = -1, uSun = -1, uUp = -1, uSunCol = -1, uSky = -1, uGround = -1;
 gfx::Lighting light;
 bool litWanted = false, blendOn = false, lightDirty = true;
-float matSpec = 0.15f, matGloss = 24;
+float matSpec = 0.15f, matGloss = 24, surfKind = 0;
 
+void buildShadowMap();
 GLuint compileShader(GLenum type, const char* src) {
     GLuint s = sh_CreateShader(type);
     sh_ShaderSource(s, 1, &src, nullptr);
@@ -465,17 +539,84 @@ void buildLighting() {
     uTex = sh_GetUniformLocation(p, "uTex"); uTexOn = sh_GetUniformLocation(p, "uTexOn"); uHasN = sh_GetUniformLocation(p, "uHasN");
     uFog = sh_GetUniformLocation(p, "uFog"); uSpec = sh_GetUniformLocation(p, "uSpec"); uGloss = sh_GetUniformLocation(p, "uGloss");
     uSun = sh_GetUniformLocation(p, "uSun"); uUp = sh_GetUniformLocation(p, "uUp"); uSunCol = sh_GetUniformLocation(p, "uSunCol");
-    uSky = sh_GetUniformLocation(p, "uSky"); uGround = sh_GetUniformLocation(p, "uGround"); uWorldK = sh_GetUniformLocation(p, "uWorldK");
-    sh_UseProgram(p); sh_Uniform1i(uTex, 0); sh_UseProgram(0);
+    uSky = sh_GetUniformLocation(p, "uSky"); uGround = sh_GetUniformLocation(p, "uGround");
+    uWorldA = sh_GetUniformLocation(p, "uWorldA"); uWorldB = sh_GetUniformLocation(p, "uWorldB");
+    uEyeToWorld = sh_GetUniformLocation(p, "uEyeToWorld"); uSurfU = sh_GetUniformLocation(p, "uSurf");
+    uShadowM = sh_GetUniformLocation(p, "uShadowM"); uShadowU = sh_GetUniformLocation(p, "uShadow");
+    uShadowOn = sh_GetUniformLocation(p, "uShadowOn"); uShTexel = sh_GetUniformLocation(p, "uShTexel");
+    sh_UseProgram(p); sh_Uniform1i(uTex, 0); sh_Uniform1i(uShadowU, 1); sh_Uniform1f(uShadowOn, 0); sh_UseProgram(0);
+    buildShadowMap();
     sys::log("lighting: per pixel\n");
 }
+// ---- the sun's shadows: a depth picture of the world seen from the sun (an orthographic view
+// around the camera), drawn by the renderer each frame between beginShadow and endShadow; the
+// lighting program then looks up whether each pixel is behind something
+GLuint shadowFbo = 0, shadowTex = 0;
+int shadowN = 0;
+bool shadowPass = false, shadowValid = false;
+M4 shadowLW = M4::identity();          // world -> the shadow map's clip space
+V3 sceneEye;                           // the camera's world position (positions arrive relative to it)
+M4 savedView, savedProj;
+GLint savedVp[4];
+GLboolean savedScissor;
+void buildShadowMap() {
+    if (getenv("EMR_NOSHADOW") || !loadShadowProcs()) { sys::log("shadows: off\n"); return; }
+    GLint maxT = 0; glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxT);
+    shadowN = getenv("EMR_SHADOWMAP") ? atoi(getenv("EMR_SHADOWMAP")) : 4096;
+    while (shadowN > maxT && shadowN > 512) shadowN /= 2;
+    glGenTextures(1, &shadowTex);
+    glBindTexture(GL_TEXTURE_2D, shadowTex);
+    glTexImage2D(GL_TEXTURE_2D, 0, 0x81A6 /*GL_DEPTH_COMPONENT24*/, shadowN, shadowN, 0, 0x1902 /*GL_DEPTH_COMPONENT*/, GL_UNSIGNED_INT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, 0x812F /*GL_CLAMP_TO_EDGE*/);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, 0x812F);
+    glTexParameteri(GL_TEXTURE_2D, 0x884C /*GL_TEXTURE_COMPARE_MODE*/, 0x884E /*GL_COMPARE_R_TO_TEXTURE*/);
+    glTexParameteri(GL_TEXTURE_2D, 0x884D /*GL_TEXTURE_COMPARE_FUNC*/, GL_LEQUAL);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    fb_GenFramebuffers(1, &shadowFbo);
+    fb_BindFramebuffer(0x8D40 /*GL_FRAMEBUFFER*/, shadowFbo);
+    fb_FramebufferTexture2D(0x8D40, 0x8D00 /*GL_DEPTH_ATTACHMENT*/, GL_TEXTURE_2D, shadowTex, 0);
+    glDrawBuffer(GL_NONE); glReadBuffer(GL_NONE);
+    GLenum st = fb_CheckFramebufferStatus(0x8D40);
+    fb_BindFramebuffer(0x8D40, 0);
+    glDrawBuffer(GL_BACK); glReadBuffer(GL_BACK);
+    if (st != 0x8CD5 /*GL_FRAMEBUFFER_COMPLETE*/) { sys::log("shadows: framebuffer not complete (%x)\n", st); shadowFbo = 0; return; }
+    // the map sits on texture unit 1 for good
+    sh_ActiveTexture(0x84C1 /*GL_TEXTURE1*/);
+    glBindTexture(GL_TEXTURE_2D, shadowTex);
+    sh_ActiveTexture(0x84C0 /*GL_TEXTURE0*/);
+    sys::log("shadows: %d x %d\n", shadowN, shadowN);
+}
+M4 ortho(float l, float r, float b, float t, float n, float f) {
+    M4 o = M4::identity();
+    o.m[0] = 2 / (r - l); o.m[5] = 2 / (t - b); o.m[10] = -2 / (f - n);
+    o.m[12] = -(r + l) / (r - l); o.m[13] = -(t + b) / (t - b); o.m[14] = -(f + n) / (f - n);
+    return o;
+}
+M4 rigidInverse(const M4& a) {          // (the views are a rotation and a move)
+    M4 r = M4::identity();
+    for (int i = 0; i < 3; i++) for (int j = 0; j < 3; j++) r.m[i * 4 + j] = a.m[j * 4 + i];
+    V3 t(a.m[12], a.m[13], a.m[14]);
+    r.m[12] = -(r.m[0] * t.x + r.m[4] * t.y + r.m[8] * t.z);
+    r.m[13] = -(r.m[1] * t.x + r.m[5] * t.y + r.m[9] * t.z);
+    r.m[14] = -(r.m[2] * t.x + r.m[6] * t.y + r.m[10] * t.z);
+    return r;
+}
+// the main view's eye space -> the shadow map's texture space (0..1) and depth
+M4 shadowMatrix() {
+    M4 bias = M4::identity();
+    bias.m[0] = bias.m[5] = bias.m[10] = 0.5f; bias.m[12] = bias.m[13] = bias.m[14] = 0.5f;
+    return bias * shadowLW * M4::translate(sceneEye) * rigidInverse(viewM);
+}
+
 inline V3 toEye(const V3& v) {        // a world direction into the camera's space (the view's rotation)
     const float* m = viewM.m;
     return norm(V3(m[0] * v.x + m[4] * v.y + m[8] * v.z, m[1] * v.x + m[5] * v.y + m[9] * v.z, m[2] * v.x + m[6] * v.y + m[10] * v.z));
 }
 // switch the program on for a lit draw (or off): true when this draw is lit
 bool useLit(bool hasNormals) {
-    bool want = litProg && litWanted && !in2D && !blendOn;
+    bool want = litProg && litWanted && !in2D && !blendOn && !shadowPass;
     if (!want) { if (progOn) { sh_UseProgram(0); progOn = false; } return false; }
     if (!progOn) { sh_UseProgram(litProg); progOn = true; lightDirty = true; }
     if (lightDirty) {
@@ -484,12 +625,22 @@ bool useLit(bool hasNormals) {
         sh_Uniform3f(uSunCol, light.sunCol[0], light.sunCol[1], light.sunCol[2]);
         sh_Uniform3f(uSky, light.sky[0], light.sky[1], light.sky[2]);
         sh_Uniform3f(uGround, light.ground[0], light.ground[1], light.ground[2]);
-        sh_Uniform3f(uWorldK, light.worldK[0], light.worldK[1], light.worldK[2]);
+        sh_Uniform3f(uWorldA, light.worldA[0], light.worldA[1], light.worldA[2]);
+        sh_Uniform3f(uWorldB, light.worldB[0], light.worldB[1], light.worldB[2]);
+        {   // eye -> world (less a whole number of 256 m steps: small numbers keep the noise sharp)
+            V3 o(floorf(sceneEye.x / 256) * 256, floorf(sceneEye.y / 256) * 256, 0);
+            M4 m = M4::translate(sceneEye - o) * rigidInverse(viewM);
+            sh_UniformMatrix4fv(uEyeToWorld, 1, GL_FALSE, m.m);
+        }
+        bool sh = shadowFbo && shadowValid;
+        sh_Uniform1f(uShadowOn, sh ? 1.0f : 0.0f);
+        if (sh) { M4 m = shadowMatrix(); sh_UniformMatrix4fv(uShadowM, 1, GL_FALSE, m.m); sh_Uniform1f(uShTexel, 1.0f / shadowN); }
         sh_Uniform1f(uSpec, matSpec); sh_Uniform1f(uGloss, matGloss);
         lightDirty = false;
     }
     sh_Uniform1f(uTexOn, texOn ? 1.0f : 0.0f);
     sh_Uniform1f(uHasN, hasNormals ? 1.0f : 0.0f);
+    sh_Uniform1f(uSurfU, hasNormals ? 0.0f : surfKind);
     sh_Uniform1f(uFog, fogWanted ? 1.0f : 0.0f);
     return true;
 }
@@ -622,7 +773,7 @@ void setBlend(bool on) {
     else glDisable(GL_BLEND);
 }
 void setDepthTest(bool on) { depthWanted = on; if (!in2D) { if (on) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST); } }
-void setDepthWrite(bool on) { glDepthMask(on ? GL_TRUE : GL_FALSE); }
+void setDepthWrite(bool on) { depthWriteWanted = on; glDepthMask(on ? GL_TRUE : GL_FALSE); }
 
 void drawModel(const ModelVertex* v, int count, const M4& model) {
     if (count <= 0) return;
@@ -711,6 +862,54 @@ static void applySync() {
 }
 bool highDetail() { return true; }
 void setLighting(const Lighting& l) { light = l; light.sun = norm(l.sun); lightDirty = true; }
+void setSurface(int kind) { surfKind = (float)kind; }
+void setEye(const V3& eye) { sceneEye = eye; lightDirty = true; }
+bool beginShadow(const V3& sun, const V3& centreRel, float radius) {
+    if (!shadowFbo || !litProg) return false;
+    enter3D();
+    if (progOn) { sh_UseProgram(0); progOn = false; }
+    // the sun's view: a rotation only, then a box round the centre (snapped to whole texels so the
+    // shadow edges don't crawl as the camera moves)
+    V3 s = norm(sun);
+    M4 L = M4::lookDir(V3(0, 0, 0), s * -1.0f, fabsf(s.z) > 0.95f ? V3(1, 0, 0) : V3(0, 0, 1));
+    V3 c = L.point(sceneEye + centreRel);
+    float texel = 2 * radius / shadowN;
+    c.x = floorf(c.x / texel) * texel; c.y = floorf(c.y / texel) * texel;
+    const float DEPTH = 350;
+    M4 P = ortho(c.x - radius, c.x + radius, c.y - radius, c.y + radius, -(c.z + DEPTH), -(c.z - DEPTH));
+    shadowLW = P * L;
+    savedView = viewM; savedProj = projM;
+    viewM = L * M4::translate(sceneEye);
+    projM = P;
+    glMatrixMode(GL_PROJECTION); glLoadMatrixf(P.m);
+    glGetIntegerv(GL_VIEWPORT, savedVp);
+    savedScissor = glIsEnabled(GL_SCISSOR_TEST);
+    glDisable(GL_SCISSOR_TEST);
+    fb_BindFramebuffer(0x8D40, shadowFbo);
+    glViewport(0, 0, shadowN, shadowN);
+    glDepthMask(GL_TRUE); glEnable(GL_DEPTH_TEST);
+    glClear(GL_DEPTH_BUFFER_BIT);
+    glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+    glDisable(GL_FOG);
+    glEnable(GL_POLYGON_OFFSET_FILL); glPolygonOffset(1.6f, 3.0f);
+    shadowPass = true;
+    return true;
+}
+void endShadow() {
+    if (!shadowPass) return;
+    shadowPass = false;
+    glDisable(GL_POLYGON_OFFSET_FILL);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    fb_BindFramebuffer(0x8D40, 0);
+    glViewport(savedVp[0], savedVp[1], savedVp[2], savedVp[3]);
+    if (savedScissor) glEnable(GL_SCISSOR_TEST);
+    viewM = savedView; projM = savedProj;
+    glMatrixMode(GL_PROJECTION); glLoadMatrixf(projM.m);
+    if (fogWanted) glEnable(GL_FOG);
+    if (!depthWanted) glDisable(GL_DEPTH_TEST);
+    glDepthMask(depthWriteWanted ? GL_TRUE : GL_FALSE);
+    shadowValid = true; lightDirty = true;
+}
 void setLit(bool on) { litWanted = on; if (!on && progOn) { sh_UseProgram(0); progOn = false; } }
 void setMaterial(float spec, float gloss) {
     if (spec == matSpec && gloss == matGloss) return;

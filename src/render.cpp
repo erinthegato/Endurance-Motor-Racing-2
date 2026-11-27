@@ -440,8 +440,67 @@ static gfx::Lighting sceneLight(const Race& r) {
     // the circuit has no normals: its baked colours (made for a high sun) follow the light on flat
     // ground, relative to midday in the dry
     const float noon[3] = {0.42f + 1.00f * 0.883f, 0.48f + 0.95f * 0.883f, 0.60f + 0.86f * 0.883f};
-    for (int i = 0; i < 3; i++) L.worldK[i] = clampf((L.sky[i] + L.sunCol[i] * fmaxf(L.sun.z, 0)) / noon[i] * 1.0f, 0.2f, 1.15f);
+    for (int i = 0; i < 3; i++) { L.worldA[i] = L.sky[i] / noon[i]; L.worldB[i] = L.sunCol[i] * fmaxf(L.sun.z, 0) / noon[i]; }
     return L;
+}
+
+// the sun's shadows (the PC): everything near the camera that stands up (cars, buildings, stands,
+// trees, walls) drawn as seen from the sun into a depth picture; the lit scene then darkens what's
+// behind it. Covers a square ~180 m across, most of it ahead of the camera.
+void Renderer::drawShadows(const Race& r, const Camera& cam) {
+    shadowsLive = false;
+    gfx::Lighting L = sceneLight(r);
+    if (L.sunCol[0] + L.sunCol[1] + L.sunCol[2] < 0.03f) return;   // no sun, no shadows
+    const float R = 90;
+    V3 ahead = norm(V3(cam.fwd.x, cam.fwd.y, 0)) * (R * 0.55f);
+    if (!gfx::beginShadow(L.sun, ahead, R)) return;
+    shadowsLive = true;
+    const Track& t = r.track;
+    // reach: the box, and what stands outside it but throws its shadow in (long at a low sun)
+    float reach = R * 1.42f + 25;
+    V3 c = cam.eye + ahead;
+    auto near = [&](const V3& p, float rad) { V3 d = p - c; return d.x * d.x + d.y * d.y < (reach + rad) * (reach + rad); };
+    // walls and barriers
+    gfx::bindTexture(tex[0].tex.pixels ? &tex[0].tex : nullptr);
+    for (const Chunk& ch : t.chunks)
+        if (ch.count[MAT_WALL] && near(ch.centre, ch.radius))
+            gfx::drawWorld(&t.verts[ch.first[MAT_WALL]], ch.count[MAT_WALL], PRIM_TRIANGLE_STRIP, M4::translate(ch.origin - cam.eye));
+    // props: the middle level of detail is plenty for a shadow
+    for (const PropCell& cell : t.propCells) {
+        if (!near(cell.centre, cell.radius)) continue;
+        for (int pi = cell.first; pi < cell.first + cell.count; pi++) {
+            const PropInst& p = t.props[pi];
+            const Model& md = prop[p.model];
+            if (!md.lodCount) continue;
+            float rad = fmaxf(fmaxf(md.scale[0], md.scale[1]), md.scale[2]) * p.scale;
+            if (!near(p.p, rad)) continue;
+            int lod = md.lodCount >= 3 ? 1 : 0;
+            gfx::bindTexture(&md.lod[lod].tex);       // (tree leaves: the see-through parts throw no shadow)
+            M4 place = M4::translate(p.p - cam.eye) * M4::rotZ(p.yaw) * M4::scale(p.scale, p.scale, p.scale);
+            gfx::drawModel(md.lod[lod].verts, md.lod[lod].count, md.matrix(place));
+        }
+    }
+    // cars (the player's too, from the cockpit: its roof shades the cabin): body without glass, wheels
+    for (const Car& car : r.cars) {
+        int idx = (int)(car.def - CARS);
+        if (!carLoaded[idx] || !near(car.pos, 4)) continue;
+        const Model& m = carModel[idx];
+        V3 rel = car.pos - cam.eye;
+        int lod = len(rel) < 30 ? 0 : 1;
+        if (lod >= m.lodCount) lod = m.lodCount - 1;
+        const PartSplit& ps = split[idx][lod];
+        M4 place = M4::basis(car.fwd, car.left, car.up, rel);
+        gfx::bindTexture(&m.lod[lod].tex);
+        int solid = ps.glassCount ? ps.glassFirst : m.lod[lod].count;
+        if (!car.noseOff && !car.wingOff) gfx::drawModel(m.lod[lod].verts, solid, m.matrix(place));
+        else {
+            gfx::drawModel(m.lod[lod].verts, ps.body, m.matrix(place));
+            if (!car.noseOff) gfx::drawModel(m.lod[lod].verts + ps.noseFirst, ps.noseCount, m.matrix(place));
+            if (!car.wingOff) gfx::drawModel(m.lod[lod].verts + ps.wingFirst, ps.wingCount, m.matrix(place));
+        }
+        if (len(rel) < 60) drawWheels(*car.def, place, 2, car.steer, car.wheelSpin);
+    }
+    gfx::endShadow();
 }
 
 void Renderer::drawScene(const Race& r, const Camera& cam, bool hidePlayer) {
@@ -462,6 +521,8 @@ void Renderer::drawScene(const Race& r, const Camera& cam, bool hidePlayer) {
     gfx::setFog(true, (260 - r.rain * 200) * perf.distance, (FAR_TRACK + 150 - r.rain * 520) * perf.distance, haze);
     gfx::setDepthTest(true); gfx::setDepthWrite(true); gfx::setBlend(false);
     gfx::setLighting(sceneLight(r));
+    gfx::setEye(cam.eye);
+    if (!sceneLite) drawShadows(r, cam);      // (the mirror uses the main view's)
     gfx::setLit(true);
     gfx::setMaterial(0.08f, 12);
     float tanV = tanf(cam.fov * 3.14159f / 360.0f), tanH = tanV * sceneAspect;
@@ -484,6 +545,11 @@ void Renderer::drawScene(const Race& r, const Camera& cam, bool hidePlayer) {
     for (int oi = 0; oi < MAT_COUNT; oi++) {
         int m = ORDER[oi];
         if (sceneLite && (m == MAT_TERRAIN || m == MAT_GRAVEL || m == MAT_LINE)) continue;
+        // (the PC) the ground's fine grain and the road's sheen: drier asphalt is satin, wet is a mirror
+        gfx::setSurface(m == MAT_ROAD ? gfx::SURF_ROAD : (m == MAT_GRASS || m == MAT_TERRAIN) ? gfx::SURF_GRASS :
+                        m == MAT_GRAVEL ? (t.desert ? gfx::SURF_GRASS : gfx::SURF_GRAVEL) : m == MAT_KERB ? gfx::SURF_KERB : gfx::SURF_NONE);
+        if (m == MAT_ROAD) gfx::setMaterial(0.10f + r.rain * 0.8f, 24 + r.rain * 160);
+        else gfx::setMaterial(0.08f, 12);
         bool bound = false;
         for (int ci : visChunks) {
             const Chunk& ch = t.chunks[ci];
@@ -496,6 +562,8 @@ void Renderer::drawScene(const Race& r, const Camera& cam, bool hidePlayer) {
             else gfx::drawWorld(&t.verts[ch.first[m]], ch.count[m], PRIM_TRIANGLE_STRIP, M4::translate(ch.origin - cam.eye));
         }
     }
+    gfx::setSurface(gfx::SURF_NONE);
+    gfx::setMaterial(0.08f, 12);
     // props
     for (const PropCell& cell : t.propCells) {
       if (sceneLite) break;
@@ -949,7 +1017,7 @@ void Renderer::drawCabin(const Car& c, const Camera& cam, M4& car, M4& wheelM, c
     gfx::clearDepth();
     car = M4::basis(c.fwd, c.left, c.up, c.pos - cam.eye) * M4::translate(V3(body.cabX, 0, 0));
     const Model& ck = cockpit[cls];     // the interior: tub, seat, dash, cage
-    if (race) {                         // (PC lighting) under the roof the sun gets in less
+    if (race && !shadowsLive) {         // (PC lighting without shadows) under the roof the sun gets in less
         gfx::Lighting l = sceneLight(*race);
         for (int i = 0; i < 3; i++) l.sunCol[i] *= cls == ERA_HYPER ? 0.4f : 0.6f;
         gfx::setLighting(l);

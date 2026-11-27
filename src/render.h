@@ -89,6 +89,8 @@ struct Renderer {
 
     Camera camera(const Race& r, int mode, float dt, bool lookBack);
     void drawScene(const Race& r, const Camera& cam, bool hidePlayer);
+    void drawShadows(const Race& r, const Camera& cam);   // the PC: the sun's shadow map
+    bool shadowsLive = false;                             // (this frame's scene has the sun's shadows)
     void drawCockpit(const Race& r, const Camera& cam);
     // team manager: a broadcast-style camera on the dash of one of our cars, looking out over the nose
     Camera dashCamera(const Race& r, int idx, float dt);

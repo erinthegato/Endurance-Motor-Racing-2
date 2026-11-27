@@ -95,3 +95,8 @@ void glCullFace(GLenum); void glPolygonOffset(GLfloat, GLfloat); void glReadBuff
 #define GL_TEXTURE0 0x84C0
 #define GL_TEXTURE1 0x84C1
 #define GL_DEPTH_COMPONENT 0x1902
+#define GL_MAX_TEXTURE_SIZE 0x0D33
+#define GL_UNSIGNED_INT 0x1405
+#define GL_NONE 0
+#define GL_VIEWPORT 0x0BA2
+extern "C" GLboolean glIsEnabled(GLenum);

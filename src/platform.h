@@ -73,10 +73,18 @@ struct Lighting {
     float sunCol[3] = {0.6f, 0.58f, 0.52f};      // the sun's light (0 when it's down)
     float sky[3] = {0.66f, 0.72f, 0.82f};        // light from the sky above
     float ground[3] = {0.40f, 0.40f, 0.38f};     // light bounced up from the ground
-    float worldK[3] = {1, 1, 1};                 // scale for the circuit's baked colours (no normals)
+    float worldA[3] = {1, 1, 1};                 // the circuit's baked colours (no normals): x this (the sky's part)
+    float worldB[3] = {0, 0, 0};                 //   + this where the sun reaches (its part)
 };
 void setLighting(const Lighting& l);
-void setLit(bool on);                          // light the 3D drawing that follows
+void setLit(bool on);
+// the sun's shadows (PC): the renderer tells where the camera is, then draws what casts shadows
+// between beginShadow (false: no shadows here, draw nothing) and endShadow, before the scene
+void setEye(const V3& eyeWorld);
+enum { SURF_NONE, SURF_ROAD, SURF_GRASS, SURF_GRAVEL, SURF_KERB };
+void setSurface(int kind);                     // what the next ground draws are (fine grain, sheen)
+bool beginShadow(const V3& sunDir, const V3& centreRel, float radius);
+void endShadow();                          // light the 3D drawing that follows
 void setMaterial(float spec, float gloss);     // shine of what follows: 0..1, and the highlight's tightness
 void attachNormals(const ModelVertex* v, const int8_t* normals4, int count);   // (Model::load)
 // Copy a texture's pixels into video memory (faster for the GPU to read). Returns false when full.

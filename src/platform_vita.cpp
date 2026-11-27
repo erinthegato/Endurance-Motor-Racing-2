@@ -1,9 +1,9 @@
-// PS Vita platform: vitaGL (OpenGL fixed function on the Vita's GXM chip), buttons, sound, files.
+// PS Vita platform: sceGxm (the Vita's own graphics API, see "graphics" below), buttons, sound, files.
 // Same rules as the PSP layer, so the whole game runs unchanged:
 //  * the game still lays out its screens at 480 x 272; 2D is drawn through an orthographic
 //    480 x 272 projection onto the 960 x 544 screen, 3D renders at the full 960 x 544 with 2x MSAA;
-//  * static vertex arrays (models, circuit, pit lane) live in GPU buffers after their first draw;
-//  * the PSP's 8-bit swizzled palette textures are turned into RGBA textures the first time they
+//  * static vertex arrays (models, circuit, pit lane) live in GPU memory after their first draw;
+//  * the PSP's 8-bit swizzled palette textures are turned into 16/32-bit textures the first time they
 //    are bound, and cached. gfx::flushCache (which the game calls after loading or changing any
 //    pixels, because the PSP needs it) tells this layer to forget the old copy;
 //  * relative paths are mapped: "DATA/..." is read from the app (app0:), anything else (saves,
@@ -11,7 +11,7 @@
 //    Vita without a uma0 drive; files left on ux0 are still read). A model in "HD/" overrides the
 //    PSP one in "DATA/" (higher detail for the Vita).
 #include <vitasdk.h>
-#include <vitaGL.h>
+#include <vitashark.h>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -26,16 +26,10 @@
 #include "game.h"
 #include "data.h"
 
-// All of the common dialog memory (vitaGL's own value, from its private mem_utils.h; vglInitExtended
-// passes it so that none is taken). The SDK headers don't define it.
-#ifndef SCE_KERNEL_MAX_MAIN_CDIALOG_MEM_SIZE
-#define SCE_KERNEL_MAX_MAIN_CDIALOG_MEM_SIZE 0x8C6000
-#endif
-
 extern "C" {
 // The game's own heap (models, circuits, sounds): a full 20-car race peaks at ~15 MB on the PC test
-// (FL_MEM=1) and ~29 MB on the Vita (with vitaGL's own allocations), so 48 MB still leaves ~19 MB spare;
-// what it doesn't take goes to vitaGL. (It was 64 MB; before that 200 MB.)
+// (FL_MEM=1) and ~29 MB on the Vita, so 48 MB still leaves ~19 MB spare. The graphics memory pools are
+// separate blocks (see startGpu). (It was 64 MB; before that 200 MB.)
 int _newlib_heap_size_user = 48 * 1024 * 1024;
 unsigned int sceUserMainThreadStackSize = 2 * 1024 * 1024;
 }
@@ -110,32 +104,223 @@ extern "C" int __wrap_remove(const char* path) {
     return __real_remove(p);
 }
 
-// ---------------------------------------------------------------- graphics
+// ---------------------------------------------------------------- graphics (sceGxm)
+// The Vita's own graphics API, no OpenGL layer in between. One shader pair (compiled when the game
+// starts by the system's compiler, libshacccg.suprx, through vitaShaRK) does everything the old fixed
+// function path did: texture x vertex colour, alpha test (> 8/255), linear fog. Three vertex layouts
+// feed it: the game's float vertices, its 16-bit model vertices (read as they are, no conversion) and
+// (later) the Blender cars' meshes.
+//  * GPU memory: one pool in video memory (CDRAM), one in uncached main memory when that fills up.
+//    Memory the GPU may still be reading is only given back once the frame that used it has finished
+//    (each frame's end writes its number to a notification the GPU sets when it's done).
+//  * per-frame vertices (gfx::frameAlloc) come from two arenas in GPU-visible memory, used in turn.
+//  * insets (the rear-view mirror) are cut out with the stencil buffer: pixel exact, like glScissor.
 namespace {
-u8* arena = nullptr;
 const int ARENA_SIZE = 16 << 20;
+u8* arenas[2] = {nullptr, nullptr};
+u8* arena = nullptr;
 int arenaUsed = 0;
-
-// RGBA copies of the game's palette textures
-struct GpuTex { const u8* pix; const u32* pal; int w, h; GLuint id; };
-std::vector<GpuTex> texCache;
-int lastHit = -1;
-const Texture* curTex = nullptr;
-bool texOn = false;
-
-// what the game asked for (2D drawing changes some of it for a moment)
-M4 projM = M4::identity(), viewM = M4::identity();
-bool fogWanted = false, depthWanted = true, in2D = false;
-
+inline bool inArena(const void* p) {
+    for (u8* a : arenas) if (a && (const u8*)p >= a && (const u8*)p < a + ARENA_SIZE) return true;
+    return false;
+}
 inline bool overlaps(const void* a, int an, const void* b, int bn) {
     const u8 *x = (const u8*)a, *y = (const u8*)b;
     return x < y + bn && y < x + an;
 }
 
-GLuint upload(const Texture* t) {
+// ---- memory the GPU can see
+const unsigned CDRAM_ALIGN = 256 * 1024, RAM_ALIGN = 4 * 1024;
+void* gpuBlock(SceKernelMemBlockType type, unsigned size, unsigned* sizeOut = nullptr) {
+    unsigned al = (type == SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW) ? CDRAM_ALIGN : RAM_ALIGN;
+    size = (size + al - 1) & ~(al - 1);
+    SceUID uid = sceKernelAllocMemBlock("emr_gpu", type, size, nullptr);
+    if (uid < 0) return nullptr;
+    void* p = nullptr;
+    sceKernelGetMemBlockBase(uid, &p);
+    if (sceGxmMapMemory(p, size, (SceGxmMemoryAttribFlags)(SCE_GXM_MEMORY_ATTRIB_READ | SCE_GXM_MEMORY_ATTRIB_WRITE)) < 0) {
+        sceKernelFreeMemBlock(uid);
+        return nullptr;
+    }
+    if (sizeOut) *sizeOut = size;
+    return p;
+}
+void* usseBlock(unsigned size, bool vertex, unsigned* offset) {
+    size = (size + RAM_ALIGN - 1) & ~(RAM_ALIGN - 1);
+    SceUID uid = sceKernelAllocMemBlock("emr_usse", SCE_KERNEL_MEMBLOCK_TYPE_USER_MAIN_NC_RW, size, nullptr);
+    if (uid < 0) return nullptr;
+    void* p = nullptr;
+    sceKernelGetMemBlockBase(uid, &p);
+    int r = vertex ? sceGxmMapVertexUsseMemory(p, size, offset) : sceGxmMapFragmentUsseMemory(p, size, offset);
+    if (r < 0) { sceKernelFreeMemBlock(uid); return nullptr; }
+    return p;
+}
+
+// first-fit allocator over one big block
+struct Pool {
+    u8* base = nullptr;
+    unsigned size = 0, usedBytes = 0;
+    struct Range { unsigned off, len; };
+    std::vector<Range> freeList;                         // sorted by offset, never touching
+    std::unordered_map<uintptr_t, Range> used;           // returned address -> what it took
+    void init(void* b, unsigned s) { base = (u8*)b; size = s; usedBytes = 0; freeList.assign(1, Range{0, s}); used.clear(); }
+    bool owns(const void* p) const { return base && (const u8*)p >= base && (const u8*)p < base + size; }
+    void* alloc(unsigned n, unsigned align) {
+        if (!base || !n) return nullptr;
+        for (size_t i = 0; i < freeList.size(); i++) {
+            unsigned o = freeList[i].off, s = freeList[i].len;
+            uintptr_t a = ((uintptr_t)base + o + align - 1) & ~(uintptr_t)(align - 1);
+            unsigned ao = (unsigned)(a - (uintptr_t)base), end = ao + n;
+            if (end > o + s) continue;
+            if (end == o + s) freeList.erase(freeList.begin() + i);
+            else freeList[i] = Range{end, o + s - end};
+            used[a] = Range{o, end - o};
+            usedBytes += end - o;
+            return (void*)a;
+        }
+        return nullptr;
+    }
+    void release(void* p) {
+        auto it = used.find((uintptr_t)p);
+        if (it == used.end()) return;
+        Range r = it->second;
+        used.erase(it);
+        usedBytes -= r.len;
+        size_t i = 0;
+        while (i < freeList.size() && freeList[i].off < r.off) i++;
+        freeList.insert(freeList.begin() + i, r);
+        if (i + 1 < freeList.size() && freeList[i].off + freeList[i].len == freeList[i + 1].off) {
+            freeList[i].len += freeList[i + 1].len; freeList.erase(freeList.begin() + i + 1);
+        }
+        if (i > 0 && freeList[i - 1].off + freeList[i - 1].len == freeList[i].off) {
+            freeList[i - 1].len += freeList[i].len; freeList.erase(freeList.begin() + i);
+        }
+    }
+};
+Pool vram, ram;
+
+// frames: each one's end sets a notification once the GPU has finished it
+volatile unsigned int* notifyAddr = nullptr;
+unsigned frameNo = 1;                                    // the frame being built
+inline unsigned framesDone() { return notifyAddr ? *notifyAddr : 0; }
+struct Pending { void* p; unsigned frame; };
+std::vector<Pending> pending;
+void collect() {
+    unsigned done = framesDone();
+    for (size_t i = 0; i < pending.size();) {
+        if ((int)(done - pending[i].frame) >= 0) {
+            if (vram.owns(pending[i].p)) vram.release(pending[i].p); else ram.release(pending[i].p);
+            pending[i] = pending.back(); pending.pop_back();
+        } else i++;
+    }
+}
+void* gpuAlloc(unsigned n, unsigned align = 16) {
+    void* p = vram.alloc(n, align);
+    if (!p) p = ram.alloc(n, align);
+    if (!p && !pending.empty()) {                       // what finished frames gave back
+        collect();
+        p = vram.alloc(n, align);
+        if (!p) p = ram.alloc(n, align);
+    }
+    return p;
+}
+void gpuFree(void* p) { if (p) pending.push_back(Pending{p, frameNo}); }
+
+// ---- the GPU's objects
+const int BUFFERS = 3;                                   // triple buffered display
+SceGxmContext* ctx = nullptr;
+SceGxmShaderPatcher* patcher = nullptr;
+SceGxmRenderTarget* target = nullptr;
+SceGxmColorSurface surface[BUFFERS];
+void* surfaceMem[BUFFERS];
+SceGxmSyncObject* syncObj[BUFFERS];
+int backBuf = 0, frontBuf = BUFFERS - 1;
+SceGxmDepthStencilSurface depthSurface;
+SceGxmNotification frameNotify;
+bool gpuReady = false, inScene = false;
+
+const SceGxmProgram* vProg = nullptr;
+const SceGxmProgram* fProg = nullptr;
+const SceGxmProgramParameter *uMvp = nullptr, *uMv = nullptr, *uPrm = nullptr, *uFog = nullptr;
+SceGxmVertexProgram* vpWorld = nullptr;                  // WorldVertex: float uv, colour, float xyz
+SceGxmVertexProgram* vpModel = nullptr;                  // ModelVertex: u16 uv, colour, s16 xyz
+SceGxmFragmentProgram* fpOpaque = nullptr;
+SceGxmFragmentProgram* fpBlend = nullptr;
+SceGxmFragmentProgram* fpNoColour = nullptr;             // depth / stencil only (clears)
+uint32_t* linearIdx = nullptr;                           // 0, 1, 2 ... for the plain draws
+const unsigned LINEAR_IDX = 1u << 20;
+SceGxmTexture whiteTex;                                  // "no texture": vertex colour only
+
+// The one shader pair. Vertex: positions and texture coordinates are scaled by uPrm.xy (1/32768 for
+// the 16-bit models), fog factor (GL_LINEAR on the distance along the view) goes in vTex.z.
+const char* VERT_SRC = R"(
+void main(
+    float3 aPos,
+    float4 aCol,
+    float2 aUv,
+    uniform float4x4 uMvp,
+    uniform float4x4 uMv,
+    uniform float4 uPrm,
+    float4 out vPos : POSITION,
+    float4 out vCol : COLOR0,
+    float3 out vTex : TEXCOORD0)
+{
+    float4 p = float4(aPos * uPrm.x, 1.0f);
+    vPos = mul(p, uMvp);
+    float d = abs(mul(p, uMv).z);
+    vCol = aCol;
+    vTex = float3(aUv * uPrm.y, saturate((uPrm.z - d) * uPrm.w));
+}
+)";
+const char* FRAG_SRC = R"(
+float4 main(
+    float4 vCol : COLOR0,
+    float3 vTex : TEXCOORD0,
+    uniform sampler2D uTex,
+    uniform float4 uFog)
+{
+    float4 c = tex2D(uTex, vTex.xy) * vCol;
+    if (c.a <= 0.0314f) discard;
+    c.rgb = lerp(uFog.rgb, c.rgb, vTex.z);
+    return c;
+}
+)";
+
+const SceGxmProgram* compile(const char* src, bool vertex) {
+    uint32_t size = (uint32_t)strlen(src);
+    SceGxmProgram* p = shark_compile_shader(src, &size, vertex ? SHARK_VERTEX_SHADER : SHARK_FRAGMENT_SHADER);
+    if (!p) {
+        if (const SceShaccCgCompileOutput* o = shark_get_internal_compile_output())
+            for (int i = 0; i < o->diagnosticCount; i++) sys::log("shader: %s\n", o->diagnostics[i].message);
+        shark_clear_output();
+        return nullptr;
+    }
+    void* copy = memalign(16, size);
+    memcpy(copy, p, size);
+    shark_clear_output();
+    return (const SceGxmProgram*)copy;
+}
+
+// ---- what the game asked for (2D drawing changes some of it for a moment)
+M4 projM = M4::identity(), viewM = M4::identity();
+bool fogWanted = false, depthWanted = true, depthWriteWanted = true, blendOn = false, in2D = false;
+float fogEnd = 1e20f, fogInv = 1;
+float fogCol[4] = {0, 0, 0, 1};
+int insetRef = 0;                                       // stencil value of the current inset (0: none)
+
+// RGBA copies of the game's palette textures
+struct GpuTex { const u8* pix; const u32* pal; int w, h; void* mem; SceGxmTexture tex; };
+std::vector<GpuTex*> texCache;                          // (pointers: a bound texture never moves)
+int lastHit = -1;
+const Texture* curTex = nullptr;
+const SceGxmTexture* curGxmTex = nullptr;
+
+inline bool isPow2(int v) { return v > 0 && !(v & (v - 1)); }
+
+int upload(const Texture* t) {
     for (int i = (lastHit >= 0 ? lastHit : 0), k = 0; k < (int)texCache.size(); k++, i = (i + 1) % (int)texCache.size()) {
-        const GpuTex& g = texCache[i];
-        if (g.pix == t->pixels && g.pal == t->palette && g.w == t->w && g.h == t->h) { lastHit = i; return g.id; }
+        const GpuTex& g = *texCache[i];
+        if (g.pix == t->pixels && g.pal == t->palette && g.w == t->w && g.h == t->h) { lastHit = i; return i; }
     }
     // unswizzle (16 x 8 blocks) and look up the palette
     int w = t->w, h = t->h, bw = w / 16 > 0 ? w / 16 : 1;
@@ -145,139 +330,377 @@ GLuint upload(const Texture* t) {
             int off = ((y >> 3) * bw + (x >> 4)) * 128 + (y & 7) * 16 + (x & 15);
             rgba[(size_t)y * w + x] = t->palette[t->pixels[off]];
         }
-    // Fully opaque textures go to the GPU as 16-bit colour (half the memory
-    // and bandwidth); anything with see-through parts stays 32-bit.
+    // fully opaque textures go to the GPU as 16-bit colour (half the memory and bandwidth); anything
+    // with see-through parts stays 32-bit. Big opaque power-of-two ones get mipmaps (no shimmering in
+    // the distance); HUD, font and cut-out ones don't.
     bool opaque = true;
     for (size_t i = 0; i < rgba.size() && opaque; i++) opaque = (rgba[i] >> 24) == 0xFF;
-    // Big opaque textures (road, grass, car paint...) get mipmaps so they stay
-    // smooth in the distance instead of shimmering. HUD/font/cut-out ones don't.
-    bool pow2 = !(w & (w - 1)) && !(h & (h - 1));
+    bool pow2 = isPow2(w) && isPow2(h);
     bool mip = opaque && pow2 && w >= 64 && h >= 64;
-    GLuint id = 0;
-    glGenTextures(1, &id);
-    glBindTexture(GL_TEXTURE_2D, id);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, mip ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    if (opaque) {
-        std::vector<u16> c16((size_t)w * h);
-        for (size_t i = 0; i < c16.size(); i++) {
-            u32 c = rgba[i];   // A B G R in memory order R,G,B,A
-            u32 r = c & 0xFF, g = (c >> 8) & 0xFF, b = (c >> 16) & 0xFF;
-            c16[i] = (u16)(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+    int bpp = opaque ? 2 : 4;
+    // the levels: each row padded to 8 texels, one level after the other
+    int levels = 1;
+    unsigned bytes = (unsigned)(((w + 7) & ~7) * h * bpp);
+    if (mip) {
+        for (int lw = w, lh = h; lw > 1 && lh > 1;) {
+            lw /= 2; lh /= 2;
+            bytes += (unsigned)(((lw + 7) & ~7) * lh * bpp);
+            levels++;
         }
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, w, h, 0, GL_RGB, GL_UNSIGNED_SHORT_5_6_5, c16.data());
-    } else {
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
     }
-    if (mip) glGenerateMipmap(GL_TEXTURE_2D);
-    texCache.push_back(GpuTex{t->pixels, t->palette, w, h, id});
+    void* mem = gpuAlloc(bytes, 16);
+    if (!mem) { sys::log("gpu: out of memory for a %dx%d texture\n", w, h); return -1; }
+    u8* dst = (u8*)mem;
+    std::vector<u32> cur = rgba, next;
+    int lw = w, lh = h;
+    for (int L = 0; L < levels; L++) {
+        int stride = (lw + 7) & ~7;
+        for (int y = 0; y < lh; y++) {
+            const u32* src = &cur[(size_t)y * lw];
+            if (opaque) {
+                u16* row = (u16*)dst + (size_t)y * stride;
+                for (int x = 0; x < lw; x++) {
+                    u32 c = src[x];                       // A B G R (bytes R, G, B, A)
+                    u32 r = c & 0xFF, g = (c >> 8) & 0xFF, b = (c >> 16) & 0xFF;
+                    row[x] = (u16)(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+                }
+            } else {
+                memcpy((u32*)dst + (size_t)y * stride, src, (size_t)lw * 4);
+            }
+        }
+        dst += (size_t)stride * lh * bpp;
+        if (L + 1 < levels) {                             // 2 x 2 box filter for the next level
+            int nw = lw / 2, nh = lh / 2;
+            next.resize((size_t)nw * nh);
+            for (int y = 0; y < nh; y++)
+                for (int x = 0; x < nw; x++) {
+                    u32 a = cur[(size_t)(2 * y) * lw + 2 * x], b = cur[(size_t)(2 * y) * lw + 2 * x + 1];
+                    u32 c = cur[(size_t)(2 * y + 1) * lw + 2 * x], d = cur[(size_t)(2 * y + 1) * lw + 2 * x + 1];
+                    u32 o = 0;
+                    for (int s = 0; s < 32; s += 8)
+                        o |= ((((a >> s) & 255) + ((b >> s) & 255) + ((c >> s) & 255) + ((d >> s) & 255) + 2) / 4) << s;
+                    next[(size_t)y * nw + x] = o;
+                }
+            cur.swap(next);
+            lw = nw; lh = nh;
+        }
+    }
+    GpuTex* gp = new GpuTex{t->pixels, t->palette, w, h, mem, {}};
+    GpuTex& g = *gp;
+    sceGxmTextureInitLinear(&g.tex, mem, opaque ? SCE_GXM_TEXTURE_FORMAT_U5U6U5_RGB : SCE_GXM_TEXTURE_FORMAT_U8U8U8U8_ABGR, w, h, levels);
+    sceGxmTextureSetMinFilter(&g.tex, SCE_GXM_TEXTURE_FILTER_LINEAR);
+    sceGxmTextureSetMagFilter(&g.tex, SCE_GXM_TEXTURE_FILTER_LINEAR);
+    sceGxmTextureSetMipFilter(&g.tex, mip ? SCE_GXM_TEXTURE_MIP_FILTER_ENABLED : SCE_GXM_TEXTURE_MIP_FILTER_DISABLED);
+    SceGxmTextureAddrMode am = pow2 ? SCE_GXM_TEXTURE_ADDR_REPEAT : SCE_GXM_TEXTURE_ADDR_CLAMP;
+    sceGxmTextureSetUAddrMode(&g.tex, am);
+    sceGxmTextureSetVAddrMode(&g.tex, am);
+    texCache.push_back(gp);
     lastHit = (int)texCache.size() - 1;
-    return id;
+    return lastHit;
 }
 
 // forget GPU copies made from memory in [p, p + n)
 void forget(const void* p, int n) {
     for (int i = (int)texCache.size() - 1; i >= 0; i--) {
-        GpuTex& g = texCache[i];
-        if (overlaps(p, n, g.pix, g.w * g.h) || overlaps(p, n, g.pal, 1024)) {
-            glDeleteTextures(1, &g.id);
+        GpuTex* g = texCache[i];
+        if (overlaps(p, n, g->pix, g->w * g->h) || overlaps(p, n, g->pal, 1024)) {
+            if (curGxmTex == &g->tex) { curTex = nullptr; curGxmTex = &whiteTex; }   // (it was the bound one)
+            gpuFree(g->mem);
+            delete g;
             texCache[i] = texCache.back(); texCache.pop_back();
+            lastHit = -1;
         }
     }
-    lastHit = -1;
-    curTex = nullptr;
 }
 
-// GPU copies of static vertex arrays (models, circuit chunks, pit lane): made on first draw, kept
-// until the game rewrites that memory (gfx::flushCache) or frees it. Per-frame arrays (frame memory)
-// are sent the slow way every time.
-struct Vbo { const u8* ptr; int bytes; GLuint id; };
+// GPU copies of static vertex arrays (models, circuit chunks, pit lane): made on first draw, kept until
+// the game rewrites that memory (gfx::flushCache) or frees it. The models stay 16-bit.
+struct Vbo { const u8* ptr; int bytes; void* mem; };
 std::unordered_map<uint64_t, Vbo> vbos;
-inline bool inArena(const void* p) { return arena && (const u8*)p >= arena && (const u8*)p < arena + ARENA_SIZE; }
 inline uint64_t vkey(const void* p, int count, bool model) { return ((uint64_t)(uintptr_t)p << 1) ^ ((uint64_t)count << 40) ^ (model ? 1 : 0); }
 
 void forgetVbos(const void* p, int n) {
     for (auto it = vbos.begin(); it != vbos.end();) {
-        if (overlaps(p, n, it->second.ptr, it->second.bytes)) { glDeleteBuffers(1, &it->second.id); it = vbos.erase(it); }
+        if (overlaps(p, n, it->second.ptr, it->second.bytes)) { gpuFree(it->second.mem); it = vbos.erase(it); }
         else ++it;
     }
 }
 
-GLuint vboFor(const void* src, int count, bool model) {
-    if (inArena(src)) return 0;
+// where the GPU can read these vertices: the arena as it is, anything else copied once
+const void* gpuVerts(const void* src, int count, bool model) {
+    if (inArena(src)) return src;
+    int bytes = count * (int)(model ? sizeof(ModelVertex) : sizeof(WorldVertex));
     uint64_t k = vkey(src, count, model);
     auto it = vbos.find(k);
-    if (it != vbos.end()) return it->second.id;
-    std::vector<WorldVertex> tmp;
-    const WorldVertex* data = (const WorldVertex*)src;
-    if (model) {
-        tmp.resize(count);
-        const ModelVertex* v = (const ModelVertex*)src;
-        const float kk = 1.0f / 32768.0f;
-        for (int i = 0; i < count; i++) tmp[i] = WorldVertex{v[i].u * kk, v[i].v * kk, v[i].color, v[i].x * kk, v[i].y * kk, v[i].z * kk};
-        data = tmp.data();
+    if (it != vbos.end()) return it->second.mem;
+    if (void* mem = gpuAlloc((unsigned)bytes, 16)) {
+        memcpy(mem, src, bytes);
+        vbos[k] = Vbo{(const u8*)src, bytes, mem};
+        return mem;
     }
-    GLuint id = 0;
-    glGenBuffers(1, &id);
-    glBindBuffer(GL_ARRAY_BUFFER, id);
-    glBufferData(GL_ARRAY_BUFFER, count * sizeof(WorldVertex), data, GL_STATIC_DRAW);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    vbos[k] = Vbo{(const u8*)src, count * (int)(model ? sizeof(ModelVertex) : sizeof(WorldVertex)), id};
-    return id;
+    void* tmp = gfx::frameAlloc(bytes);                 // (out of GPU memory: this frame only)
+    if (tmp) memcpy(tmp, src, bytes);
+    return tmp;
 }
 
-void applyTex() {
-    if (curTex && curTex->pixels && curTex->palette) {
-        glEnable(GL_TEXTURE_2D);
-        glEnableClientState(GL_TEXTURE_COORD_ARRAY);
-        glBindTexture(GL_TEXTURE_2D, upload(curTex));
-        texOn = true;
-    } else {
-        glDisable(GL_TEXTURE_2D);
-        glDisableClientState(GL_TEXTURE_COORD_ARRAY);
-        texOn = false;
+// ---- state
+void setDepthState(SceGxmDepthFunc f, bool write) {
+    SceGxmDepthWriteMode w = write ? SCE_GXM_DEPTH_WRITE_ENABLED : SCE_GXM_DEPTH_WRITE_DISABLED;
+    sceGxmSetFrontDepthFunc(ctx, f); sceGxmSetBackDepthFunc(ctx, f);
+    sceGxmSetFrontDepthWriteEnable(ctx, w); sceGxmSetBackDepthWriteEnable(ctx, w);
+}
+// GL rules: no depth test (or 2D) -> no depth writes either
+void applyDepth() {
+    bool test = !in2D && depthWanted;
+    setDepthState(test ? SCE_GXM_DEPTH_FUNC_LESS_EQUAL : SCE_GXM_DEPTH_FUNC_ALWAYS, test && depthWriteWanted);
+}
+void setStencil(SceGxmStencilFunc f, SceGxmStencilOp pass, unsigned ref) {
+    sceGxmSetFrontStencilFunc(ctx, f, SCE_GXM_STENCIL_OP_KEEP, SCE_GXM_STENCIL_OP_KEEP, pass, 0xFF, 0xFF);
+    sceGxmSetBackStencilFunc(ctx, f, SCE_GXM_STENCIL_OP_KEEP, SCE_GXM_STENCIL_OP_KEEP, pass, 0xFF, 0xFF);
+    sceGxmSetFrontStencilRef(ctx, ref); sceGxmSetBackStencilRef(ctx, ref);
+}
+void setViewportPx(float x, float y, float w, float h) {
+    sceGxmSetViewport(ctx, x + w * 0.5f, w * 0.5f, y + h * 0.5f, -h * 0.5f, 0.5f, 0.5f);
+}
+
+M4 ortho2D() {
+    M4 r = M4::identity();
+    r.m[0] = 2.0f / SCREEN_W; r.m[5] = -2.0f / SCREEN_H; r.m[10] = -1;
+    r.m[12] = -1; r.m[13] = 1;
+    return r;
+}
+
+// one draw: vertices the GPU can read, the matrices, then the state above
+void draw(const void* verts, bool model, SceGxmPrimitiveType prim, const uint32_t* idx, unsigned n,
+          const M4& mvp, const M4& mv, SceGxmFragmentProgram* fp = nullptr, bool fog = true) {
+    if (!inScene || !verts || !n) return;
+    sceGxmSetVertexProgram(ctx, model ? vpModel : vpWorld);
+    sceGxmSetFragmentProgram(ctx, fp ? fp : (blendOn ? fpBlend : fpOpaque));
+    sceGxmSetFragmentTexture(ctx, 0, curGxmTex ? curGxmTex : &whiteTex);
+    void* vb = nullptr;
+    sceGxmReserveVertexDefaultUniformBuffer(ctx, &vb);
+    sceGxmSetUniformDataF(vb, uMvp, 0, 16, mvp.m);
+    sceGxmSetUniformDataF(vb, uMv, 0, 16, mv.m);
+    const float k = model ? 1.0f / 32768.0f : 1.0f;
+    bool fogNow = fog && fogWanted && !in2D;
+    float prm[4] = {k, k, fogNow ? fogEnd : 1e20f, fogNow ? fogInv : 1.0f};
+    sceGxmSetUniformDataF(vb, uPrm, 0, 4, prm);
+    void* fb = nullptr;
+    sceGxmReserveFragmentDefaultUniformBuffer(ctx, &fb);
+    sceGxmSetUniformDataF(fb, uFog, 0, 4, fogCol);
+    sceGxmSetVertexStream(ctx, 0, verts);
+    sceGxmDraw(ctx, prim, SCE_GXM_INDEX_FORMAT_U32, idx ? idx : linearIdx, n);
+}
+
+// split very long plain draws (more vertices than the linear index list): triangles only
+void drawPlain(const void* verts, bool model, SceGxmPrimitiveType prim, unsigned count, const M4& mvp, const M4& mv) {
+    unsigned stride = model ? sizeof(ModelVertex) : sizeof(WorldVertex);
+    if (count <= LINEAR_IDX || prim != SCE_GXM_PRIMITIVE_TRIANGLES) {
+        draw(verts, model, prim, nullptr, count < LINEAR_IDX ? count : LINEAR_IDX, mvp, mv);
+        return;
+    }
+    const unsigned chunk = LINEAR_IDX - LINEAR_IDX % 3;
+    for (unsigned first = 0; first < count; first += chunk) {
+        unsigned n = count - first < chunk ? count - first : chunk;
+        draw((const u8*)verts + (size_t)first * stride, model, prim, nullptr, n, mvp, mv);
     }
 }
 
-void enter3D() {
-    if (!in2D) return;
-    in2D = false;
-    glMatrixMode(GL_PROJECTION); glLoadMatrixf(projM.m);
-    if (fogWanted) glEnable(GL_FOG);
-    if (depthWanted) glEnable(GL_DEPTH_TEST);
-}
-void enter2D() {
-    if (in2D) return;
-    in2D = true;
-    glMatrixMode(GL_PROJECTION); glLoadIdentity();
-    glOrtho(0, SCREEN_W, SCREEN_H, 0, -1, 1);
-    glMatrixMode(GL_MODELVIEW); glLoadIdentity();
-    glDisable(GL_FOG);
-    glDisable(GL_DEPTH_TEST);
-}
-
-void drawVbo(GLuint id, int count, GLenum mode) {
-    glBindBuffer(GL_ARRAY_BUFFER, id);
-    glVertexPointer(3, GL_FLOAT, sizeof(WorldVertex), (void*)offsetof(WorldVertex, x));
-    glColorPointer(4, GL_UNSIGNED_BYTE, sizeof(WorldVertex), (void*)offsetof(WorldVertex, color));
-    if (texOn) glTexCoordPointer(2, GL_FLOAT, sizeof(WorldVertex), (void*)offsetof(WorldVertex, u));
-    glDrawArrays(mode, 0, count);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
+// a rectangle over the whole viewport at the far plane: colour (or none), depth 1, stencil `ref`
+void clearQuad(u32 colour, bool writeColour, bool markStencil) {
+    WorldVertex* q = (WorldVertex*)gfx::frameAlloc(6 * (int)sizeof(WorldVertex));
+    if (!q) return;
+    WorldVertex a{0, 0, colour | 0xFF000000u, -1, -1, 1}, b{0, 0, colour | 0xFF000000u, 1, -1, 1};
+    WorldVertex c{0, 0, colour | 0xFF000000u, 1, 1, 1}, d{0, 0, colour | 0xFF000000u, -1, 1, 1};
+    q[0] = a; q[1] = b; q[2] = c; q[3] = a; q[4] = c; q[5] = d;
+    const SceGxmTexture* keep = curGxmTex;
+    curGxmTex = &whiteTex;
+    setDepthState(SCE_GXM_DEPTH_FUNC_ALWAYS, true);
+    if (markStencil) setStencil(SCE_GXM_STENCIL_FUNC_ALWAYS, SCE_GXM_STENCIL_OP_REPLACE, (unsigned)insetRef);
+    M4 id = M4::identity();
+    draw(q, false, SCE_GXM_PRIMITIVE_TRIANGLES, nullptr, 6, id, id, writeColour ? fpOpaque : fpNoColour, false);
+    if (markStencil) setStencil(SCE_GXM_STENCIL_FUNC_EQUAL, SCE_GXM_STENCIL_OP_KEEP, (unsigned)insetRef);
+    curGxmTex = keep;
+    applyDepth();
 }
 
-void drawArrays(const WorldVertex* v, int count, GLenum mode) {
-    glVertexPointer(3, GL_FLOAT, sizeof(WorldVertex), &v->x);
-    glColorPointer(4, GL_UNSIGNED_BYTE, sizeof(WorldVertex), &v->color);
-    if (texOn) glTexCoordPointer(2, GL_FLOAT, sizeof(WorldVertex), &v->u);
-    glDrawArrays(mode, 0, count);
+// ---- start up
+struct DisplayData { void* addr; };
+volatile int vblanks = 1;                               // screen refreshes per frame (0: no wait)
+void displayCallback(const void* data) {
+    const DisplayData* d = (const DisplayData*)data;
+    SceDisplayFrameBuf fb;
+    memset(&fb, 0, sizeof fb);
+    fb.size = sizeof fb; fb.base = d->addr; fb.pitch = VITA_W;
+    fb.pixelformat = SCE_DISPLAY_PIXELFORMAT_A8B8G8R8; fb.width = VITA_W; fb.height = VITA_H;
+    sceDisplaySetFrameBuf(&fb, SCE_DISPLAY_SETBUF_NEXTFRAME);
+    if (vblanks > 0) sceDisplayWaitVblankStartMulti((unsigned)vblanks);
 }
+void* patcherAlloc(void*, unsigned int size) { return malloc(size); }
+void patcherFree(void*, void* p) { free(p); }
 
-void setModel(const M4& model) {
-    M4 mv = viewM * model;
-    glMatrixMode(GL_MODELVIEW);
-    glLoadMatrixf(mv.m);
+#define GXM_CHECK(x) do { int r_ = (x); if (r_ < 0) { sys::log("gpu: %s failed %08x\n", #x, r_); return false; } } while (0)
+#define GXM_NEED(p) do { if (!(p)) { sys::log("gpu: no memory for %s\n", #p); return false; } } while (0)
+
+bool startGpu() {
+    SceGxmInitializeParams ip;
+    memset(&ip, 0, sizeof ip);
+    ip.flags = 0;
+    ip.displayQueueMaxPendingCount = BUFFERS - 1;
+    ip.displayQueueCallback = displayCallback;
+    ip.displayQueueCallbackDataSize = sizeof(DisplayData);
+    ip.parameterBufferSize = SCE_GXM_DEFAULT_PARAMETER_BUFFER_SIZE;
+    GXM_CHECK(sceGxmInitialize(&ip));
+
+    // the context and its ring buffers
+    const unsigned VERTEX_RING = 4 * 1024 * 1024, FRAGMENT_RING = 1024 * 1024;
+    void* vdm = gpuBlock(SCE_KERNEL_MEMBLOCK_TYPE_USER_MAIN_NC_RW, SCE_GXM_DEFAULT_VDM_RING_BUFFER_SIZE);
+    void* vring = gpuBlock(SCE_KERNEL_MEMBLOCK_TYPE_USER_MAIN_NC_RW, VERTEX_RING);
+    void* fring = gpuBlock(SCE_KERNEL_MEMBLOCK_TYPE_USER_MAIN_NC_RW, FRAGMENT_RING);
+    unsigned fusseOff = 0;
+    void* fusse = usseBlock(SCE_GXM_DEFAULT_FRAGMENT_USSE_RING_BUFFER_SIZE, false, &fusseOff);
+    GXM_NEED(vdm); GXM_NEED(vring); GXM_NEED(fring); GXM_NEED(fusse);
+    SceGxmContextParams cp;
+    memset(&cp, 0, sizeof cp);
+    cp.hostMem = malloc(SCE_GXM_MINIMUM_CONTEXT_HOST_MEM_SIZE);
+    cp.hostMemSize = SCE_GXM_MINIMUM_CONTEXT_HOST_MEM_SIZE;
+    cp.vdmRingBufferMem = vdm; cp.vdmRingBufferMemSize = SCE_GXM_DEFAULT_VDM_RING_BUFFER_SIZE;
+    cp.vertexRingBufferMem = vring; cp.vertexRingBufferMemSize = VERTEX_RING;
+    cp.fragmentRingBufferMem = fring; cp.fragmentRingBufferMemSize = FRAGMENT_RING;
+    cp.fragmentUsseRingBufferMem = fusse; cp.fragmentUsseRingBufferMemSize = SCE_GXM_DEFAULT_FRAGMENT_USSE_RING_BUFFER_SIZE;
+    cp.fragmentUsseRingBufferOffset = fusseOff;
+    GXM_CHECK(sceGxmCreateContext(&cp, &ctx));
+
+    // the screen: 960 x 544, 2x multisampling, three colour buffers, depth + stencil
+    SceGxmRenderTargetParams rp;
+    memset(&rp, 0, sizeof rp);
+    rp.flags = 0; rp.width = VITA_W; rp.height = VITA_H; rp.scenesPerFrame = 1;
+    rp.multisampleMode = SCE_GXM_MULTISAMPLE_2X; rp.multisampleLocations = 0; rp.driverMemBlock = -1;
+    GXM_CHECK(sceGxmCreateRenderTarget(&rp, &target));
+    for (int i = 0; i < BUFFERS; i++) {
+        surfaceMem[i] = gpuBlock(SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW, 4 * VITA_W * VITA_H);
+        GXM_NEED(surfaceMem[i]);
+        memset(surfaceMem[i], 0, 4 * VITA_W * VITA_H);
+        GXM_CHECK(sceGxmColorSurfaceInit(&surface[i], SCE_GXM_COLOR_FORMAT_A8B8G8R8, SCE_GXM_COLOR_SURFACE_LINEAR,
+                                         SCE_GXM_COLOR_SURFACE_SCALE_MSAA_DOWNSCALE, SCE_GXM_OUTPUT_REGISTER_SIZE_32BIT,
+                                         VITA_W, VITA_H, VITA_W, surfaceMem[i]));
+        GXM_CHECK(sceGxmSyncObjectCreate(&syncObj[i]));
+    }
+    const unsigned dsW = (VITA_W + SCE_GXM_TILE_SIZEX - 1) & ~(SCE_GXM_TILE_SIZEX - 1);
+    const unsigned dsH = (VITA_H + SCE_GXM_TILE_SIZEY - 1) & ~(SCE_GXM_TILE_SIZEY - 1);
+    const unsigned samples = dsW * dsH * 2;              // 2x MSAA: two samples per pixel, same stride
+    void* depthMem = gpuBlock(SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW, 4 * samples);
+    void* stencilMem = gpuBlock(SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW, samples);
+    GXM_NEED(depthMem); GXM_NEED(stencilMem);
+    GXM_CHECK(sceGxmDepthStencilSurfaceInit(&depthSurface, SCE_GXM_DEPTH_STENCIL_FORMAT_DF32M_S8, SCE_GXM_DEPTH_STENCIL_SURFACE_LINEAR,
+                                            dsW, depthMem, stencilMem));
+    sceGxmDepthStencilSurfaceSetBackgroundDepth(&depthSurface, 1.0f);
+    sceGxmDepthStencilSurfaceSetBackgroundStencil(&depthSurface, 0);
+
+    // the shader patcher and the shaders
+    const unsigned PATCH_BUF = 64 * 1024, PATCH_USSE = 64 * 1024;
+    void* pbuf = gpuBlock(SCE_KERNEL_MEMBLOCK_TYPE_USER_MAIN_NC_RW, PATCH_BUF);
+    unsigned vOff = 0, fOff = 0;
+    void* vusse = usseBlock(PATCH_USSE, true, &vOff);
+    void* fusse2 = usseBlock(PATCH_USSE, false, &fOff);
+    GXM_NEED(pbuf); GXM_NEED(vusse); GXM_NEED(fusse2);
+    SceGxmShaderPatcherParams pp;
+    memset(&pp, 0, sizeof pp);
+    pp.hostAllocCallback = patcherAlloc; pp.hostFreeCallback = patcherFree;
+    pp.bufferMem = pbuf; pp.bufferMemSize = PATCH_BUF;
+    pp.vertexUsseMem = vusse; pp.vertexUsseMemSize = PATCH_USSE; pp.vertexUsseOffset = vOff;
+    pp.fragmentUsseMem = fusse2; pp.fragmentUsseMemSize = PATCH_USSE; pp.fragmentUsseOffset = fOff;
+    GXM_CHECK(sceGxmShaderPatcherCreate(&pp, &patcher));
+
+    vProg = compile(VERT_SRC, true);
+    fProg = compile(FRAG_SRC, false);
+    GXM_NEED(vProg); GXM_NEED(fProg);
+    SceGxmShaderPatcherId vId, fId;
+    GXM_CHECK(sceGxmShaderPatcherRegisterProgram(patcher, vProg, &vId));
+    GXM_CHECK(sceGxmShaderPatcherRegisterProgram(patcher, fProg, &fId));
+    const SceGxmProgramParameter* aPos = sceGxmProgramFindParameterByName(vProg, "aPos");
+    const SceGxmProgramParameter* aCol = sceGxmProgramFindParameterByName(vProg, "aCol");
+    const SceGxmProgramParameter* aUv = sceGxmProgramFindParameterByName(vProg, "aUv");
+    uMvp = sceGxmProgramFindParameterByName(vProg, "uMvp");
+    uMv = sceGxmProgramFindParameterByName(vProg, "uMv");
+    uPrm = sceGxmProgramFindParameterByName(vProg, "uPrm");
+    uFog = sceGxmProgramFindParameterByName(fProg, "uFog");
+    GXM_NEED(aPos); GXM_NEED(aCol); GXM_NEED(aUv); GXM_NEED(uMvp); GXM_NEED(uMv); GXM_NEED(uPrm); GXM_NEED(uFog);
+    auto reg = [](const SceGxmProgramParameter* p) { return (uint16_t)sceGxmProgramParameterGetResourceIndex(p); };
+    {   // WorldVertex { float u, v; u32 color; float x, y, z; } = 24 bytes
+        SceGxmVertexAttribute at[3];
+        at[0].streamIndex = 0; at[0].offset = 12; at[0].format = SCE_GXM_ATTRIBUTE_FORMAT_F32; at[0].componentCount = 3; at[0].regIndex = reg(aPos);
+        at[1].streamIndex = 0; at[1].offset = 8; at[1].format = SCE_GXM_ATTRIBUTE_FORMAT_U8N; at[1].componentCount = 4; at[1].regIndex = reg(aCol);
+        at[2].streamIndex = 0; at[2].offset = 0; at[2].format = SCE_GXM_ATTRIBUTE_FORMAT_F32; at[2].componentCount = 2; at[2].regIndex = reg(aUv);
+        SceGxmVertexStream st; st.stride = sizeof(WorldVertex); st.indexSource = SCE_GXM_INDEX_SOURCE_INDEX_32BIT;
+        GXM_CHECK(sceGxmShaderPatcherCreateVertexProgram(patcher, vId, at, 3, &st, 1, &vpWorld));
+    }
+    {   // ModelVertex { u16 u, v; u32 color; int16 x, y, z, pad; } = 16 bytes, read as integers (x 1/32768 in the shader)
+        SceGxmVertexAttribute at[3];
+        at[0].streamIndex = 0; at[0].offset = 8; at[0].format = SCE_GXM_ATTRIBUTE_FORMAT_S16; at[0].componentCount = 3; at[0].regIndex = reg(aPos);
+        at[1].streamIndex = 0; at[1].offset = 4; at[1].format = SCE_GXM_ATTRIBUTE_FORMAT_U8N; at[1].componentCount = 4; at[1].regIndex = reg(aCol);
+        at[2].streamIndex = 0; at[2].offset = 0; at[2].format = SCE_GXM_ATTRIBUTE_FORMAT_U16; at[2].componentCount = 2; at[2].regIndex = reg(aUv);
+        SceGxmVertexStream st; st.stride = sizeof(ModelVertex); st.indexSource = SCE_GXM_INDEX_SOURCE_INDEX_32BIT;
+        GXM_CHECK(sceGxmShaderPatcherCreateVertexProgram(patcher, vId, at, 3, &st, 1, &vpModel));
+    }
+    SceGxmBlendInfo alpha;
+    memset(&alpha, 0, sizeof alpha);
+    alpha.colorMask = SCE_GXM_COLOR_MASK_ALL;
+    alpha.colorFunc = SCE_GXM_BLEND_FUNC_ADD; alpha.alphaFunc = SCE_GXM_BLEND_FUNC_ADD;
+    alpha.colorSrc = SCE_GXM_BLEND_FACTOR_SRC_ALPHA; alpha.colorDst = SCE_GXM_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    alpha.alphaSrc = SCE_GXM_BLEND_FACTOR_SRC_ALPHA; alpha.alphaDst = SCE_GXM_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    SceGxmBlendInfo none;
+    memset(&none, 0, sizeof none);
+    none.colorMask = SCE_GXM_COLOR_MASK_NONE;
+    none.colorFunc = SCE_GXM_BLEND_FUNC_NONE; none.alphaFunc = SCE_GXM_BLEND_FUNC_NONE;
+    none.colorSrc = SCE_GXM_BLEND_FACTOR_ONE; none.colorDst = SCE_GXM_BLEND_FACTOR_ZERO;
+    none.alphaSrc = SCE_GXM_BLEND_FACTOR_ONE; none.alphaDst = SCE_GXM_BLEND_FACTOR_ZERO;
+    const SceGxmOutputRegisterFormat OUT = SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4;
+    GXM_CHECK(sceGxmShaderPatcherCreateFragmentProgram(patcher, fId, OUT, SCE_GXM_MULTISAMPLE_2X, nullptr, vProg, &fpOpaque));
+    GXM_CHECK(sceGxmShaderPatcherCreateFragmentProgram(patcher, fId, OUT, SCE_GXM_MULTISAMPLE_2X, &alpha, vProg, &fpBlend));
+    GXM_CHECK(sceGxmShaderPatcherCreateFragmentProgram(patcher, fId, OUT, SCE_GXM_MULTISAMPLE_2X, &none, vProg, &fpNoColour));
+
+    // memory pools for textures and vertex buffers: video memory, keeping 8 MB of it free for plugins (a
+    // screen recorder), then uncached main memory, keeping 24 MB free for everything else
+    SceKernelFreeMemorySizeInfo fm;
+    memset(&fm, 0, sizeof fm);
+    fm.size = sizeof fm;
+    sceKernelGetFreeMemorySize(&fm);
+    const unsigned KEEP_CDRAM = 8u << 20, KEEP_RAM = 24u << 20;
+    unsigned got = 0;
+    if ((unsigned)fm.size_cdram > KEEP_CDRAM + CDRAM_ALIGN) {
+        void* v = gpuBlock(SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW, ((unsigned)fm.size_cdram - KEEP_CDRAM) & ~(CDRAM_ALIGN - 1), &got);
+        if (v) vram.init(v, got);
+    }
+    // the two frame arenas first (they must exist), then the rest
+    for (u8*& a : arenas) { a = (u8*)gpuBlock(SCE_KERNEL_MEMBLOCK_TYPE_USER_MAIN_NC_RW, ARENA_SIZE); GXM_NEED(a); }
+    arena = arenas[0];
+    memset(&fm, 0, sizeof fm);
+    fm.size = sizeof fm;
+    sceKernelGetFreeMemorySize(&fm);
+    if ((unsigned)fm.size_user > KEEP_RAM + RAM_ALIGN) {
+        unsigned want = (unsigned)fm.size_user - KEEP_RAM;
+        if (want > (128u << 20)) want = 128u << 20;
+        void* r = gpuBlock(SCE_KERNEL_MEMBLOCK_TYPE_USER_MAIN_NC_RW, want & ~(RAM_ALIGN - 1), &got);
+        if (r) ram.init(r, got);
+    }
+    sys::log("gpu: video memory pool %u KB, main memory pool %u KB\n", vram.size / 1024, ram.size / 1024);
+
+    linearIdx = (uint32_t*)gpuAlloc(LINEAR_IDX * 4, 16);
+    GXM_NEED(linearIdx);
+    for (unsigned i = 0; i < LINEAR_IDX; i++) linearIdx[i] = i;
+    u32* white = (u32*)gpuAlloc(8 * 4, 16);             // 1 x 1 (rows are 8 texels)
+    GXM_NEED(white);
+    for (int i = 0; i < 8; i++) white[i] = 0xFFFFFFFFu;
+    sceGxmTextureInitLinear(&whiteTex, white, SCE_GXM_TEXTURE_FORMAT_U8U8U8U8_ABGR, 1, 1, 1);
+    curGxmTex = &whiteTex;
+
+    notifyAddr = sceGxmGetNotificationRegion();
+    *notifyAddr = 0;
+    frameNotify.address = notifyAddr;
+    frameNotify.value = 0;
+    gpuReady = true;
+    return true;
 }
 }
 
@@ -288,86 +711,104 @@ float lastWaitSec() { return waitSec; }
 float lastGpuWaitSec() { return gpuWaitSec; }
 void setSync(bool vsync, int every) {
     syncOn = vsync || every > 1; syncEvery = every < 1 ? 1 : every;
-    vglWaitVblankStart(syncOn ? GL_TRUE : GL_FALSE);
+    vblanks = syncOn ? syncEvery : 0;
 }
 void beginFrame(u32 clear) {
+    if (!gpuReady) return;
+    // this frame's arena was last used two frames ago: wait until the GPU has finished with it
+    arena = arenas[frameNo & 1];
+    SceUInt64 t0 = sceKernelGetProcessTimeWide();
+    while (frameNo > 2 && (int)(framesDone() - (frameNo - 2)) < 0) sceKernelDelayThread(100);
+    gpuWaitSec = (sceKernelGetProcessTimeWide() - t0) / 1000000.0f;
     arenaUsed = 0;
-    glViewport(0, 0, VITA_W, VITA_H);
-    glClearColor((clear & 255) / 255.0f, ((clear >> 8) & 255) / 255.0f, ((clear >> 16) & 255) / 255.0f, 1);
-    glClearDepthf(1.0f);
-    glDepthMask(GL_TRUE);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    in2D = true; enter3D();
-    curTex = nullptr; applyTex();
+    collect();
+    sceGxmBeginScene(ctx, 0, target, nullptr, nullptr, syncObj[backBuf], &surface[backBuf], &depthSurface);
+    inScene = true;
+    sceGxmSetCullMode(ctx, SCE_GXM_CULL_NONE);           // the AI models are not consistently wound
+    sceGxmSetRegionClip(ctx, SCE_GXM_REGION_CLIP_OUTSIDE, 0, 0, VITA_W - 1, VITA_H - 1);
+    setViewportPx(0, 0, VITA_W, VITA_H);
+    insetRef = 0;
+    setStencil(SCE_GXM_STENCIL_FUNC_ALWAYS, SCE_GXM_STENCIL_OP_KEEP, 0);
+    in2D = false;
+    clearQuad(clear, true, false);
+    curTex = nullptr; curGxmTex = &whiteTex;
 }
 void endFrame() {
+    if (!inScene) return;
+    inScene = false;
+    frameNotify.value = frameNo;
+    sceGxmEndScene(ctx, nullptr, &frameNotify);
+    sceGxmPadHeartbeat(&surface[backBuf], syncObj[backBuf]);
     SceUInt64 t0 = sceKernelGetProcessTimeWide();
-    // 30 fps: wait one extra screen refresh (vitaGL waits for the second one when vsync is on)
-    if (syncOn && syncEvery > 1) for (int i = 1; i < syncEvery; i++) sceDisplayWaitVblankStart();
-    vglSwapBuffers(GL_FALSE);
+    DisplayData d{surfaceMem[backBuf]};
+    sceGxmDisplayQueueAddEntry(syncObj[frontBuf], syncObj[backBuf], &d);   // waits while the queue is full
     waitSec = (sceKernelGetProcessTimeWide() - t0) / 1000000.0f;
-    gpuWaitSec = 0;
+    frontBuf = backBuf;
+    backBuf = (backBuf + 1) % BUFFERS;
+    frameNo++;
 }
-void clearDepth() { glDepthMask(GL_TRUE); glClear(GL_DEPTH_BUFFER_BIT); }
+void clearDepth() { if (inScene) clearQuad(0, false, false); }
 bool beginInset(float x, float y, float w, float h, u32 c) {
-    int sx = (int)(x * 2), sy = (int)((SCREEN_H - y - h) * 2), sw = (int)(w * 2), sh = (int)(h * 2);
-    glViewport(sx, sy, sw, sh);
-    glEnable(GL_SCISSOR_TEST); glScissor(sx, sy, sw, sh);
-    glClearColor((c & 255) / 255.0f, ((c >> 8) & 255) / 255.0f, ((c >> 16) & 255) / 255.0f, 1);
-    glDepthMask(GL_TRUE);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    if (!inScene || insetRef >= 255) return false;
+    setViewportPx(x * 2, y * 2, w * 2, h * 2);
+    insetRef++;
+    clearQuad(c, true, true);                            // colour, depth and this inset's stencil mark
     return true;
 }
-void endInset() { glDisable(GL_SCISSOR_TEST); glViewport(0, 0, VITA_W, VITA_H); }
-void setProjection(const M4& p) { projM = p; if (!in2D) { glMatrixMode(GL_PROJECTION); glLoadMatrixf(p.m); } }
+void endInset() {
+    if (!inScene) return;
+    setStencil(SCE_GXM_STENCIL_FUNC_ALWAYS, SCE_GXM_STENCIL_OP_KEEP, 0);
+    setViewportPx(0, 0, VITA_W, VITA_H);
+}
+void setProjection(const M4& p) { projM = p; }
 void setView(const M4& v) { viewM = v; }
 void setFog(bool on, float n, float f, u32 c) {
     fogWanted = on;
     if (on) {
-        GLfloat col[4] = {(c & 255) / 255.0f, ((c >> 8) & 255) / 255.0f, ((c >> 16) & 255) / 255.0f, 1};
-        glFogi(GL_FOG_MODE, GL_LINEAR);
-        glFogf(GL_FOG_START, n); glFogf(GL_FOG_END, f);
-        glFogfv(GL_FOG_COLOR, col);
+        fogEnd = f;
+        fogInv = f > n ? 1.0f / (f - n) : 1e6f;
+        fogCol[0] = (c & 255) / 255.0f; fogCol[1] = ((c >> 8) & 255) / 255.0f; fogCol[2] = ((c >> 16) & 255) / 255.0f; fogCol[3] = 1;
     }
-    if (!in2D) { if (on) glEnable(GL_FOG); else glDisable(GL_FOG); }
 }
 void bindTexture(const Texture* t) {
     const Texture* want = (t && t->pixels && t->palette) ? t : nullptr;
-    if (want == curTex && (want != nullptr) == texOn) return;
-    curTex = want; applyTex();
+    if (want == curTex && curGxmTex) return;
+    curTex = want;
+    curGxmTex = &whiteTex;
+    if (want) { int i = upload(want); if (i >= 0) curGxmTex = &texCache[i]->tex; else curTex = nullptr; }
 }
-void setBlend(bool on) {
-    if (on) { glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); }
-    else glDisable(GL_BLEND);
-}
-void setDepthTest(bool on) { depthWanted = on; if (!in2D) { if (on) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST); } }
-void setDepthWrite(bool on) { glDepthMask(on ? GL_TRUE : GL_FALSE); }
+void setBlend(bool on) { blendOn = on; }
+void setDepthTest(bool on) { depthWanted = on; if (inScene) applyDepth(); }
+void setDepthWrite(bool on) { depthWriteWanted = on; if (inScene) applyDepth(); }
+
+static void enter3D() { if (in2D) { in2D = false; applyDepth(); } }
+static void enter2D() { if (!in2D) { in2D = true; applyDepth(); } }
 
 void drawModel(const ModelVertex* v, int count, const M4& model) {
-    if (count <= 0) return;
+    if (count <= 0 || !inScene) return;
     enter3D();
-    if (GLuint id = vboFor(v, count, true)) { setModel(model); drawVbo(id, count, GL_TRIANGLES); return; }
-    // 16-bit model vertices -> floats (positions and texture coordinates are value / 32768)
-    WorldVertex* w = (WorldVertex*)frameAlloc(count * (int)sizeof(WorldVertex));
-    if (!w) return;
-    const float k = 1.0f / 32768.0f;
-    for (int i = 0; i < count; i++) {
-        const ModelVertex& q = v[i];
-        w[i] = WorldVertex{q.u * k, q.v * k, q.color, q.x * k, q.y * k, q.z * k};
-    }
-    setModel(model);
-    drawArrays(w, count, GL_TRIANGLES);
+    M4 mv = viewM * model;
+    drawPlain(gpuVerts(v, count, true), true, SCE_GXM_PRIMITIVE_TRIANGLES, (unsigned)count, projM * mv, mv);
 }
 void drawWorld(const WorldVertex* v, int count, Prim prim, const M4& model) {
-    if (count <= 0) return;
-    static const GLenum P[4] = {GL_TRIANGLES, GL_TRIANGLE_STRIP, GL_LINES, GL_LINE_STRIP};
+    if (count <= 0 || !inScene) return;
     enter3D();
-    setModel(model);
-    if (GLuint id = vboFor(v, count, false)) { drawVbo(id, count, P[prim]); return; }
-    drawArrays(v, count, P[prim]);
+    M4 mv = viewM * model;
+    M4 mvp = projM * mv;
+    const void* g = gpuVerts(v, count, false);
+    if (prim == PRIM_LINE_STRIP) {                      // (no line strips on the GPU: index pairs)
+        if (count < 2) return;
+        uint32_t* idx = (uint32_t*)frameAlloc((count - 1) * 2 * 4);
+        if (!idx) return;
+        for (int i = 0; i < count - 1; i++) { idx[2 * i] = (uint32_t)i; idx[2 * i + 1] = (uint32_t)(i + 1); }
+        draw(g, false, SCE_GXM_PRIMITIVE_LINES, idx, (unsigned)(count - 1) * 2, mvp, mv);
+        return;
+    }
+    static const SceGxmPrimitiveType P[3] = {SCE_GXM_PRIMITIVE_TRIANGLES, SCE_GXM_PRIMITIVE_TRIANGLE_STRIP, SCE_GXM_PRIMITIVE_LINES};
+    drawPlain(g, false, P[prim], (unsigned)count, mvp, mv);
 }
 void drawSprites2D(const Sprite2D* s, int n) {
-    if (n <= 0) return;
+    if (n <= 0 || !inScene) return;
     enter2D();
     WorldVertex* w = (WorldVertex*)frameAlloc(n * 6 * (int)sizeof(WorldVertex));
     if (!w) return;
@@ -379,7 +820,8 @@ void drawSprites2D(const Sprite2D* s, int n) {
         WorldVertex* q = w + i * 6;
         q[0] = a; q[1] = b; q[2] = c; q[3] = a; q[4] = c; q[5] = d;
     }
-    drawArrays(w, n * 6, GL_TRIANGLES);
+    M4 o = ortho2D();
+    draw(w, false, SCE_GXM_PRIMITIVE_TRIANGLES, nullptr, (unsigned)n * 6, o, M4::identity());
 }
 void drawRect2D(float x, float y, float w, float h, float u0, float v0, float u1, float v1, u32 color) {
     Sprite2D s{x, y, w, h, u0, v0, u1, v1, color};
@@ -396,13 +838,14 @@ void* frameAlloc(int bytes) {
     if (!arena || arenaUsed + bytes > ARENA_SIZE) return nullptr;
     void* p = arena + arenaUsed; arenaUsed += bytes; return p;
 }
-// The game calls this after writing pixels or palettes: the RGBA copy made from them is stale.
+// give back the end of the last block handed out
 void frameTrim(void* p, int keepBytes) {
     u8* b = (u8*)p;
     if (!b || b < arena || b > arena + arenaUsed) return;
     int end = (int)(b - arena) + ((keepBytes + 15) & ~15);
-    if (end < arenaUsed) arenaUsed = end;   // (only shrinks; the block was the last one handed out)
+    if (end < arenaUsed) arenaUsed = end;
 }
+// The game calls this after writing pixels, palettes or vertices: the GPU copies made from them are stale.
 void flushCache(const void* p, int bytes) { if (p && bytes > 0 && !inArena(p)) { forget(p, bytes); forgetVbos(p, bytes); } }
 bool gpuClips() { return true; }
 bool highDetail() { return true; }
@@ -419,7 +862,7 @@ bool beginShadow(const V3&, const V3&, float) { return false; }
 void endShadow() {}
 void setMaterial(float, float) {}
 void attachNormals(const ModelVertex*, const int8_t*, int) {}
-// (the PC edition's Blender cars: not here, the .emm models are used)
+// (the Blender cars: next step)
 bool meshesSupported() { return false; }
 int createMesh(const MeshVertex*, int, const uint32_t*, int) { return 0; }
 void freeMesh(int) {}
@@ -427,10 +870,10 @@ int createTextureRGBA(const u8*, int, int) { return 0; }
 void freeTextureRGBA(int) {}
 int textureKB(int) { return 0; }
 void drawMesh(int, int, int, int, const M4&) {}
-// The Vita has plenty of video memory; textures already live on the GPU once bound.
+// every texture already lives in GPU memory once bound
 bool moveToFastMemory(Texture&) { return false; }
 int fastMark() { return 0; }
-int vramUsedKB() { return 0; }
+int vramUsedKB() { return (int)(vram.usedBytes / 1024); }
 void fastRelease(int) {}
 }
 
@@ -510,7 +953,7 @@ void stop() {
 }
 
 // ---------------------------------------------------------------- system
-// A plain message on screen without the GPU (used when vitaGL can't start): the game's own font,
+// A plain message on screen without the GPU (used when the graphics can't start): the game's own font,
 // drawn by the CPU straight into a frame buffer. Waits for a button, then closes the app.
 static void messageScreen(std::initializer_list<const char*> lines) {
     const int W = 960, H = 544, PITCH = 960;
@@ -581,10 +1024,9 @@ bool init() {
     sceIoMkdir(!strncmp(SAVE_DIR, "uma0", 4) ? "uma0:data" : "ux0:data", 0777);
     sceIoMkdir(SAVE_DIR, 0777);
     log("game folder: %s\n", SAVE_DIR);
-    arena = (u8*)memalign(64, ARENA_SIZE);
 
-    // vitaGL compiles its shaders with the system's shader compiler (libshacccg.suprx)
-    if (!fileExists("ur0:data/libshacccg.suprx") && !fileExists("ur0:data/external/libshacccg.suprx")) {
+    // the shaders are compiled when the game starts, by the system's shader compiler (libshacccg.suprx)
+    if (shark_init(nullptr) < 0 && shark_init("ur0:data/external/libshacccg.suprx") < 0) {
         log("libshacccg.suprx not found in ur0:data - install it (VitaDB does it for you)\n");
         messageScreen({"Endurance Motor Racing 2.0 can't start yet", "",
                        "The PS Vita's shader compiler (libshacccg.suprx) is missing.", "",
@@ -592,28 +1034,12 @@ bool init() {
                        "2. VitaDB installs libshacccg.suprx by itself on first start",
                        "3. Start this game again", "", "Press any button to close"});
     }
-
-    // vitaGL takes the memory left over for textures and draw buffers. Leave some of each kind free for
-    // plugins - a screen recorder (Vita-Recorder) needs ~2 MB of video memory (or 2 MB of physically
-    // contiguous RAM) plus a little ordinary RAM while it records. vglInitExtended left none of the
-    // first two.
-    vglInitWithCustomThreshold(0, VITA_W, VITA_H,
-                               16 * 1024 * 1024,      // ordinary RAM
-                               8 * 1024 * 1024,       // video memory (CDRAM)
-                               4 * 1024 * 1024,       // physically contiguous RAM
-                               SCE_KERNEL_MAX_MAIN_CDIALOG_MEM_SIZE,   // all dialog memory stays free (as before)
-                               SCE_GXM_MULTISAMPLE_2X);
-    vglWaitVblankStart(GL_TRUE);
-    glViewport(0, 0, VITA_W, VITA_H);
-    glEnable(GL_DEPTH_TEST);
-    glDepthFunc(GL_LEQUAL);
-    glDisable(GL_CULL_FACE);          // the AI models are not consistently wound
-    glShadeModel(GL_SMOOTH);
-    glEnable(GL_ALPHA_TEST);
-    glAlphaFunc(GL_GREATER, 8.0f / 255.0f);
-    glEnableClientState(GL_VERTEX_ARRAY);
-    glEnableClientState(GL_COLOR_ARRAY);
-    glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+    if (!startGpu()) {
+        messageScreen({"Endurance Motor Racing 2.0: the graphics could not start", "",
+                       "Details are in log.txt in the game's folder", "(uma0:data/EnduranceMotorRacing2 or ux0:data/...).", "",
+                       "Press any button to close"});
+    }
+    shark_end();                     // (the compiler's memory back: both shaders are made)
     return true;
 }
 void shutdown() {}
@@ -657,8 +1083,8 @@ void log(const char* fmt, ...) {
 // ---------------------------------------------------------------- main
 static Game game;
 int main(int, char**) {
+    remove("log.txt");               // (before starting up, so the start-up's own notes stay in the new log)
     sys::init();
-    remove("log.txt");
     if (!game.init()) sys::log("DATA folder missing or incomplete\n");
     double last = sys::timeSec();
     while (sys::running()) {

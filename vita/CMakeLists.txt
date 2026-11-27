@@ -1,4 +1,4 @@
-# Endurance Motor Racing 2.0 - PS Vita build (VitaSDK + vitaGL).
+# Endurance Motor Racing 2.0 - PS Vita build (VitaSDK, sceGxm + vitaShaRK for the shaders).
 #   cmake -S vita -B build-vita && cmake --build build-vita -j4   ->  build-vita/EnduranceMotorRacing2.vpk
 # The same game code as the PSP build; only src/platform_vita.cpp is Vita-specific.
 cmake_minimum_required(VERSION 3.16)
@@ -38,8 +38,8 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE PLATFORM_VITA=1)
 # every fopen / remove goes through the path mapper in platform_vita.cpp
 target_link_options(${PROJECT_NAME} PRIVATE -Wl,--wrap=fopen,--wrap=remove)
 target_link_libraries(${PROJECT_NAME}
-  vitaGL vitashark SceShaccCgExt mathneon taihen_stub
-  SceShaccCg_stub SceKernelDmacMgr_stub SceGxm_stub SceDisplay_stub SceCommonDialog_stub
+  vitashark SceShaccCgExt taihen_stub
+  SceShaccCg_stub SceGxm_stub SceDisplay_stub SceSysmem_stub SceLibKernel_stub SceKernelThreadMgr_stub SceCommonDialog_stub
   SceAppMgr_stub SceAppUtil_stub SceIme_stub SceSysmodule_stub SceCtrl_stub SceTouch_stub
   SceMotion_stub ScePower_stub SceAudio_stub SceIofilemgr_stub
   z stdc++ pthread m c)

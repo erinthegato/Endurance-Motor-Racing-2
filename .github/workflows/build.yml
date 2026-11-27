@@ -47,12 +47,12 @@ jobs:
       - name: Tools
         run: |
           (apk add --no-cache git cmake make bash python3 2>/dev/null || (apt-get update && apt-get install -y git cmake make python3)) || true
-          ls $VITASDK/arm-vita-eabi/lib | grep -i -E "vitagl|vitashark|mathneon|ShaccCgExt" || echo "vitaGL not preinstalled"
+          ls $VITASDK/arm-vita-eabi/lib | grep -i -E "vitashark|ShaccCgExt" || echo "vitaShaRK not preinstalled"
       - uses: actions/checkout@v5
-      - name: vitaGL (if the image lacks it)
+      - name: vitaShaRK (the runtime shader compiler, if the image lacks it)
         run: |
-          if [ ! -f $VITASDK/arm-vita-eabi/lib/libvitaGL.a ]; then
-            git clone --depth 1 https://github.com/vitasdk/vdpm /tmp/vdpm && cd /tmp/vdpm && ./vdpm vitaShaRK mathneon SceShaccCgExt vitaGL
+          if [ ! -f $VITASDK/arm-vita-eabi/lib/libvitashark.a ] || [ ! -f $VITASDK/arm-vita-eabi/lib/libSceShaccCgExt.a ]; then
+            git clone --depth 1 https://github.com/vitasdk/vdpm /tmp/vdpm && cd /tmp/vdpm && ./vdpm vitaShaRK SceShaccCgExt
           fi
       - name: zlib (packed models, if the image lacks it)
         run: |
@@ -271,4 +271,48 @@ jobs:
           files: |
             out/EnduranceMotorRacing2.vpk
             out/EnduranceMotorRacing2-music.zip
+            out/EnduranceMotorRacing2-Windows.zip
+
+  # test builds: a push to a branch named test-... is published as a pre-release (tag test-<name>-<run>)
+  # once the Vita build works, for trying on the console before it goes to main. Pre-releases never
+  # count as the latest release, so the version numbers of the real releases are unchanged.
+  test-release:
+    if: ${{ !cancelled() && startsWith(github.ref, 'refs/heads/test-') && github.event_name == 'push' && needs.vita.result == 'success' }}
+    needs: [version, vita, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 20
+      - name: Notes (this branch's latest changes)
+        run: |
+          {
+            echo "## Test build: ${{ github.ref_name }} (not a release)"; echo
+            echo "Built from ${{ github.sha }}. Install the .vpk with VitaShell over the game you have (saves are kept)."; echo
+            echo "### Latest changes"
+            git log --no-merges --format='- %s' -10
+          } > notes.md
+          cat notes.md
+      - uses: actions/download-artifact@v6
+        with:
+          name: EnduranceMotorRacing2-Vita
+          path: out
+      - uses: actions/download-artifact@v6
+        if: needs.windows.result == 'success'
+        with:
+          name: EnduranceMotorRacing2-Windows
+          path: out
+      - uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.ref_name }}-${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          name: "Test: ${{ github.ref_name }} #${{ github.run_number }}"
+          body_path: notes.md
+          prerelease: true
+          make_latest: false
+          fail_on_unmatched_files: false
+          files: |
+            out/EnduranceMotorRacing2.vpk
             out/EnduranceMotorRacing2-Windows.zip

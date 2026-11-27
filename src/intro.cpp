@@ -104,6 +104,10 @@ void Game::introBegin(int script) {
     introLoadBlock(sc.shots[0].block);           // the first circuit loads before the music starts
     // the attract movie loops with its music (the file plays round again without a gap)
     sound::musicFile(sc.music, !sc.loop);
+    std::string mp = std::string("DATA/music/") + sc.music;
+    FILE* mf = fopen(mp.c_str(), "rb");
+    introSilent = !mf; introClock = 0;
+    if (mf) fclose(mf);
 }
 
 void Game::introEnd() {
@@ -303,7 +307,8 @@ void Game::introDirect(int k, float st) {
 }
 
 void Game::introUpdate(float dt, bool skip) {
-    introPos = sound::musicPos();
+    introClock += dt;
+    introPos = introSilent ? (SCRIPTS[curScript].loop ? fmodf(introClock, introLength) : introClock) : sound::musicPos();
     const Script& sc = SCRIPTS[curScript];
     if (skip || (!sc.loop && introPos >= introLength - 0.05f) || t > introLength + 30) { introEnd(); return; }
     if (sc.loop && introPos < introLastPos - 5) {

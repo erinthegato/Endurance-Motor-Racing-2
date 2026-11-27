@@ -124,6 +124,7 @@ struct Game {
     bool loadSlot(int slot);
     std::vector<int> qualiGrid;   // car numbers in qualifying order
     // the intro (intro.cpp): music position, the beat grid, the shot and era block on screen
+    bool introSilent = false; float introClock = 0;   // its music isn't installed (no music pack): the intro keeps its own time
     float introPos = 0, introBeat0 = 9.887f, introPeriod = 0.48234f, introLength = 70.0f;
     int introScript = 0; float introLastPos = 0;
     int introShot = -1, introBlock = -1, introPendingBlock = -1, introCardFrames = 0;

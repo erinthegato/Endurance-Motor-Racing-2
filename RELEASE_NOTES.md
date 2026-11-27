@@ -4,10 +4,10 @@ The 2027 FIA World Endurance Championship on the PS Vita: 20 Hypercars (LMH and 
 built in code to the 2027 technical regulations, on the nine circuits of the 2027 season.
 
 ### Install
-1. **EnduranceMotorRacing2.vpk**: install with VitaShell.
+1. **EnduranceMotorRacing2.vpk**: install with VitaShell. It carries no music, so it installs in seconds.
 2. **EnduranceMotorRacing2-music.zip** (once): copy it to the Vita, open it in VitaShell, select all,
    copy, and paste at the root of `ux0:`. It unpacks to `ux0:data/EnduranceMotorRacing2/DATA/music/`.
-   Later updates only need the new VPK.
+   All the music is in this pack (intro and headquarters themes too). Later updates only need the new VPK.
 
 ### In this version
 - Two classes on one grid: pick Hypercar or LMGT3 at headquarters; class positions, blue flags, class points

@@ -159,7 +159,11 @@ void Renderer::applyLivery(int idx) {
         size_t per = 0; for (u32 l = 0; l < h[1] && l < 4; l++) per += (size_t)h[3 + l] * h[3 + l];
         int st = lvyStyle[k] % ns;
         if ((size_t)size < 288 + per * (st + 1)) { sys::freeFile(all); return; }
+#ifdef _WIN32
+        u8* one = (u8*)malloc(288 + per);                  // (Windows has no memalign; 64-bit malloc is 16-byte aligned)
+#else
         u8* one = (u8*)memalign(16, 288 + per);
+#endif
         if (!one) { sys::freeFile(all); return; }
         memcpy(one, a, 288);
         memcpy(one + 288, a + 288 + per * st, per);

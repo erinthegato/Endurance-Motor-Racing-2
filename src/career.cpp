@@ -87,7 +87,9 @@ void Career::begin(int nm, int cl, int diff, int mins) {
     sponsor[0] = offers[0]; sponsor[0].perRace = sponsor[0].perRace * 3 / 4; sponsor[0].title = true;   // a starter deal
     newOffers();
     RaceSettings base;
-    base.car = carIndex(); base.difficulty = difficulty; base.raceMin = 0; base.laps = raceMin; base.opponents = 39;
+    base.car = carIndex(); base.difficulty = difficulty; base.opponents = 39;
+    if (raceMin > 0) { base.raceMin = 0; base.laps = raceMin; }       // laps
+    else { base.raceMin = -raceMin; base.laps = 0; }                   // timed (scaled per round's length) or the real length
     base.manualPits = true; base.weekend = true;
     champ.begin(base);
     lastValid = false;

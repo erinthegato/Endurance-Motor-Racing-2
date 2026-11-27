@@ -27,3 +27,6 @@ built in code to the 2027 technical regulations, on the nine circuits of the 202
 - The game's folder (saves, settings, music pack) on uma0 when the Vita has one
 - New LiveArea: icon, background and start gate with the game's own Hypercar and LMGT3
 - Steering help Strong: the car can never spin, not even from a hard barrier hit
+- Pit stops: a Driver row to hand the car to a team-mate (you go to the pit wall as manager); the screen
+  opens on RELEASE THE CAR
+- Career: timed and full-length races (6 h to 24 h), chosen for a new career or changed in the team hub

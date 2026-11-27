@@ -37,7 +37,7 @@ struct Career {
     Sponsor sponsor[2];         // [0] title sponsor, [1] partner
     Sponsor offers[3];
     int skipCar = -1, skipNum = 0;     // the entry our car replaced
-    int difficulty = 1, raceMin = 20;
+    int difficulty = 1, raceMin = 20;      // raceMin: laps (> 0), -minutes for a 6 h round, -RACE_FULL the real length
     Champ champ;
     // the last race, for the report on the team screen
     int lastPos = 0, inPrize = 0, inSponsor = 0, inBonus = 0, outRunning = 0, outSalaries = 0, outRepairs = 0;

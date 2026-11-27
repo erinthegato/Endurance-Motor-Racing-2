@@ -1483,6 +1483,8 @@ static void money(char* b, int n, int k) {        // $k -> "$1.52M" / "$520k"
     else snprintf(b, n, "%s$%dk", k < 0 ? "-" : "", a);
 }
 
+static const char* fmtLenShort(int m) { static char b[16]; if (m >= 60) snprintf(b, sizeof b, "%d h%s", m / 60, m % 60 ? " 30" : ""); else snprintf(b, sizeof b, "%d min", m); return b; }
+
 void Game::screenCareerNew(Panel& P) {
     header(P, "NEW CAREER");
     char b[96];
@@ -1491,7 +1493,10 @@ void Game::screenCareerNew(Panel& P) {
     snprintf(v[0], 64, "Team:  < %s >", TEAM_NAMES[newName]);
     snprintf(v[1], 64, "Class:  %s", ERA_NAME[era]);
     snprintf(v[2], 64, "Opponents:  < %s >", DIFFN[newDiff]);
-    snprintf(v[3], 64, "Race length:  < %d laps >", newMin);
+    if (newMin > 0) snprintf(v[3], 64, "Race length:  < %d laps >", newMin);
+    else if (newMin <= -RACE_FULL) snprintf(v[3], 64, "Race length:  < Full length >");
+    else if (newMin <= -60) snprintf(v[3], 64, "Race length:  < %d h%s a 6 h >", -newMin / 60, (-newMin) % 60 ? " 30" : "");
+    else snprintf(v[3], 64, "Race length:  < %d min a 6 h >", -newMin);
     snprintf(v[4], 64, "START THE TEAM");
     snprintf(v[5], 64, "Back");
     P.fill(8, 42, 250, 206, RGBA(0, 0, 0, 120));
@@ -1510,9 +1515,13 @@ void Game::screenCareerNew(Panel& P) {
     P.text(274, y, newCls == ERA_HYPER ? "A Hypercar programme costs" : "LMGT3: the cheaper", DIM, 0.64f); y += 13;
     P.text(274, y, newCls == ERA_HYPER ? "far more - and pays more." : "way into the WEC.", DIM, 0.64f); y += 15;
     {
-        char one[24]; fmtSpan(one, sizeof one, 6 * 60.0f / newMin);
-        snprintf(b2, sizeof b2, "TIP: a 6 h round in %d min:", newMin); P.text(274, y, b2, RGBA(140, 200, 255), 0.6f); y += 11;
-        snprintf(b2, sizeof b2, "1 real min = %s", one); P.text(274, y, b2, RGBA(140, 200, 255), 0.6f);
+        if (newMin > 0) { snprintf(b2, sizeof b2, "TIP: %d laps a round, in any", newMin); P.text(274, y, b2, RGBA(140, 200, 255), 0.6f); y += 11;
+                          P.text(274, y, "round's time of day", RGBA(140, 200, 255), 0.6f); }
+        else if (newMin <= -RACE_FULL) { P.text(274, y, "TIP: the real thing - 6 h to", RGBA(140, 200, 255), 0.6f); y += 11;
+                                         P.text(274, y, "24 h at Le Mans. Save at stops!", RGBA(140, 200, 255), 0.6f); }
+        else { char one[24]; fmtSpan(one, sizeof one, 6 * 60.0f / -newMin);
+               snprintf(b2, sizeof b2, "TIP: a 6 h round in %s:", fmtLenShort(-newMin)); P.text(274, y, b2, RGBA(140, 200, 255), 0.6f); y += 11;
+               snprintf(b2, sizeof b2, "1 real min = %s", one); P.text(274, y, b2, RGBA(140, 200, 255), 0.6f); }
     }
     P.textC(240, 254, "UP/DOWN choose   LEFT/RIGHT change   X select", DIM, 0.72f);
 }
@@ -1569,6 +1578,15 @@ void Game::screenCareer(Panel& P) {
         else if (c.champ.over()) snprintf(b, sizeof b, "START SEASON %d", c.season + 1);
         else snprintf(b, sizeof b, "NEXT: R%d %s", rd + 1, TRACKS[c.champ.trackIndex(rd)].name);
         row(0, b, GOLD);
+        // the race length (left / right on the NEXT row changes it)
+        {
+            char len[40];
+            if (c.raceMin > 0) snprintf(len, sizeof len, "%d laps", c.raceMin);
+            else if (c.raceMin <= -RACE_FULL) snprintf(len, sizeof len, "Full length");
+            else snprintf(len, sizeof len, "%s a 6 h", fmtLenShort(-c.raceMin));
+            snprintf(b, sizeof b, "Races: < %s >", len);
+            P.text(20, 50 + 7 * 27 - 6, b, sel == 0 ? GOLD : DIM, 0.62f);
+        }
         const char* items[6] = {"Sponsors", "Drivers", "Upgrades", "Livery", "Standings", "Save and quit"};
         for (int i = 0; i < 6; i++) row(i + 1, items[i], WHITE);
         money(m, sizeof m, c.money);
@@ -1683,7 +1701,7 @@ void Game::screenCareer(Panel& P) {
         if (!n) line("No races run yet this season", DIM);
     }
     if (noteT > 0) { P.fill(0, P.vh - 20, P.vw, 20, RGBA(0, 0, 0, 200)); P.textC(240, P.vh - 17, note, GOLD, 0.72f); }
-    else P.textC(240, P.vh - 17, careerPage == 2 ? "X / SQUARE hire   O back" : "UP/DOWN choose   X select   O back", DIM, 0.68f);
+    else P.textC(240, P.vh - 17, careerPage == 2 ? "X / SQUARE hire   O back" : (careerPage == 0 && sel == 0 ? "LEFT/RIGHT race length   X race   O back" : "UP/DOWN choose   X select   O back"), DIM, 0.68f);
 }
 
 // ------------------------------------------------------------------ settings > controls > car realism

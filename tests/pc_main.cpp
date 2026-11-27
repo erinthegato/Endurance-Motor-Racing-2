@@ -1152,6 +1152,64 @@ int main(int argc, char** argv) {
         printf("nospin %s %s help %d: %d spins, biggest slide %.2f rad, %d hard hits\n", tid.c_str(), CARS[car].id, help, spins, maxDrift, hits);
         return help >= 2 && spins > 0 ? 1 : 0;
     }
+    if (mode == "teamswap") {
+        // teamswap <track> <car> <outdir>: we drive in, and at our stop hand the car to a team-mate --
+        // the team screen's Driver row -- and go to the pit wall as the manager
+        std::string tid = argv[2], out = argv[4];
+        for (int i = 0; i < TRACK_COUNT; i++) if (tid == TRACKS[i].id) g.set.track = i;
+        g.set.car = atoi(argv[3]); g.set.opponents = 7; g.set.raceMin = 8; g.set.weather = WX_DRY;
+        g.mgrMode = false; g.aiDrivesPlayer = true;
+        g.startRace();
+        for (float simT = 0; simT < 25; simT += 1.0f / 30) { Pad z{}; g.frame(1.0f / 30, z); }
+        g.race.player().wantPit = true;
+        int bad = 0;
+        // the AI brings it in; once it's in the pit lane we're the one in the car again, so the team screen opens
+        for (int i = 0; i < 30 * 400 && g.screen != SCR_TEAM; i++) {
+            if (g.race.player().pit != PIT_NONE) g.aiDrivesPlayer = false;
+            Pad z{}; g.frame(1.0f / 30, z);
+        }
+        if (g.screen != SCR_TEAM) { printf("teamswap: the team screen never opened\n"); return 1; }
+        if (g.sel != 5) { printf("teamswap: the team screen opened on row %d, not RELEASE\n", g.sel); bad++; }
+        int drvBefore = g.race.player().driver;
+        g.sel = 3; press(g, &Pad::right);
+        const PitPlan& pl = g.race.player().plan;
+        printf("teamswap: next driver %d (was %d), team drives %d\n", pl.nextDriver, drvBefore, (int)pl.aiDrives);
+        if (pl.nextDriver == 0 || !pl.aiDrives) bad++;
+        shot(g, out + "/team_swap.ppm", 0);
+        g.sel = 5; press(g, &Pad::cross);
+        for (int i = 0; i < 30 * 60 && g.race.player().pit != PIT_NONE; i++) { Pad z{}; g.frame(1.0f / 30, z); }
+        for (int i = 0; i < 60; i++) { Pad z{}; g.frame(1.0f / 30, z); }
+        printf("teamswap: after the stop -- driver %d, managing %d, camera %d (0 pit wall), screen %d\n", g.race.player().driver, (int)g.race.managing(), g.mgrCam, (int)g.screen);
+        if (g.race.player().driver == drvBefore || g.race.player().driver == 0 || !g.race.managing() || g.mgrCam != 0) bad++;
+        shot(g, out + "/team_wall.ppm", 0);
+        printf("teamswap: %s\n", bad ? "FAILED" : "ok");
+        return bad ? 1 : 0;
+    }
+    if (mode == "careerlen") {
+        // careerlen <outdir>: a career at the real length; then the hub's NEXT row changes a running career's length
+        std::string out = argv[2];
+        int bad = 0;
+        g.career.begin(0, ERA_HYPER, 1, -RACE_FULL);
+        RaceSettings s = g.career.champ.roundSettings();
+        printf("careerlen: full -> round 1 %s: raceMin %d laps %d\n", TRACKS[s.track].id, s.raceMin, s.laps);
+        if (s.raceMin < RACE_FULL) bad++;
+        g.screen = SCR_CAREER; g.careerPage = 0; g.sel = 0;
+        printf("careerlen: before %d screen %d page %d sel %d\n", g.career.raceMin, (int)g.screen, g.careerPage, g.sel);
+        press(g, &Pad::left);                                             // full -> 3 h a 6 h
+        printf("careerlen: after %d screen %d page %d sel %d\n", g.career.raceMin, (int)g.screen, g.careerPage, g.sel);
+        s = g.career.champ.roundSettings();
+        printf("careerlen: hub left -> career %d, round 1: raceMin %d laps %d\n", g.career.raceMin, s.raceMin, s.laps);
+        if (g.career.raceMin != -180 || s.raceMin <= 0 || s.raceMin >= RACE_FULL) bad++;
+        shot(g, out + "/career_hub.ppm", 0);
+        press(g, &Pad::right);
+        if (g.career.raceMin != -RACE_FULL) bad++;
+        g.career.begin(0, ERA_HYPER, 1, 10);                              // laps still work
+        s = g.career.champ.roundSettings();
+        printf("careerlen: 10 laps -> raceMin %d laps %d\n", s.raceMin, s.laps);
+        if (s.laps != 10 || s.raceMin != 0) bad++;
+        printf("careerlen: %s\n", bad ? "FAILED" : "ok");
+        return bad ? 1 : 0;
+    }
     if (mode == "replay") {     // replay <track> <outdir>: 40 s of racing, then the replay (TV + cockpit), then photo mode
         std::string tid = argv[2], out = argv[3];
         for (int i = 0; i < TRACK_COUNT; i++) if (tid == TRACKS[i].id) g.set.track = i;

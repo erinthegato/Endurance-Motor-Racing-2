@@ -591,7 +591,7 @@ void Game::updateRace(float dt, const Pad& p) {
     raceAudio();
     if (race.playerAtBox()) {
         if (aiDrivesPlayer) race.releasePlayer();
-        else { screen = SCR_TEAM; sel = 6; race.timeAccel = 1; sound::silence(); sound::radio("16_box"); }
+        else { screen = SCR_TEAM; sel = 5; race.timeAccel = 1; sound::silence(); sound::radio("16_box"); }   // (on RELEASE THE CAR)
     }
     if (race.inGarage()) { screen = SCR_GARAGE; setupSel = 8; race.timeAccel = 1; sound::silence(); }
     if (race.over) finishRace();
@@ -872,7 +872,14 @@ void Game::update(float dt, const Pad& p) {
             if (sel == 0) { int v = pl.tyres ? pl.tyre + 1 : 0; v = (v + dx + TY_COUNT + 1) % (TY_COUNT + 1); pl.tyres = v > 0; if (v) pl.tyre = v - 1; }
             if (sel == 1 && race.ep().refuel) pl.fuel = clampf(pl.fuel + dx * 0.1f, fmaxf(me.fuel, 0.1f), 1.0f);
             if (sel == 2) pl.repair = !pl.repair;
-            if (sel == 3) pl.repair = !pl.repair;   // (Formula 1: one driver per car; a new nose is part of the repairs)
+            if (sel == 3) {      // the driver: stay in, or hand over to a team-mate and run the team from the pit wall
+                int k = pl.nextDriver;
+                for (int tries = 0; tries < DRIVERS_PER_CAR; tries++) {
+                    k = (k + dx + DRIVERS_PER_CAR) % DRIVERS_PER_CAR;
+                    if (k == me.driver || me.drv[k].hours < MAX_DRIVE_H - 0.05f) break;      // (one past the 14 h limit can't go in)
+                }
+                pl.nextDriver = k; pl.swapDriver = k != me.driver; pl.aiDrives = k != 0;
+            }
             if (sel == 4) saveSlot = (saveSlot + dx + 3) % 3;
         }
         if (ok && sel == 4) {
@@ -885,6 +892,7 @@ void Game::update(float dt, const Pad& p) {
         if ((ok && sel == 5) || pressed(p, &Pad::start)) {
             race.releasePlayer();
             if (!pl.aiDrives) race.timeAccel = 1;
+            else { mgrCam = 0; mgrSel = 0; mgrFocus = 1; mgrRow = 0; snprintf(note, sizeof note, "On the pit wall: you're managing the team"); noteT = 3.0f; }
             screen = SCR_RACE;
         }
         break;
@@ -1216,7 +1224,9 @@ void Game::drawTeam() {
     if (race.ep().refuel) snprintf(v[1], 48, "Fuel to:  < %d%% >", (int)(pl.fuel * 100 + 0.5f));
     else snprintf(v[1], 48, "Fuel:  no refuelling (%d%%)", (int)(me.fuel * 100 + 0.5f));
     snprintf(v[2], 48, "Repairs:  < %s >", pl.repair ? "Yes" : "No");
-    snprintf(v[3], 48, "Front wing:  < %s >", pl.repair ? "new nose" : "no change"); (void)nm;
+    { const Driver& d = me.drv[pl.nextDriver];
+      snprintf(v[3], 48, "Driver:  < %s%s >", pl.nextDriver == 0 ? "You" : nm, pl.nextDriver == me.driver ? " (stays in)" : "");
+      (void)d; }
     snprintf(v[4], 48, "Save race:  < Slot %d >", saveSlot + 1);
     snprintf(v[5], 48, "RELEASE THE CAR");
     snprintf(v[6], 48, "Retire to menu");
@@ -1246,7 +1256,14 @@ void Game::drawTeam() {
         R.font.draw(274, y, b, DIM, 0.68f); y += 15;
     }
     if (me.driveThrough) { R.font.draw(274, y, "Drive-through still to serve!", RGBA(255, 90, 60), 0.72f); y += 15; }
-    if (race.set.manualPits && !pl.aiDrives) R.font.draw(274, y, "Manual stop: hit the prompts!", GOLD, 0.68f);
+    if (race.set.manualPits && !pl.aiDrives) { R.font.draw(274, y, "Manual stop: hit the prompts!", GOLD, 0.68f); y += 15; }
+    // the drivers: who's fresh, and what a hand-over means
+    for (int k = 0; k < DRIVERS_PER_CAR; k++) {
+        char dn[24]; Race::driverName(me, k, dn, sizeof dn);
+        snprintf(b, sizeof b, "%s%s  tired %d%%  %.1f h", k == me.driver ? "> " : "  ", k == 0 ? "You" : dn, (int)(me.drv[k].fatigue * 100), me.drv[k].hours);
+        R.font.draw(274, y, b, k == pl.nextDriver ? GOLD : DIM, 0.62f); y += 13;
+    }
+    if (pl.aiDrives) R.font.draw(274, y + 2, "Team-mate in: you go to the pit wall", RGBA(120, 200, 255), 0.62f);
     if (noteT > 0) R.font.drawCentre(SCREEN_W / 2, 230, note, GOLD, 0.8f);
     R.font.drawCentre(SCREEN_W / 2, SCREEN_H - 18, "UP/DOWN choose   LEFT/RIGHT change   X select", DIM, 0.75f);
 }
@@ -1432,6 +1449,14 @@ void Game::careerLivery() {
     R.setLivery(career.carIndex(), career.style, LIVERY_COLOURS[career.colA], LIVERY_COLOURS[career.colB], LIVERY_COLOURS[career.colC]);
 }
 
+// the career's race lengths: laps (> 0), -minutes for a 6 h round (scaled for the round), -RACE_FULL the real length
+static int nextCareerLen(int cur, int dx) {
+    static const int M[] = {3, 5, 10, 20, -20, -45, -90, -180, -RACE_FULL};
+    const int NM = sizeof(M) / sizeof(M[0]);
+    int mi = 0; for (int i = 0; i < NM; i++) if (M[i] == cur) mi = i;
+    return M[(mi + dx + NM) % NM];
+}
+
 void Game::updateCareer(int dx, int dy, bool ok, bool back, bool square) {
     auto cyc = [&](int v, int n) { return (v + dx + n) % n; };
     auto saveIt = [&]() { career.save(eraSave("career", career.cls)); };
@@ -1442,7 +1467,7 @@ void Game::updateCareer(int dx, int dy, bool ok, bool back, bool square) {
         if (dx) {
             if (sel == 0) newName = cyc(newName, TEAM_NAME_COUNT);
             if (sel == 2) newDiff = cyc(newDiff, 3);
-            if (sel == 3) { static const int M[4] = {3, 5, 10, 20}; int mi = 0; for (int i = 0; i < 4; i++) if (M[i] == newMin) mi = i; newMin = M[cyc(mi, 4)]; }
+            if (sel == 3) newMin = nextCareerLen(newMin, dx);
         }
         if (back || (ok && sel == 5)) { screen = SCR_TITLE; sel = 2; t = 0; return; }
         if (ok && sel == 4) {
@@ -1480,6 +1505,14 @@ void Game::updateCareer(int dx, int dy, bool ok, bool back, bool square) {
     if (careerPage == 0) {
         sel = (sel + dy + 7) % 7;
         if (back || (ok && sel == 6)) { saveIt(); screen = SCR_TITLE; sel = 2; t = 0; return; }
+        if (dx && sel == 0) {
+            // left / right on the next race: the length of the races from here on (laps, timed or the real length)
+            career.raceMin = nextCareerLen(career.raceMin, dx);
+            RaceSettings& b = career.champ.base;
+            if (career.raceMin > 0) { b.raceMin = 0; b.laps = career.raceMin; } else { b.raceMin = -career.raceMin; b.laps = 0; }
+            saveIt();
+            return;
+        }
         if (!ok) return;
         if (sel == 0) {
             if (career.broke()) { remove(eraSave("career", career.cls)); career.active = false; screen = SCR_CAREER_NEW; sel = 0; return; }

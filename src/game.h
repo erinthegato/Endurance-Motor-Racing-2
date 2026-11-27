@@ -43,7 +43,7 @@ struct Game {
     float weekendRubber = 0.1f;   // the track rubber carried from practice to qualifying to the race
     void ghostPath(char* out, int n) const;
     int careerPage = 0;           // team screen page: 0 main, 1 sponsors, 2 drivers, 3 upgrades, 5 standings
-    int newName = 0, newCls = ERA_HYPER, newDiff = 1, newMin = 5;   // newCls: the class; newMin: laps per race
+    int newName = 0, newCls = ERA_HYPER, newDiff = 1, newMin = 5;   // newCls: the class; newMin: laps per race (> 0), or -minutes for a 6 h round, -RACE_FULL the real length
     void careerLivery();          // push the career car's livery to the renderer
     // performance: with "Show FPS" on (or in the benchmark) a line every 2 s goes to perf.log
     // benchmark: if bench.txt is in the game folder, the game plays a fixed set of scenes and quits

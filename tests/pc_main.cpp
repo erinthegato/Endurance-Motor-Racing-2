@@ -371,7 +371,7 @@ int main(int argc, char** argv) {
             printf("headquarters, after taps and skips: '%s' %s\n", sound::musicForced(), same ? "(still playing)" : "(CHANGED)");
             if (!same) bad++;
         }
-        g.chooseEra(3); g.screen = SCR_TITLE; g.sel = 0; g.t = 1; settle(10);
+        g.chooseEra(ERA_COUNT - 1); g.screen = SCR_TITLE; g.sel = 0; g.t = 1; settle(10);
         printf("main menu: playing '%s' (playlist), now playing '%s'\n", sound::musicForced(), sound::nowPlaying());
         if (sound::musicForced()[0]) bad++;
         std::string a = sound::nowPlaying();

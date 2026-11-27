@@ -27,8 +27,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           WANT: ${{ inputs.release }}
         run: |
-          last=$(gh api repos/${{ github.repository }}/releases/latest -q .tag_name 2>/dev/null || echo v1.0)
-          if [ -n "$WANT" ]; then tag="$WANT"; else
+          # (no release yet: gh prints its Not Found reply, so check the answer looks like a tag)
+          last=$(gh api repos/${{ github.repository }}/releases/latest -q .tag_name 2>/dev/null) || last=
+          echo "$last" | grep -qE '^v[0-9]+(\.[0-9]+)?$' || last=
+          if [ -n "$WANT" ]; then tag="$WANT"; elif [ -z "$last" ]; then tag=v2.0; else
             maj=$(echo "${last#v}" | cut -d. -f1); min=$(echo "${last#v}" | cut -d. -f2)
             tag="v$maj.$((min + 1))"
           fi
@@ -154,7 +156,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          last=$(gh api repos/${{ github.repository }}/releases/latest -q .tag_name 2>/dev/null || true)
+          last=$(gh api repos/${{ github.repository }}/releases/latest -q .tag_name 2>/dev/null) || last=
           {
             echo "## Endurance Motor Racing 2.0 ${{ needs.version.outputs.tag }}"; echo
             echo "### Changes"

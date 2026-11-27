@@ -80,8 +80,13 @@ endurance racing of the original EMR put back. Not for distribution.
 the VPK on every push). Two files:
 * `EnduranceMotorRacing2.vpk`: the game. Install with VitaShell.
 * `EnduranceMotorRacing2-music.zip`: the music. Install **once**: copy it to the Vita, open it in
-  VitaShell, select all, copy, paste at the root of `ux0:` (it unpacks to
-  `ux0:data/EnduranceMotorRacing2/DATA/music/`).
+  VitaShell, select all, copy, paste at the root of `uma0:` (it unpacks to
+  `uma0:data/EnduranceMotorRacing2/DATA/music/`). No `uma0:` drive on your Vita: paste it in `ux0:`.
+
+The game's folder (saves, settings, ghosts, the music) is `uma0:data/EnduranceMotorRacing2/` when the
+Vita has a `uma0:` drive, else `ux0:data/EnduranceMotorRacing2/`. Saves, settings and a music pack left
+in the old `ux0:` folder are still found, and the next save goes to `uma0:`. (The game itself installs to
+`ux0:app/` like every VPK.)
 
 Memory: a full 40-car grid at Le Mans peaks at 19.8 MB on the PC test (`FL_MEM=1`; Formula Legends'
 20-car races were ~16 MB there, ~29 MB on the Vita). The AI cars carry 256 px liveries

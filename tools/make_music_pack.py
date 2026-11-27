@@ -2,8 +2,8 @@
 
   python3 make_music_pack.py out.zip DATA/music
 
-Extract the zip at the root of ux0: (VitaShell: open it, select all, copy, paste in ux0:). It puts the
-music in ux0:data/EnduranceMotorRacing2/DATA/music/, where the game looks for any data file the app itself
+Extract the zip at the root of uma0: (VitaShell: open it, select all, copy, paste in uma0:; ux0: on a Vita
+without uma0). It puts the music in uma0:data/EnduranceMotorRacing2/DATA/music/, where the game looks for any data file the app itself
 doesn't carry. Install it once: game updates (the VPK) then stay small, and the music stays where it is.
 The intro and headquarters music stay in the VPK, so the game is never silent at the start.
 """

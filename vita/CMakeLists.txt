@@ -49,7 +49,7 @@ vita_create_self(eboot.bin ${PROJECT_NAME} UNSAFE)
 # app0:DATA holds the PSP data (shared); app0:HD holds the Vita's higher-detail replacements.
 # Packed by tools/make_vpk.py rather than vita_create_vpk: data that is already compressed goes in
 # as it is (no unzipping while installing), and the music is left out. It comes in its own pack,
-# EnduranceMotorRacing2-music.zip (tools/make_music_pack.py), installed once to ux0:data/EnduranceMotorRacing2/,
+# EnduranceMotorRacing2-music.zip (tools/make_music_pack.py), installed once to uma0:data/EnduranceMotorRacing2/ (ux0: without uma0),
 # so a game update installs in seconds.
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 separate_arguments(SFO_FLAGS UNIX_COMMAND "${VITA_MKSFOEX_FLAGS}")

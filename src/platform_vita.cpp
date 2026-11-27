@@ -7,7 +7,8 @@
 //    are bound, and cached. gfx::flushCache (which the game calls after loading or changing any
 //    pixels, because the PSP needs it) tells this layer to forget the old copy;
 //  * relative paths are mapped: "DATA/..." is read from the app (app0:), anything else (saves,
-//    settings, logs, ghosts) lives in ux0:data/EnduranceMotorRacing2/. A model in "HD/" overrides the
+//    settings, logs, ghosts, the music pack) lives in uma0:data/EnduranceMotorRacing2/ (ux0:data/... on a
+//    Vita without a uma0 drive; files left on ux0 are still read). A model in "HD/" overrides the
 //    PSP one in "DATA/" (higher detail for the Vita).
 #include <vitasdk.h>
 #include <vitaGL.h>
@@ -48,7 +49,21 @@ unsigned int sceUserMainThreadStackSize = 2 * 1024 * 1024;
 #endif
 extern "C" __attribute__((used, aligned(16))) const unsigned char emr_segment_pad[VITA_PAD] = {1};
 
-#define SAVE_DIR "ux0:data/EnduranceMotorRacing2"
+// the game's own folder: uma0 when the Vita has that drive (a memory card in the SD2Vita / USB slot),
+// else ux0. Anything not found there is looked for in the old ux0 folder, so saves, settings and a music
+// pack from before still load (the next save is written to uma0).
+#define SAVE_UX0 "ux0:data/EnduranceMotorRacing2"
+#define SAVE_UMA0 "uma0:data/EnduranceMotorRacing2"
+static const char* saveDir() {
+    static int uma = -1;
+    if (uma < 0) {
+        SceUID d = sceIoDopen("uma0:");
+        uma = d >= 0 ? 1 : 0;
+        if (d >= 0) sceIoDclose(d);
+    }
+    return uma ? SAVE_UMA0 : SAVE_UX0;
+}
+#define SAVE_DIR saveDir()
 static const int VITA_W = 960, VITA_H = 544;
 
 // ---------------------------------------------------------------- paths
@@ -64,7 +79,7 @@ static void mapPath(const char* in, char* out, int n, bool hdFirst) {
         else snprintf(out, n, "app0:%s", in);
         return;
     }
-    snprintf(out, n, SAVE_DIR "/%s", in);
+    snprintf(out, n, "%s/%s", SAVE_DIR, in);
 }
 
 extern "C" FILE* __wrap_fopen(const char* path, const char* mode) {
@@ -76,12 +91,19 @@ extern "C" FILE* __wrap_fopen(const char* path, const char* mode) {
         mapPath(path, p, sizeof p, false);
         if (FILE* f = __real_fopen(p, mode)) return f;
         // not in the app: the data packs installed beside the saves (the music pack puts the
-        // race music in ux0:data/EnduranceMotorRacing2/DATA/music/, so the VPK stays small)
-        snprintf(p, sizeof p, SAVE_DIR "/%s", path);
+        // race music in uma0:data/EnduranceMotorRacing2/DATA/music/, so the VPK stays small)
+        snprintf(p, sizeof p, "%s/%s", SAVE_DIR, path);
+        if (FILE* f = __real_fopen(p, mode)) return f;
+        snprintf(p, sizeof p, SAVE_UX0 "/%s", path);           // (a music pack installed on ux0 before)
         return __real_fopen(p, mode);
     }
     mapPath(path, p, sizeof p, false);
-    return __real_fopen(p, mode);
+    FILE* f = __real_fopen(p, mode);
+    if (!f && reading && strcmp(SAVE_DIR, SAVE_UX0) && !strchr(path, ':')) {
+        snprintf(p, sizeof p, SAVE_UX0 "/%s", path);           // saves and settings from before the move
+        f = __real_fopen(p, mode);
+    }
+    return f;
 }
 extern "C" int __wrap_remove(const char* path) {
     char p[512]; mapPath(path, p, sizeof p, false);
@@ -534,8 +556,9 @@ bool init() {
     sceTouchSetSamplingState(SCE_TOUCH_PORT_FRONT, SCE_TOUCH_SAMPLING_STATE_START);
     sceTouchSetSamplingState(SCE_TOUCH_PORT_BACK, SCE_TOUCH_SAMPLING_STATE_STOP);     // the rear pad isn't used
     sceMotionStartSampling();
-    sceIoMkdir("ux0:data", 0777);
+    sceIoMkdir(!strncmp(SAVE_DIR, "uma0", 4) ? "uma0:data" : "ux0:data", 0777);
     sceIoMkdir(SAVE_DIR, 0777);
+    log("game folder: %s\n", SAVE_DIR);
     arena = (u8*)memalign(64, ARENA_SIZE);
 
     // vitaGL compiles its shaders with the system's shader compiler (libshacccg.suprx)

@@ -6,7 +6,9 @@ built in code to the 2027 technical regulations, on the nine circuits of the 202
 ### Install
 1. **EnduranceMotorRacing2.vpk**: install with VitaShell.
 2. **EnduranceMotorRacing2-music.zip** (once): copy it to the Vita, open it in VitaShell, select all,
-   copy, and paste at the root of `ux0:`. It unpacks to `ux0:data/EnduranceMotorRacing2/DATA/music/`.
+   copy, and paste at the root of `uma0:` (or `ux0:` if your Vita has no `uma0:` drive). It unpacks to
+   `uma0:data/EnduranceMotorRacing2/DATA/music/`. Saves and settings live in that folder too; ones from
+   an older version on `ux0:` still load.
    Later updates only need the new VPK.
 
 ### In this version

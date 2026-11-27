@@ -435,8 +435,26 @@ uniform sampler2D uTex;
 uniform float uSurf;          // the ground under this draw: 0 none, 1 road, 2 grass / earth, 3 gravel, 4 kerb
 uniform sampler2DShadow uShadow;
 uniform float uTexOn, uHasN, uFog, uSpec, uGloss, uShadowOn, uShTexel;
-uniform mat4 uShadowM;
+uniform mat4 uShadowM, uEyeToWorld;
 uniform vec3 uSun, uUp, uSunCol, uSky, uGround, uWorldA, uWorldB;
+uniform vec3 uZenith, uSunW;
+uniform float uDebug;
+const float EXP_MODEL = 0.62, EXP_WORLD = 0.78;     // exposure: the lit models / the circuit's baked colours
+// the light is added up in linear values, then squeezed into the screen's range the way a film
+// camera does (ACES curve): bright things roll off softly instead of clipping flat
+vec3 lin(vec3 c) { return pow(max(c, vec3(0.0)), vec3(2.2)); }
+vec3 film(vec3 x) { x = (x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14); return pow(clamp(x, 0.0, 1.0), vec3(1.0 / 2.2)); }
+// what a shiny surface sees in direction R (world, z up): the sky from the horizon's haze to the
+// zenith's blue, the ground below the horizon, the sun; rough surfaces see it blurred
+vec3 env(vec3 R, float rough, float sv) {
+    vec3 haze = lin(gl_Fog.color.rgb), zen = lin(uZenith);
+    float w = mix(0.012, 0.45, rough);
+    vec3 sky = mix(haze, zen, smoothstep(0.0, 0.55, R.z)) * 1.5;     // (the sky is far brighter than what it lights)
+    vec3 gnd = uGround * uGround * 0.35;
+    vec3 e = mix(gnd, sky, smoothstep(-w, w * 0.4, R.z));
+    e += lin(uSunCol) * pow(max(dot(R, uSunW), 0.0), mix(3000.0, 40.0, rough)) * mix(60.0, 1.5, rough) * sv;
+    return e;
+}
 // smooth value noise on the ground's own coordinates (metres; repeats every 256 m, so the origin
 // can move in whole 256 m steps without the pattern jumping)
 float hash2(vec2 p) { p = mod(p, 256.0); return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -478,8 +496,18 @@ void main() {
         float d = max(nl, 0.0) * (nl > 0.0 ? sunVis(sp, 0.00004) : 0.0);
         vec3 H = normalize(uSun + V);
         float s = d > 0.0 ? pow(max(dot(N, H), 0.0), uGloss) * uSpec * (uGloss + 8.0) / 40.0 : 0.0;
-        float fr = pow(1.0 - max(dot(N, V), 0.0), 5.0) * uSpec;
-        col = c.rgb * (amb + uSunCol * d) + uSunCol * s + uSky * fr * 0.35;
+        // reflections: a clear coat (paint) shows the sky and the horizon over its curves, glass more so;
+        // the Fresnel term: little straight on, nearly a mirror at a glancing look
+        float rough = 1.0 - clamp(uGloss / 300.0, 0.0, 1.0);
+        float F0 = mix(0.02, 0.06, uSpec);
+        float Fr = (F0 + (1.0 - F0) * pow(1.0 - max(dot(N, V), 0.0), 5.0)) * clamp(uSpec * uSpec * 0.9, 0.0, 0.9);
+        vec3 Rw = mat3(uEyeToWorld) * reflect(-V, N);
+        vec3 diff = lin(c.rgb) * (lin(amb) * 2.2 + lin(uSunCol) * d * 1.6) * EXP_MODEL;
+        // (the baked occlusion in the vertex colour shuts reflections out of gaps and recesses too)
+        float so = clamp(max(vCol.r, max(vCol.g, vCol.b)) * 1.4 - 0.15, 0.0, 1.0);
+        col = diff * (1.0 - Fr) + (env(Rw, rough, d > 0.0 ? 1.0 : 0.3) * Fr + lin(uSunCol) * s * 0.8) * so;
+        col = film(col);
+        if (uDebug > 0.5) col = uDebug < 1.5 ? vec3(Fr) : (uDebug < 2.5 ? film(env(Rw, rough, 1.0)) : vec3(so));
     } else {
         vec3 alb = c.rgb;
         float sv = sunVis(vSh, 0.00008);
@@ -495,22 +523,23 @@ void main() {
             alb *= 1.0 + (macro - 0.5) * mk * 2.0 + grain * gk * near;
             if (uSurf > 1.5 && uSurf < 2.5) alb = mix(alb, alb * vec3(1.18, 1.08, 0.62), smoothstep(0.62, 0.85, vnoise(vW / 17.0 + 40.0)) * 0.45);   // dry patches
         }
-        col = alb * (uWorldA + uWorldB * sv);
+        col = lin(alb) * (uWorldA + uWorldB * sv) * EXP_WORLD;
         if (uSurf > 0.5 && uSurf < 1.5) {
-            // the road's sheen: the sun glints on it (more in the wet), the sky shines off it at a glancing look
+            // the road's sheen: the sky and the horizon shine off it at a glancing look and the sun
+            // glints on it -- dull when dry, a blurred mirror in the wet
             vec3 N = normalize(uUp + gl_NormalMatrix * vec3((vnoise(vW * 3.1) - 0.5) * 0.06, (vnoise(vW * 3.1 + 17.0) - 0.5) * 0.06, 0.0));
-            vec3 H = normalize(uSun + V);
-            float s = pow(max(dot(N, H), 0.0), uGloss) * uSpec * (uGloss + 8.0) / 40.0 * sv;
-            float fr = pow(1.0 - max(dot(N, V), 0.0), 5.0) * uSpec;
-            col += uSunCol * s + uSky * fr * 0.5;
+            float rough = 1.0 - clamp(uGloss / 300.0, 0.0, 1.0);
+            float Fr = (0.02 + 0.98 * pow(1.0 - max(dot(N, V), 0.0), 5.0)) * clamp(uSpec * 1.2, 0.0, 1.0);
+            col = col * (1.0 - Fr) + env(mat3(uEyeToWorld) * reflect(-V, N), rough, sv) * Fr;
         }
+        col = film(col);
     }
     if (uFog > 0.5) col = mix(gl_Fog.color.rgb, col, clamp((gl_Fog.end - abs(vPos.z)) * gl_Fog.scale, 0.0, 1.0));
     gl_FragColor = vec4(col, c.a);
 }
 )";
 GLuint litProg = 0;
-GLint uEyeToWorld = -1, uSurfU = -1;
+GLint uEyeToWorld = -1, uSurfU = -1, uZenithU = -1, uSunWU = -1;
 GLint uShadowM = -1, uShadowU = -1, uShadowOn = -1, uShTexel = -1, uWorldA = -1, uWorldB = -1;
 GLint uTex = -1, uTexOn = -1, uHasN = -1, uFog = -1, uSpec = -1, uGloss = -1, uSun = -1, uUp = -1, uSunCol = -1, uSky = -1, uGround = -1;
 gfx::Lighting light;
@@ -541,6 +570,8 @@ void buildLighting() {
     uSun = sh_GetUniformLocation(p, "uSun"); uUp = sh_GetUniformLocation(p, "uUp"); uSunCol = sh_GetUniformLocation(p, "uSunCol");
     uSky = sh_GetUniformLocation(p, "uSky"); uGround = sh_GetUniformLocation(p, "uGround");
     uWorldA = sh_GetUniformLocation(p, "uWorldA"); uWorldB = sh_GetUniformLocation(p, "uWorldB");
+    if (getenv("EMR_LITDEBUG")) { sh_UseProgram(p); sh_Uniform1f(sh_GetUniformLocation(p, "uDebug"), (float)atof(getenv("EMR_LITDEBUG"))); sh_UseProgram(0); }
+    uZenithU = sh_GetUniformLocation(p, "uZenith"); uSunWU = sh_GetUniformLocation(p, "uSunW");
     uEyeToWorld = sh_GetUniformLocation(p, "uEyeToWorld"); uSurfU = sh_GetUniformLocation(p, "uSurf");
     uShadowM = sh_GetUniformLocation(p, "uShadowM"); uShadowU = sh_GetUniformLocation(p, "uShadow");
     uShadowOn = sh_GetUniformLocation(p, "uShadowOn"); uShTexel = sh_GetUniformLocation(p, "uShTexel");
@@ -632,7 +663,9 @@ bool useLit(bool hasNormals) {
             M4 m = M4::translate(sceneEye - o) * rigidInverse(viewM);
             sh_UniformMatrix4fv(uEyeToWorld, 1, GL_FALSE, m.m);
         }
-        bool sh = shadowFbo && shadowValid;
+        sh_Uniform3f(uZenithU, light.zenith[0], light.zenith[1], light.zenith[2]);
+        sh_Uniform3f(uSunWU, light.sun.x, light.sun.y, light.sun.z);
+        bool sh = shadowFbo && shadowValid && light.shadows;
         sh_Uniform1f(uShadowOn, sh ? 1.0f : 0.0f);
         if (sh) { M4 m = shadowMatrix(); sh_UniformMatrix4fv(uShadowM, 1, GL_FALSE, m.m); sh_Uniform1f(uShTexel, 1.0f / shadowN); }
         sh_Uniform1f(uSpec, matSpec); sh_Uniform1f(uGloss, matGloss);

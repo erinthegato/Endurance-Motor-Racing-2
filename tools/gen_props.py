@@ -277,6 +277,11 @@ def write_emm(path, lods, emx=None, shared_bbox=None):
             if PCSET and tex is not None and kit is lods[0][0]:
                 ts = max(ts, tex.size[0])      # (the near level: the full-resolution picture)
             P, UV, LT = kit.arrays()
+            if PCSET and shared_bbox is None and len(P):
+                # the PC: real ambient occlusion (under roofs and overhangs, inside corners, at the foot of walls)
+                Nk = np.array([t[1] for t in kit.tris], float).reshape(-1, 3, 3)
+                ext = float((P.reshape(-1, 3).max(0) - P.reshape(-1, 3).min(0)).max())
+                LT = np.clip(LT * pc_refine.vertex_ao(P, Nk, reach=max(0.6, ext * 0.25)), 0, 1)
             emn.append((np.array([t[1] for t in kit.tris], float).reshape(-1, 3, 3),))
             vc = len(P) * 3
             f.write(struct.pack('<IIIf', vc, ts if tex is not None else 0, 0, 0.0))

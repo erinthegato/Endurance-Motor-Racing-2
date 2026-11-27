@@ -279,7 +279,10 @@ def quantise(img):
     return [0xFF000000 | (pal[i * 3 + 2] << 16) | (pal[i * 3 + 1] << 8) | pal[i * 3] for i in range(256)], np.asarray(q, np.uint8)
 
 
-def write_emm(path, lods, meta=(0.0, 0.0, 0.0), emx=None, share_tex=False):
+_AO_CACHE = {}
+
+
+def write_emm(path, lods, meta=(0.0, 0.0, 0.0), emx=None, share_tex=False, ao_ground=True):
     """lods: list of (Mesh, texture image, texture size). Glass triangles go last in each LOD.
     share_tex: levels 1+ painted from the same image as level 0 store no texture and use level 0's
     (the Vita's mipmaps shrink it in the distance) -- saves memory with no visible change."""
@@ -296,6 +299,12 @@ def write_emm(path, lods, meta=(0.0, 0.0, 0.0), emx=None, share_tex=False):
             P, UV, LT, G = mesh.arrays()
             order = np.argsort(G, kind='stable')
             P, UV, LT, G = P[order], UV[order], LT[order], G[order]
+            if pc_refine.pc_mode():
+                # the PC: real ambient occlusion -- gaps, vents, arches, under the wing go dark
+                key = (id(mesh), ao_ground)
+                if key not in _AO_CACHE:
+                    _AO_CACHE[key] = (mesh, pc_refine.vertex_ao(P, mesh.normals()[order], reach=0.45, ground=ao_ground))
+                LT = np.clip(LT * _AO_CACHE[key][1], 0, 1)
             emn.append((mesh.normals()[order], np.repeat(G, 3)))
             vc = len(P) * 3
             shared = share_tex and li > 0 and tex is lods[0][1]

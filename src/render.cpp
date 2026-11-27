@@ -415,8 +415,10 @@ void Renderer::drawHorizon(const Track& t, const Camera& cam, u32 haze) {
 
 // the PC's real lighting: where the sun is at this time of day, and the colour of its light and of the
 // sky's. (The night itself stays the old dark overlay, drawNight; this lights the day and the dusk.)
+static u32 skyNow = RGBA(120, 170, 230);   // (Renderer::skyColour, set by drawScene)
 static gfx::Lighting sceneLight(const Race& r) {
     gfx::Lighting L;
+    L.zenith[0] = (skyNow & 255) / 255.0f; L.zenith[1] = ((skyNow >> 8) & 255) / 255.0f; L.zenith[2] = ((skyNow >> 16) & 255) / 255.0f;
     float h = r.clockHour();
     // the sun rises in the east (+x) about 6:15, is highest (62 degrees, to the south) about 12:40, sets in the west about 19:00
     float t = (h - 6.25f) / 12.75f, a = t * 3.14159265f;
@@ -520,6 +522,7 @@ void Renderer::drawScene(const Race& r, const Camera& cam, bool hidePlayer) {
     drawHorizon(t, cam, haze);
     gfx::setFog(true, (260 - r.rain * 200) * perf.distance, (FAR_TRACK + 150 - r.rain * 520) * perf.distance, haze);
     gfx::setDepthTest(true); gfx::setDepthWrite(true); gfx::setBlend(false);
+    skyNow = skyColour(r);
     gfx::setLighting(sceneLight(r));
     gfx::setEye(cam.eye);
     if (!sceneLite) drawShadows(r, cam);      // (the mirror uses the main view's)
@@ -735,13 +738,14 @@ void Renderer::drawCar(const Car& c, const V3& eye, const V3& fwd, float tanH, f
     };
     // a lost nose or wing is simply not drawn; an intact car is one draw (body, nose, wing and glass
     // follow each other in the model: see splitCar)
-    if (!c.noseOff && !c.wingOff && !inside && ps.glassFirst == ps.wingFirst + ps.wingCount) part(0, ps.glassFirst + ps.glassCount);
+    bool oneDraw = ps.glassFirst == ps.wingFirst + ps.wingCount;
+    if (!c.noseOff && !c.wingOff && oneDraw) part(0, ps.glassFirst);
     else {
         part(0, ps.body);
         if (!c.noseOff) part(ps.noseFirst, ps.noseCount);
         if (!c.wingOff) part(ps.wingFirst, ps.wingCount);
-        if (!inside) part(ps.glassFirst, ps.glassCount);
     }
+    if (!inside) { gfx::setMaterial(1.0f, 600); part(ps.glassFirst, ps.glassCount); }   // the glass: a near mirror
     gfx::setMaterial(0.08f, 12);
     if (!c.wingOff && lod < 2 && !inside) drawFlap(c, place, d < 9);
     if (lod < 2 && !inside && !sceneLite) drawDriver(c, place, lod, d < 9);
@@ -1450,9 +1454,24 @@ void Renderer::drawCarShowroom(int idx, float angle, float x0, float y0, float w
     gfx::setFog(false, 0, 1, 0);
     gfx::setDepthTest(true); gfx::setDepthWrite(true);
     M4 place = M4::rotZ(angle);
+    // (the PC) studio light: a key light high to the front, soft boxes overhead that the paint
+    // reflects, a dark floor
+    gfx::Lighting L;
+    L.sun = norm(V3(-0.55f, -0.75f, 0.9f));
+    L.sunCol[0] = 0.95f; L.sunCol[1] = 0.93f; L.sunCol[2] = 0.90f;
+    L.sky[0] = 0.50f; L.sky[1] = 0.51f; L.sky[2] = 0.55f;
+    L.ground[0] = L.ground[1] = L.ground[2] = 0.18f;
+    L.zenith[0] = 0.92f; L.zenith[1] = 0.93f; L.zenith[2] = 0.96f;
+    L.shadows = false;
+    gfx::setEye(V3(0, 0, 0));
+    gfx::setLighting(L);
+    gfx::setLit(true);
+    gfx::setMaterial(0.55f, 70);
     gfx::bindTexture(&m.lod[0].tex);
     gfx::drawModel(m.lod[0].verts, m.lod[0].count, m.matrix(place));
+    gfx::setMaterial(0.08f, 12);
     drawWheels(CARS[idx], place, 0, 0, 0);
+    gfx::setLit(false);
 }
 
 // a texture's pixels with palette entries 1-4 swapped for a team's colours (1, 3 main; 2, 4 second)

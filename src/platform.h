@@ -75,6 +75,8 @@ struct Lighting {
     float ground[3] = {0.40f, 0.40f, 0.38f};     // light bounced up from the ground
     float worldA[3] = {1, 1, 1};                 // the circuit's baked colours (no normals): x this (the sky's part)
     float worldB[3] = {0, 0, 0};                 //   + this where the sun reaches (its part)
+    float zenith[3] = {0.47f, 0.67f, 0.90f};     // the sky overhead (what shiny things reflect)
+    bool shadows = true;                         // use the sun's shadow map (not in the showroom)
 };
 void setLighting(const Lighting& l);
 void setLit(bool on);

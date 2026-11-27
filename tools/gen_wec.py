@@ -264,15 +264,15 @@ def main():
             wl = [(wheel(R, hw, 10, 48, pairs=True).refined(1), t, S), (wheel(R, hw, 10, 16, pairs=True), t, 256), (wheel(R, hw, 6, 12), t, 128)]
         else:
             wl = [(wheel(R, hw, 10, 16, pairs=True), t, S), (wheel(R, hw, 6, 12), t, 128), (wheel(R, hw, 0, 8), t, 64)]
-        print(f'wheel_{era}', write_emm(os.path.join(out, f'wheel_{era}.emm'), wl))
+        print(f'wheel_{era}', write_emm(os.path.join(out, f'wheel_{era}.emm'), wl, ao_ground=False))
     NEW_DASH = (0.0, 0.0, 0.0, 0.0, 2)        # EMX1 flags bit 1: the Vita's dash instruments
     # the cockpits and steering wheels: the PC's refined twice onto their curves (rounder rims, grips,
     # seats, dash: they are always right in front of you)
     ref = (lambda m: m.refined(2)) if PCSET else (lambda m: m)
     print('cockpit_hypercar', write_emm(os.path.join(out, 'cockpit_hypercar.emm'), [(ref(B.proto_interior()), t, S)], emx=NEW_DASH))
     print('cockpit_gt3', write_emm(os.path.join(out, 'cockpit_gt3.emm'), [(ref(B.gt_interior()), t, S)], emx=NEW_DASH))
-    print('steering_hyper', write_emm(os.path.join(out, 'steering_hyper.emm'), [(ref(G.hd_steering(True)), t, S)], emx=NEW_DASH))
-    print('steering_gt3', write_emm(os.path.join(out, 'steering_gt3.emm'), [(ref(G.hd_steering(False)), t, S)], emx=NEW_DASH))
+    print('steering_hyper', write_emm(os.path.join(out, 'steering_hyper.emm'), [(ref(G.hd_steering(True)), t, S)], emx=NEW_DASH, ao_ground=False))
+    print('steering_gt3', write_emm(os.path.join(out, 'steering_gt3.emm'), [(ref(G.hd_steering(False)), t, S)], emx=NEW_DASH, ao_ground=False))
     # the front tyres against the rears, for src/render.cpp (FRONT_W, FRONT_R)
     for rule in ('LMDh', 'GT3'):
         (wf, df), (wr, dr) = REG[rule]['tyre_f'], REG[rule]['tyre_r']

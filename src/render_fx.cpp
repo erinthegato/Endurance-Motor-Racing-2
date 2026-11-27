@@ -23,6 +23,9 @@ void Renderer::splitCar(int idx) {
         float zBot = m.offset[2] - m.scale[2], zTop = m.offset[2] + m.scale[2];
         std::vector<ModelVertex> body, nose, wing;
         body.reserve(lod.count);
+        // (the PC's normals, 'EMN1', 4 bytes a vertex: re-ordered with their vertices)
+        uint32_t* nv = (uint32_t*)lod.normals;
+        std::vector<uint32_t> nBody, nNose, nWing;
         V3 nc(0, 0, 0), wc(0, 0, 0);
         for (int t = 0; t < n; t++) {
             V3 c(0, 0, 0);
@@ -34,6 +37,10 @@ void Renderer::splitCar(int idx) {
             auto& dst = c.x > m.offset[0] + m.scale[0] * 0.78f ? nose
                       : (c.x < m.offset[0] - m.scale[0] * 0.70f && c.z > zBot + (zTop - zBot) * 0.55f) ? wing : body;
             for (int j = 0; j < 3; j++) dst.push_back(v[t * 3 + j]);
+            if (nv) {
+                auto& nd = &dst == &nose ? nNose : (&dst == &wing ? nWing : nBody);
+                for (int j = 0; j < 3; j++) { uint32_t q; memcpy(&q, nv + t * 3 + j, 4); nd.push_back(q); }
+            }
             if (&dst == &nose) nc += c; else if (&dst == &wing) wc += c;
         }
         PartSplit& ps = split[idx][li];
@@ -47,6 +54,12 @@ void Renderer::splitCar(int idx) {
         if (!nose.empty()) memcpy(v + ps.noseFirst, nose.data(), nose.size() * sizeof(ModelVertex));
         if (!wing.empty()) memcpy(v + ps.wingFirst, wing.data(), wing.size() * sizeof(ModelVertex));
         gfx::flushCache(v, lod.count * (int)sizeof(ModelVertex));
+        if (nv) {
+            memcpy(nv, nBody.data(), nBody.size() * 4);
+            if (!nNose.empty()) memcpy(nv + ps.noseFirst, nNose.data(), nNose.size() * 4);
+            if (!nWing.empty()) memcpy(nv + ps.wingFirst, nWing.data(), nWing.size() * 4);
+            gfx::attachNormals(lod.verts, lod.normals, lod.count);      // (the flush above forgot them)
+        }
     }
 }
 

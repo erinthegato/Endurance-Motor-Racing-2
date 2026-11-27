@@ -263,3 +263,68 @@ def emn_block(lods, scale):
         rec['a'] = np.clip(np.round(baked / 1.5 * 255), 1, 255).astype(np.uint8)   # the game: colour / (a / 255 * 1.5)
         out += rec.tobytes()
     return bytes(out)
+
+
+# ------------------------------------------------------------------ ambient occlusion (the PC set)
+def _fib_dirs(n):
+    """n directions spread evenly over the upper hemisphere (z up), cosine-weighted"""
+    i = np.arange(n) + 0.5
+    r = np.sqrt(i / n); phi = i * np.pi * (3 - np.sqrt(5))
+    return np.stack([r * np.cos(phi), r * np.sin(phi), np.sqrt(np.maximum(1 - r * r, 0))], -1)
+
+
+def vertex_ao(P, N, res=None, reach=None, dirs=32, strength=0.6, ground=True, floor=0.45):
+    """How open each corner is to the sky around it: rays from every corner through a voxel copy of
+    the model (and the ground under it). Gaps, vents, wheel arches, the underside of wings and roofs
+    go dark the way they do in daylight. Returns a factor per corner (m, 3), 1 = fully open.
+      P, N: (m, 3, 3) corner positions and normals; res: voxel size (default 1/150 of the model);
+      reach: how far a ray looks (default 14 voxels)"""
+    P = np.asarray(P, float).reshape(-1, 3, 3); N = _unit(np.asarray(N, float).reshape(-1, 3, 3))
+    lo = P.reshape(-1, 3).min(0); hi = P.reshape(-1, 3).max(0)
+    ext = float((hi - lo).max())
+    res = res or ext / 220.0
+    reach = reach or res * 14
+    pad = int(np.ceil(reach / res)) + 2
+    o = lo - pad * res
+    dims = np.ceil((hi - lo) / res).astype(int) + 2 * pad + 1
+    occ = np.zeros(dims, bool)
+    # the surface into voxels: points spread over every triangle, about two per voxel width
+    a, b, c = P[:, 0], P[:, 1], P[:, 2]
+    L = np.maximum(np.linalg.norm(b - a, axis=1), np.linalg.norm(c - a, axis=1))
+    k = np.clip(np.ceil(L / (res * 0.5)).astype(int), 1, 60)
+    for kk in np.unique(k):
+        sel = k == kk
+        u, v = np.meshgrid(np.arange(kk + 1), np.arange(kk + 1), indexing='ij')
+        m = (u + v) <= kk
+        u = u[m] / kk; v = v[m] / kk
+        pts = a[sel][:, None] + (b[sel] - a[sel])[:, None] * u[None, :, None] + (c[sel] - a[sel])[:, None] * v[None, :, None]
+        idx = np.floor((pts.reshape(-1, 3) - o) / res).astype(int)
+        occ[idx[:, 0], idx[:, 1], idx[:, 2]] = True
+    if ground:      # the road under the model (its lowest point)
+        gz = int(np.floor((lo[2] - o[2]) / res)) - 3
+        occ[:, :, max(gz, 0)] = True
+    D = _fib_dirs(dirs)
+    steps = np.arange(0.0, reach + 1e-9, res * 0.9)     # (a voxel at a time: thin shells can't be stepped over)
+    # thicken the shells by a voxel so diagonal rays can't slip between surface voxels
+    o2 = occ.copy()
+    for ax in range(3):
+        o2 |= np.roll(occ, 1, ax) | np.roll(occ, -1, ax)
+    occ = o2
+    Pc = P.reshape(-1, 3); Nc = N.reshape(-1, 3)
+    out = np.empty(len(Pc))
+    for s in range(0, len(Pc), 20000):
+        p = Pc[s:s + 20000]; n = Nc[s:s + 20000]
+        # a frame around each normal
+        t = np.where(np.abs(n[:, 2:3]) < 0.9, np.array([[0, 0, 1.0]]), np.array([[1.0, 0, 0]]))
+        u_ = _unit(np.cross(n, t)); v_ = np.cross(n, u_)
+        W = D[None, :, 0:1] * u_[:, None] + D[None, :, 1:2] * v_[:, None] + D[None, :, 2:3] * n[:, None]   # (p, d, 3)
+        hit = np.zeros(W.shape[:2], bool)
+        start = p + n * res * 2.2           # (clear of its own, thickened shell)
+        for st in steps:
+            q = start[:, None] + W * st
+            idx = np.floor((q - o) / res).astype(int)
+            idx = np.clip(idx, 0, dims - 1)
+            hit |= occ[idx[..., 0], idx[..., 1], idx[..., 2]]
+        vis = 1 - hit.mean(1)
+        out[s:s + 20000] = np.maximum(1 - strength * (1 - vis) ** 1.3, floor)
+    return out.reshape(-1, 3)

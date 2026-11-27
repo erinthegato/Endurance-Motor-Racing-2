@@ -71,6 +71,7 @@ inline bool fixEmm(void* d, size_t n, bool fromLE) {
     }
     if (w.magic("EMX1")) { w.bytes(4); w.words(5); }
     if (w.magic("EMN1")) { w.bytes(4); for (uint32_t i = 0; i < lods && w.ok; i++) w.bytes((size_t)vcs[i] * 4); }   // int8 normals + shade
+    if (w.magic("EMQ1")) { w.bytes(4); uint32_t n = w.u32(); w.words((size_t)n * 5); }                              // the side mirrors
     return w.done();
 }
 

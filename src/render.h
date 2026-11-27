@@ -15,6 +15,10 @@ struct Camera { V3 eye, fwd, up; float fov = 60; };
 struct Renderer {
     float sceneAspect = (float)SCREEN_W / SCREEN_H;   // drawScene's width / height (the mirror is wider)
     bool sceneMirrorX = false;                       // drawScene flipped left-right (a mirror)
+    bool sceneSide = false;                          // drawScene for a side mirror (PC): the full scene, no new shadow map
+    bool mirrorsLive = false;                        // (PC) the player's side mirrors have this frame's pictures
+    struct GlassDraw { const ModelVertex* v; const Texture* tex; int count; M4 mm; float d; };
+    std::vector<GlassDraw> glassQueue;               // (PC) see-through glass, drawn after everything solid
     bool hudManage = false;                          // drawHUD: managing (the team panel and the controls take the bottom)
     int hideCar = -1;                                // drawScene: leave this car out (the manager's dashcam is inside it)
     bool sceneLite = false;                          // drawScene: road and cars only (the mirror)
@@ -90,6 +94,8 @@ struct Renderer {
     Camera camera(const Race& r, int mode, float dt, bool lookBack);
     void drawScene(const Race& r, const Camera& cam, bool hidePlayer);
     void drawShadows(const Race& r, const Camera& cam);   // the PC: the sun's shadow map
+    void drawSideMirrors(const Race& r, const Car& me, const Camera& view, bool cockpit);   // the PC: live side mirrors
+    void drawGlassQueue();
     bool shadowsLive = false;                             // (this frame's scene has the sun's shadows)
     void drawCockpit(const Race& r, const Camera& cam);
     // team manager: a broadcast-style camera on the dash of one of our cars, looking out over the nose

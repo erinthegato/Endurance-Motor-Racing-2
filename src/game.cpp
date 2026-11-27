@@ -1037,6 +1037,9 @@ void Game::drawRaceView() {
     bool cockpit = mode == CAM_COCKPIT;
     if (dash) R.drawDashcam(race, watch, c);
     else {
+    // (the PC) the side mirrors' pictures first, from the car's cockpit or behind it
+    if (mode == CAM_COCKPIT || mode == CAM_CHASE || mode == CAM_FAR) R.drawSideMirrors(race, me, c, cockpit);
+    else R.mirrorsLive = false;
     R.drawScene(race, c, cockpit);
     R.drawMarshalFlags(race, c);
     // in the car the cabin's night darkness goes over the whole screen, so the outside gets less here

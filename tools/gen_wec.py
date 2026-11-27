@@ -204,6 +204,7 @@ def main():
         build = B.build_proto if c['hyper'] else B.build_gt
         fns = B.proto_side_w(spec, 0.38) if c['hyper'] else B.gt_side_w(spec)
         top_mesh = build(spec, -1); G.decal_quads(top_mesh, c, spec, fns)
+        mirrors = list(getattr(top_mesh, 'mirrors', []))
         mid_mesh = build(spec, 0); G.decal_quads(mid_mesh, c, spec, fns)
         far_mesh = build(spec, 2)
         if PCSET:
@@ -216,6 +217,7 @@ def main():
             k = 0.999 / wmax
             for m_ in (top_mesh, mid_mesh, far_mesh):
                 m_.tris = [(np.array(t[0]) * np.array([1, k, 1]),) + tuple(t[1:]) for t in m_.tris]
+            mirrors = [(x, y * k, z, hw * k, hh) for x, y, z, hw, hh in mirrors]
         TS = (1024, 512, 256) if PCSET else (512, 256, 128)
         lods = [(top_mesh, p.img, TS[0]), (mid_mesh, p.img, TS[1]), (far_mesh, p.img, TS[2])]
         px = spec['panel'][0]
@@ -225,10 +227,11 @@ def main():
         wy = BODY_HALF_W - tf[0] / 2 - (0.035 if c['hyper'] else 0.06)      # the front wheel's centre, inside the body
         # two files: car_<id>_hd.emm (512 px livery) for your own car, the showroom and the menus;
         # car_<id>.emm (256 px) for the rest of the field -- 40 % less memory per car on a 40-car grid
-        n = write_emm(os.path.join(out, f"car_{c['id']}_hd.emm"), lods, meta=meta, emx=(fa, ra, wy, 0.0, 0), share_tex=True)
+        mq = mirrors if PCSET else None
+        n = write_emm(os.path.join(out, f"car_{c['id']}_hd.emm"), lods, meta=meta, emx=(fa, ra, wy, 0.0, 0), share_tex=True, mirrors=mq)
         AI = 512 if PCSET else 256
         write_emm(os.path.join(out, f"car_{c['id']}.emm"), [(top_mesh, p.img, AI), (mid_mesh, p.img, AI), (far_mesh, p.img, AI)],
-                  meta=meta, emx=(fa, ra, wy, 0.0, 0), share_tex=True)
+                  meta=meta, emx=(fa, ra, wy, 0.0, 0), share_tex=True, mirrors=mq)
         P = top_mesh.arrays()[0].reshape(-1, 3)
         dims = P.max(0) - P.min(0)
         # the height rule leaves out the FIA/ACO antenna (Art. 3.1.1): measured without the roof antenna

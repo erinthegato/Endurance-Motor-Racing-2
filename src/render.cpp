@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
+#include <algorithm>
 #include <malloc.h>
 
 long statVerts[6];   // track, terrain, props, car bodies, wheels, cockpit (PC test statistics)
@@ -505,6 +506,59 @@ void Renderer::drawShadows(const Race& r, const Camera& cam) {
     gfx::endShadow();
 }
 
+// (the PC) the see-through glass of the cars in view: after everything solid, the farthest first, blended
+// over what's behind it (the cabin, the driver, the far side of the car)
+void Renderer::drawGlassQueue() {
+    if (glassQueue.empty()) return;
+    std::sort(glassQueue.begin(), glassQueue.end(), [](const GlassDraw& a, const GlassDraw& b) { return a.d > b.d; });
+    gfx::setBlend(true); gfx::setDepthWrite(false); gfx::setGlass(true);
+    gfx::setMaterial(1.0f, 600);
+    for (const GlassDraw& g : glassQueue) {
+        gfx::bindTexture(g.tex);
+        gfx::drawModel(g.v, g.count, g.mm);
+    }
+    gfx::setGlass(false); gfx::setDepthWrite(true); gfx::setBlend(false);
+    gfx::setMaterial(0.08f, 12);
+    glassQueue.clear();
+}
+
+// (the PC) the side mirrors: the view from each mirror's glass, reflected from where the driver's head
+// is, drawn into its own picture before the main view (Renderer::drawCar puts them on the glass)
+void Renderer::drawSideMirrors(const Race& r, const Car& me, const Camera& view, bool cockpit) {
+    mirrorsLive = false;
+    int idx = (int)(me.def - CARS);
+    if (!gfx::pcGlass() || !carLoaded[idx]) return;
+    const Model& m = carModel[idx];
+    if (!m.mirrorCount) return;
+    V3 head = cockpit ? view.eye : me.pos + me.up * 1.0f + me.fwd * m.cabX;
+    bool any = false;
+    for (int i = 0; i < m.mirrorCount; i++) {
+        const float* q = m.mirror[i];
+        V3 centre = me.pos + me.fwd * q[0] + me.left * q[1] + me.up * q[2];
+        V3 n = me.fwd * -1.0f;
+        V3 dv = norm(centre - head);
+        Camera mc;
+        mc.eye = centre;
+        mc.fwd = norm(dv - n * (2 * dot(dv, n)));
+        mc.up = me.up;
+        float dist = len(centre - head);
+        // a convex mirror: wider than the glass's own angle from the driver's eye
+        mc.fov = clampf(2 * atanf(q[4] / fmaxf(dist, 0.2f)) * 57.3f * 3.0f, 12, 40);
+        int W = 384, H = (int)(W * q[4] / q[3]);
+        if (!gfx::beginMirrorView(i, W, H, skyColour(r))) return;
+        Perf keep = perf;
+        perf.distance *= 0.4f; perf.lodBias *= 0.6f; perf.scenery = false; perf.effects = false;
+        float aspect = sceneAspect;
+        sceneAspect = q[3] / q[4]; sceneMirrorX = true; sceneSide = true;
+        drawScene(r, mc, false);
+        sceneMirrorX = false; sceneSide = false; sceneAspect = aspect;
+        perf = keep;
+        gfx::endMirrorView();
+        any = true;
+    }
+    mirrorsLive = any;
+}
+
 void Renderer::drawScene(const Race& r, const Camera& cam, bool hidePlayer) {
     const Track& t = r.track;
     M4 proj = M4::perspective(cam.fov, sceneAspect, 0.8f, 1600.0f), view = M4::lookDir(V3(0, 0, 0), cam.fwd, cam.up);
@@ -525,7 +579,8 @@ void Renderer::drawScene(const Race& r, const Camera& cam, bool hidePlayer) {
     skyNow = skyColour(r);
     gfx::setLighting(sceneLight(r));
     gfx::setEye(cam.eye);
-    if (!sceneLite) drawShadows(r, cam);      // (the mirror uses the main view's)
+    if (!sceneLite && !sceneSide) drawShadows(r, cam);      // (the mirrors use the main view's)
+    glassQueue.clear();
     gfx::setLit(true);
     gfx::setMaterial(0.08f, 12);
     float tanV = tanf(cam.fov * 3.14159f / 360.0f), tanH = tanV * sceneAspect;
@@ -609,6 +664,7 @@ void Renderer::drawScene(const Race& r, const Camera& cam, bool hidePlayer) {
         drawCar(c, cam.eye, cam.fwd, tanH, tanV);
         if (r.session == SES_RACE && r.countdown > 4.0f && false && !r.formation) drawGridGirl(r, c, cam);   // (no grid girls in WEC)
     }
+    drawGlassQueue();
     gfx::setLit(false);
     if (sceneLite) return;
     drawGhost(r, cam, tanH, tanV);
@@ -745,7 +801,28 @@ void Renderer::drawCar(const Car& c, const V3& eye, const V3& fwd, float tanH, f
         if (!c.noseOff) part(ps.noseFirst, ps.noseCount);
         if (!c.wingOff) part(ps.wingFirst, ps.wingCount);
     }
-    if (!inside) { gfx::setMaterial(1.0f, 600); part(ps.glassFirst, ps.glassCount); }   // the glass: a near mirror
+    if (!inside && ps.glassCount) {
+        if (gfx::pcGlass() && lod < 2)      // (the PC) see-through: drawn after everything solid, far to near
+            glassQueue.push_back(GlassDraw{m.lod[lod].verts + ps.glassFirst, &m.lod[lod].tex, ps.glassCount, mm, d});
+        else { gfx::setMaterial(1.0f, 600); part(ps.glassFirst, ps.glassCount); }   // the glass: a near mirror
+    }
+    gfx::setMaterial(0.08f, 12);
+    // (the PC) the side mirrors' live pictures on the player's car
+    if (c.player && mirrorsLive)
+        for (int i = 0; i < m.mirrorCount; i++) gfx::drawMirrorGlass(i, place, m.mirror[i]);
+    // (the PC) through the glass: the cabin -- tub, seat, dash, wheel -- seen from outside
+    if (gfx::pcGlass() && !inside && lod == 0 && !sceneLite && d < 30) {
+        int cls = c.def->era % ERA_COUNT;
+        const Model& ck = cockpit[cls];
+        M4 cab = place * M4::translate(V3(m.cabX, 0, 0));
+        if (ck.lodCount) { gfx::bindTexture(&ck.lod[0].tex); gfx::drawModel(ck.lod[0].verts, ck.lod[0].count, ck.matrix(cab)); }
+        const Model& sw = steering[cls];
+        if (sw.lodCount) {
+            M4 wm = cab * M4::translate(COCKPIT[cls].wheel) * M4::rotY(COCKPIT[cls].wheelTilt) * M4::rotX(c.steer * 1.4f);
+            gfx::bindTexture(&sw.lod[0].tex); gfx::drawModel(sw.lod[0].verts, sw.lod[0].count, sw.matrix(wm));
+        }
+        gfx::bindTexture(&m.lod[lod].tex);
+    }
     gfx::setMaterial(0.08f, 12);
     if (!c.wingOff && lod < 2 && !inside) drawFlap(c, place, d < 9);
     if (lod < 2 && !inside && !sceneLite) drawDriver(c, place, lod, d < 9);
@@ -1468,9 +1545,26 @@ void Renderer::drawCarShowroom(int idx, float angle, float x0, float y0, float w
     gfx::setLit(true);
     gfx::setMaterial(0.55f, 70);
     gfx::bindTexture(&m.lod[0].tex);
-    gfx::drawModel(m.lod[0].verts, m.lod[0].count, m.matrix(place));
+    const PartSplit& ps = split[idx][0];
+    bool see = gfx::pcGlass() && ps.glassCount;
+    gfx::drawModel(m.lod[0].verts, see ? ps.glassFirst : m.lod[0].count, m.matrix(place));
     gfx::setMaterial(0.08f, 12);
     drawWheels(CARS[idx], place, 0, 0, 0);
+    if (see) {
+        // the cabin through the glass, then the glass itself
+        int cls = CARS[idx].era % ERA_COUNT;
+        const Model& ck = cockpit[cls];
+        M4 cab = place * M4::translate(V3(m.cabX, 0, 0));
+        if (ck.lodCount) { gfx::bindTexture(&ck.lod[0].tex); gfx::drawModel(ck.lod[0].verts, ck.lod[0].count, ck.matrix(cab)); }
+        const Model& sw = steering[cls];
+        if (sw.lodCount) {
+            M4 wm = cab * M4::translate(COCKPIT[cls].wheel) * M4::rotY(COCKPIT[cls].wheelTilt);
+            gfx::bindTexture(&sw.lod[0].tex); gfx::drawModel(sw.lod[0].verts, sw.lod[0].count, sw.matrix(wm));
+        }
+        glassQueue.clear();
+        glassQueue.push_back(GlassDraw{m.lod[0].verts + ps.glassFirst, &m.lod[0].tex, ps.glassCount, m.matrix(place), 0});
+        drawGlassQueue();
+    }
     gfx::setLit(false);
 }
 

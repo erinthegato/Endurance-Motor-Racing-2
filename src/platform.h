@@ -84,7 +84,15 @@ void setLit(bool on);
 // between beginShadow (false: no shadows here, draw nothing) and endShadow, before the scene
 void setEye(const V3& eyeWorld);
 enum { SURF_NONE, SURF_ROAD, SURF_GRASS, SURF_GRAVEL, SURF_KERB };
-void setSurface(int kind);                     // what the next ground draws are (fine grain, sheen)
+void setSurface(int kind);
+// the PC's glass and side mirrors: see-through glass (with the cabin drawn inside the car), and each
+// side mirror a live picture: the renderer draws the view into mirror i between beginMirrorView and
+// endMirrorView, then puts it on the glass with drawMirrorGlass (q: x, y, z, half width, half height)
+bool pcGlass();
+void setGlass(bool on);
+bool beginMirrorView(int i, int w, int h, u32 clearColour);
+void endMirrorView();
+void drawMirrorGlass(int i, const M4& place, const float* q);                     // what the next ground draws are (fine grain, sheen)
 bool beginShadow(const V3& sunDir, const V3& centreRel, float radius);
 void endShadow();                          // light the 3D drawing that follows
 void setMaterial(float spec, float gloss);     // shine of what follows: 0..1, and the highlight's tightness

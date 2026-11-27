@@ -216,8 +216,12 @@ def build_proto(spec, lod):
             m.quad((xl, yl0, zl), (xl - 0.055, yl0, zl - 0.005), (xl - 0.055, yl1, zl - 0.03), (xl, yl1, zl - 0.025), uv='carbon', shade=0.35)
         # mirrors on stalks, on the fender crest by the windscreen
         mx = 0.62; my = s * W(mx) * 0.80; mz = fend(mx)
+        # (the mirror's glass: its rear face -- the PC draws a live picture there, see EMQ1)
+        mw, mh = (0.17, 0.09) if PCSET else (0.09, 0.07)        # (the PC: a real racing mirror's size)
+        if lod < 0:
+            m.mirrors = getattr(m, 'mirrors', []) + [(mx - 0.10 - 0.003, my - s * (mw / 2 - 0.004), mz + 0.10 + mh / 2, mw / 2 - 0.008, mh / 2 - 0.008)]
         m.box((mx - 0.05, my - 0.012, mz), (mx - 0.01, my + 0.012, mz + 0.11), uv='carbon')
-        m.box((mx - 0.10, my - 0.09 * s - 0.004 if s > 0 else my - 0.004, mz + 0.10), (mx + 0.03, my + 0.004 if s > 0 else my + 0.09, mz + 0.17), uv='paint' if lod < 0 else 'carbon')
+        m.box((mx - 0.10, my - mw * s - 0.004 if s > 0 else my - 0.004, mz + 0.10), (mx + 0.03, my + 0.004 if s > 0 else my + mw, mz + 0.10 + mh), uv='paint' if lod < 0 else 'carbon')
         # LMDh rear tyre fairings: a vertical plate just behind each rear wheel, low down
         if spec['rule'] == 'LMDh':
             xp = ra - 0.44
@@ -448,6 +452,8 @@ def build_gt(spec, lod):
         _gt_lights(m, spec, fns, s)
         # mirror on the door
         mx = spec['cab'] + 0.78; my = s * W(mx) * 0.88; mz = top(mx) + 0.04
+        if lod < 0:
+            m.mirrors = getattr(m, 'mirrors', []) + [(mx - 0.06 - 0.003, my + s * 0.068, mz + 0.09, 0.062, 0.034)]
         m.box((mx - 0.03, my - 0.012, mz - 0.02), (mx + 0.02, my + 0.012, mz + 0.06), uv='carbon')
         m.box((mx - 0.06, my - 0.004 if s > 0 else my - 0.14, mz + 0.05), (mx + 0.04, my + 0.14 if s > 0 else my + 0.004, mz + 0.13), uv='paint' if lod < 0 else 'carbon')
     bx = spec['bonnet_x']

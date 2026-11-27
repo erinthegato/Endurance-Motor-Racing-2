@@ -130,6 +130,13 @@ bool Model::load(const char* path) {
                 lod[i].normals = (const int8_t*)p; p += lod[i].count * 4;
             }
     }
+    // the PC's cars: 'EMQ1', where the side mirrors' glass is
+    mirrorCount = 0;
+    if (p + 8 <= (const u8*)blob + size && !memcmp(p, "EMQ1", 4)) {
+        uint32_t n; memcpy(&n, p + 4, 4); p += 8;
+        for (uint32_t i = 0; i < n && p + 20 <= (const u8*)blob + size; i++, p += 20)
+            if (mirrorCount < 2) memcpy(mirror[mirrorCount++], p, 20);
+    }
     gfx::flushCache(blob, size);        // (forgets what the GPU had from this memory: attach after it)
     for (int i = 0; i < lodCount; i++)
         if (lod[i].normals) gfx::attachNormals(lod[i].verts, lod[i].normals, lod[i].count);

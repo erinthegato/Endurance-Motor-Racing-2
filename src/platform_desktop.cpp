@@ -438,7 +438,7 @@ uniform float uTexOn, uHasN, uFog, uSpec, uGloss, uShadowOn, uShTexel;
 uniform mat4 uShadowM, uEyeToWorld;
 uniform vec3 uSun, uUp, uSunCol, uSky, uGround, uWorldA, uWorldB;
 uniform vec3 uZenith, uSunW;
-uniform float uDebug;
+uniform float uDebug, uGlass;
 const float EXP_MODEL = 0.62, EXP_WORLD = 0.78;     // exposure: the lit models / the circuit's baked colours
 // the light is added up in linear values, then squeezed into the screen's range the way a film
 // camera does (ACES curve): bright things roll off softly instead of clipping flat
@@ -507,6 +507,15 @@ void main() {
         float so = clamp(max(vCol.r, max(vCol.g, vCol.b)) * 1.4 - 0.15, 0.0, 1.0);
         col = diff * (1.0 - Fr) + (env(Rw, rough, d > 0.0 ? 1.0 : 0.3) * Fr + lin(uSunCol) * s * 0.8) * so;
         col = film(col);
+        if (uGlass > 0.5) {
+            // see-through glass: it lets through what's behind (a little tinted, less at a glancing
+            // look) and adds its reflection on top. Blended: shown = this * a + behind * (1 - a)
+            float Fg = 0.04 + 0.96 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
+            float a = clamp(0.22 + Fg * 0.78, 0.0, 0.97);
+            vec3 refl = film(env(Rw, 0.02, 1.0) * Fg + lin(c.rgb) * lin(amb) * 0.25 * EXP_MODEL + lin(uSunCol) * s * 0.8);
+            gl_FragColor = vec4(min(refl / a, vec3(1.0)), a);
+            return;
+        }
         if (uDebug > 0.5) col = uDebug < 1.5 ? vec3(Fr) : (uDebug < 2.5 ? film(env(Rw, rough, 1.0)) : vec3(so));
     } else {
         vec3 alb = c.rgb;
@@ -539,7 +548,8 @@ void main() {
 }
 )";
 GLuint litProg = 0;
-GLint uEyeToWorld = -1, uSurfU = -1, uZenithU = -1, uSunWU = -1;
+GLint uEyeToWorld = -1, uSurfU = -1, uZenithU = -1, uSunWU = -1, uGlassU = -1;
+bool glassMode = false;
 GLint uShadowM = -1, uShadowU = -1, uShadowOn = -1, uShTexel = -1, uWorldA = -1, uWorldB = -1;
 GLint uTex = -1, uTexOn = -1, uHasN = -1, uFog = -1, uSpec = -1, uGloss = -1, uSun = -1, uUp = -1, uSunCol = -1, uSky = -1, uGround = -1;
 gfx::Lighting light;
@@ -571,6 +581,7 @@ void buildLighting() {
     uSky = sh_GetUniformLocation(p, "uSky"); uGround = sh_GetUniformLocation(p, "uGround");
     uWorldA = sh_GetUniformLocation(p, "uWorldA"); uWorldB = sh_GetUniformLocation(p, "uWorldB");
     if (getenv("EMR_LITDEBUG")) { sh_UseProgram(p); sh_Uniform1f(sh_GetUniformLocation(p, "uDebug"), (float)atof(getenv("EMR_LITDEBUG"))); sh_UseProgram(0); }
+    uGlassU = sh_GetUniformLocation(p, "uGlass");
     uZenithU = sh_GetUniformLocation(p, "uZenith"); uSunWU = sh_GetUniformLocation(p, "uSunW");
     uEyeToWorld = sh_GetUniformLocation(p, "uEyeToWorld"); uSurfU = sh_GetUniformLocation(p, "uSurf");
     uShadowM = sh_GetUniformLocation(p, "uShadowM"); uShadowU = sh_GetUniformLocation(p, "uShadow");
@@ -619,6 +630,36 @@ void buildShadowMap() {
     sh_ActiveTexture(0x84C0 /*GL_TEXTURE0*/);
     sys::log("shadows: %d x %d\n", shadowN, shadowN);
 }
+// ---- the side mirrors (PC): each a small picture drawn every frame into a texture
+struct MirrorRT { GLuint fbo = 0, col = 0, depth = 0; int w = 0, h = 0; };
+MirrorRT mirrorRT[2];
+bool mirrorPass = false;
+GLint mSavedVp[4]; GLboolean mSavedScissor;
+bool makeMirrorRT(MirrorRT& m, int w, int h) {
+    if (m.fbo && m.w == w && m.h == h) return true;
+    if (!fb_GenFramebuffers && !loadShadowProcs()) return false;
+    if (!m.fbo) { fb_GenFramebuffers(1, &m.fbo); glGenTextures(1, &m.col); glGenTextures(1, &m.depth); }
+    m.w = w; m.h = h;
+    glBindTexture(GL_TEXTURE_2D, m.col);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, 0x812F); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, 0x812F);
+    glBindTexture(GL_TEXTURE_2D, m.depth);
+    glTexImage2D(GL_TEXTURE_2D, 0, 0x81A6, w, h, 0, 0x1902, GL_UNSIGNED_INT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    fb_BindFramebuffer(0x8D40, m.fbo);
+    fb_FramebufferTexture2D(0x8D40, 0x8CE0 /*GL_COLOR_ATTACHMENT0*/, GL_TEXTURE_2D, m.col, 0);
+    fb_FramebufferTexture2D(0x8D40, 0x8D00, GL_TEXTURE_2D, m.depth, 0);
+    GLenum st = fb_CheckFramebufferStatus(0x8D40);
+    fb_BindFramebuffer(0x8D40, 0);
+    if (st != 0x8CD5) { sys::log("mirrors: framebuffer not complete (%x)\n", st); m.w = -1; return false; }
+    curTex = nullptr; applyTex();
+    return true;
+}
+
 M4 ortho(float l, float r, float b, float t, float n, float f) {
     M4 o = M4::identity();
     o.m[0] = 2 / (r - l); o.m[5] = 2 / (t - b); o.m[10] = -2 / (f - n);
@@ -647,7 +688,7 @@ inline V3 toEye(const V3& v) {        // a world direction into the camera's spa
 }
 // switch the program on for a lit draw (or off): true when this draw is lit
 bool useLit(bool hasNormals) {
-    bool want = litProg && litWanted && !in2D && !blendOn && !shadowPass;
+    bool want = litProg && litWanted && !in2D && (!blendOn || (glassMode && hasNormals)) && !shadowPass;
     if (!want) { if (progOn) { sh_UseProgram(0); progOn = false; } return false; }
     if (!progOn) { sh_UseProgram(litProg); progOn = true; lightDirty = true; }
     if (lightDirty) {
@@ -673,6 +714,7 @@ bool useLit(bool hasNormals) {
     }
     sh_Uniform1f(uTexOn, texOn ? 1.0f : 0.0f);
     sh_Uniform1f(uHasN, hasNormals ? 1.0f : 0.0f);
+    sh_Uniform1f(uGlassU, glassMode && hasNormals ? 1.0f : 0.0f);
     sh_Uniform1f(uSurfU, hasNormals ? 0.0f : surfKind);
     sh_Uniform1f(uFog, fogWanted ? 1.0f : 0.0f);
     return true;
@@ -896,6 +938,55 @@ static void applySync() {
 bool highDetail() { return true; }
 void setLighting(const Lighting& l) { light = l; light.sun = norm(l.sun); lightDirty = true; }
 void setSurface(int kind) { surfKind = (float)kind; }
+bool pcGlass() { return litProg != 0 && !getenv("EMR_NOGLASS"); }
+void setGlass(bool on) { glassMode = on; }
+bool beginMirrorView(int i, int w, int h, u32 c) {
+    if (i < 0 || i > 1 || !litProg || mirrorPass || shadowPass) return false;
+    if (!makeMirrorRT(mirrorRT[i], w, h)) return false;
+    enter3D();
+    glGetIntegerv(GL_VIEWPORT, mSavedVp);
+    mSavedScissor = glIsEnabled(GL_SCISSOR_TEST);
+    glDisable(GL_SCISSOR_TEST);
+    fb_BindFramebuffer(0x8D40, mirrorRT[i].fbo);
+    glViewport(0, 0, w, h);
+    glClearColor((c & 255) / 255.0f, ((c >> 8) & 255) / 255.0f, ((c >> 16) & 255) / 255.0f, 1);
+    glDepthMask(GL_TRUE);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    mirrorPass = true;
+    return true;
+}
+void endMirrorView() {
+    if (!mirrorPass) return;
+    mirrorPass = false;
+    fb_BindFramebuffer(0x8D40, 0);
+    glViewport(mSavedVp[0], mSavedVp[1], mSavedVp[2], mSavedVp[3]);
+    if (mSavedScissor) glEnable(GL_SCISSOR_TEST);
+    glDepthMask(depthWriteWanted ? GL_TRUE : GL_FALSE);
+}
+// the mirror's glass: its picture on a quad facing back (-x in place's space); q = x, y, z, half width, half height
+void drawMirrorGlass(int i, const M4& place, const float* q) {
+    if (i < 0 || i > 1 || mirrorRT[i].w <= 0 || !mirrorRT[i].fbo) return;
+    enter3D();
+    if (progOn) { sh_UseProgram(0); progOn = false; }
+    setModel(place);
+    float x = q[0], y = q[1], z = q[2], hw = q[3], hh = q[4];
+    // seen from the driver (looking forward, +x), the car's left (+y) is on the left: the picture
+    // (drawn mirrored) runs from u 0 on the left
+    WorldVertex v[6] = {
+        {0, 0, 0xFFFFFFFFu, x, y + hw, z - hh}, {1, 0, 0xFFFFFFFFu, x, y - hw, z - hh}, {1, 1, 0xFFFFFFFFu, x, y - hw, z + hh},
+        {0, 0, 0xFFFFFFFFu, x, y + hw, z - hh}, {1, 1, 0xFFFFFFFFu, x, y - hw, z + hh}, {0, 1, 0xFFFFFFFFu, x, y + hw, z + hh}};
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glEnable(GL_TEXTURE_2D);
+    glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+    glBindTexture(GL_TEXTURE_2D, mirrorRT[i].col);
+    glDisable(GL_FOG);
+    glVertexPointer(3, GL_FLOAT, sizeof(WorldVertex), &v[0].x);
+    glColorPointer(4, GL_UNSIGNED_BYTE, sizeof(WorldVertex), &v[0].color);
+    glTexCoordPointer(2, GL_FLOAT, sizeof(WorldVertex), &v[0].u);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    if (fogWanted) glEnable(GL_FOG);
+    applyTex();
+}
 void setEye(const V3& eye) { sceneEye = eye; lightDirty = true; }
 bool beginShadow(const V3& sun, const V3& centreRel, float radius) {
     if (!shadowFbo || !litProg) return false;

@@ -410,6 +410,11 @@ void setLighting(const Lighting&) {}
 void setLit(bool) {}
 void setEye(const V3&) {}
 void setSurface(int) {}
+bool pcGlass() { return false; }
+void setGlass(bool) {}
+bool beginMirrorView(int, int, int, u32) { return false; }
+void endMirrorView() {}
+void drawMirrorGlass(int, const M4&, const float*) {}
 bool beginShadow(const V3&, const V3&, float) { return false; }
 void endShadow() {}
 void setMaterial(float, float) {}

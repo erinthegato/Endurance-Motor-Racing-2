@@ -84,6 +84,8 @@ struct Model {
     // wheel arches are. axleF == 0: use the class defaults. ownWheels: the model has its wheels on.
     float axleF = 0, axleR = 0, wheelY = 0.86f, wheelR = 0;
     bool ownWheels = false;
+    int mirrorCount = 0;     // (PC cars, 'EMQ1') the side mirrors' glass: x, y, z, half width, half height
+    float mirror[2][5] = {};
     uint32_t flags = 0;    // EMX1 flags: bit 0 own wheels, bit 1 Unity AI interior (new instrument layout)
     // levels of detail stored without a texture of their own use level 0's (the GPU's mipmaps already
     // make it smaller in the distance): bit i set = lod[i] borrows lod[0]'s texture

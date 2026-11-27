@@ -140,6 +140,12 @@ other, the stands, buildings, trees and walls, and the car's own bodywork over t
 The ground gets fine grain close up and soft patches further away (so the textures don't visibly
 repeat), and the road a sheen that turns into a mirror in the rain.
 
+The paint is a clear coat that reflects the sky, horizon and sun; the light is added up in linear
+values and tone mapped like film; every PC model has baked ambient occlusion. Car glass is see-through
+(the cabin, seat and wheel show inside) with reflections on top, and the side mirrors show a live
+picture of what's behind (two extra, lighter views each frame). `EMR_NOGLASS=1` turns the glass and
+mirrors back to the simple version.
+
 To check the PC renderer without a Windows machine: `make -f Makefile.headless` builds `emr_gl`,
 which draws with OpenGL offscreen (EGL + Mesa) and saves screenshots, e.g.
 `mkdir -p /tmp/gl && EMR_WX=1 EMR_CLOCK=18.3 ./emr_gl race lemans 0 1 11 /tmp/gl 25`.

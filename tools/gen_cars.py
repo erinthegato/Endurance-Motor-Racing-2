@@ -282,7 +282,7 @@ def quantise(img):
 _AO_CACHE = {}
 
 
-def write_emm(path, lods, meta=(0.0, 0.0, 0.0), emx=None, share_tex=False, ao_ground=True):
+def write_emm(path, lods, meta=(0.0, 0.0, 0.0), emx=None, share_tex=False, ao_ground=True, mirrors=None):
     """lods: list of (Mesh, texture image, texture size). Glass triangles go last in each LOD.
     share_tex: levels 1+ painted from the same image as level 0 store no texture and use level 0's
     (the Vita's mipmaps shrink it in the distance) -- saves memory with no visible change."""
@@ -327,6 +327,10 @@ def write_emm(path, lods, meta=(0.0, 0.0, 0.0), emx=None, share_tex=False, ao_gr
             f.write(b'EMX1'); f.write(struct.pack('<4fI', *emx))
         if pc_refine.pc_mode():  # 'EMN1': the PC's real lighting (normals and shade per vertex)
             f.write(pc_refine.emn_block(emn, scale))
+        if mirrors:              # 'EMQ1': the side mirrors' glass (PC): count, then x, y, z, half width, half height (metres)
+            f.write(b'EMQ1'); f.write(struct.pack('<I', len(mirrors)))
+            for q in mirrors:
+                f.write(struct.pack('<5f', *q))
     return [len(l[0].tris) for l in lods]
 
 

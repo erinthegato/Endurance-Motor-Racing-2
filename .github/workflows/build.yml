@@ -1,4 +1,4 @@
-name: Build Vita + PS3 + PC test
+name: Build Vita + PC edition + tests
 
 on:
   push:
@@ -76,84 +76,59 @@ jobs:
           path: build-vita/EnduranceMotorRacing2-music.zip
           compression-level: 0
 
-  # PS3 (PSL1GHT): the ready-made ps3toolchain compilers, PSL1GHT and zlib built on top (kept in the
-  # cache, so only the first build after a change of versions takes long), NVIDIA's Cg library for the
-  # shader compiler, then ps3/Makefile -> EnduranceMotorRacing2.pkg (RPCS3, or a PS3 with HEN / CFW)
-  ps3:
+  # PC edition (Windows): SDL2 + OpenGL, built with MSYS2 MinGW64 -> a zip with the program, the game's
+  # files (DATA, HD and the PC's own PC/ set) and the DLLs it needs. Made for streaming from the PC to
+  # Moonlight on the PS Vita (Sunshine on the PC).
+  windows:
     needs: version
-    runs-on: ubuntu-latest
-    env:
-      PS3DEV: ${{ github.workspace }}/ps3dev
-      PSL1GHT: ${{ github.workspace }}/ps3dev
-      TOOLCHAIN_URL: https://github.com/ps3dev/ps3toolchain/releases/download/2026-06-09/ps3dev-92534e60-ubuntu-latest.tar.gz
-      ZLIB_TAG: v1.3.1
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
     steps:
       - uses: actions/checkout@v5
-      - name: Tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y autoconf automake bison flex gcc g++ libelf-dev make texinfo patch wget zlib1g-dev libtool-bin bzip2 pkg-config python3 libssl-dev
-          echo "$PS3DEV/bin" >> $GITHUB_PATH; echo "$PS3DEV/ppu/bin" >> $GITHUB_PATH; echo "$PS3DEV/spu/bin" >> $GITHUB_PATH
-      - name: NVIDIA Cg library (cgcomp compiles the shaders with it)
-        run: |
-          if sudo apt-get install -y nvidia-cg-toolkit && ldconfig -p | grep -q "libCg.so "; then exit 0; fi
-          # not in the package lists: NVIDIA's own download
-          mkdir -p /tmp/cg && curl -sL https://developer.download.nvidia.com/cg/Cg_3.1/Cg-3.1_April2012_x86_64.tgz | tar xz -C /tmp/cg
-          sudo cp /tmp/cg/usr/lib64/libCg*.so /usr/local/lib/ && sudo ldconfig
-          ldconfig -p | grep libCg
-      - name: PSL1GHT version
-        id: sdk
-        run: echo "psl1ght=$(git ls-remote https://github.com/ps3dev/PSL1GHT HEAD | cut -c1-10)" >> $GITHUB_OUTPUT
-      - name: Cached PS3 SDK
-        id: cache
-        uses: actions/cache@v4
+      - uses: msys2/setup-msys2@v2
         with:
-          path: ps3dev
-          key: ps3sdk-2026-06-09-${{ steps.sdk.outputs.psl1ght }}-zlib-${{ env.ZLIB_TAG }}-1
-      - name: PS3 toolchain, PSL1GHT and zlib (only when not cached)
-        if: steps.cache.outputs.cache-hit != 'true'
+          msystem: MINGW64
+          update: false
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-SDL2
+            mingw-w64-x86_64-zlib
+            zip
+      - name: Build
         run: |
-          curl -sL "$TOOLCHAIN_URL" | tar xz -C "$GITHUB_WORKSPACE"
-          git clone --depth 1 https://github.com/ps3dev/PSL1GHT /tmp/psl1ght
-          cd /tmp/psl1ght && make install-ctrl && make -j4 && make install
-          git clone --depth 1 --branch "$ZLIB_TAG" https://github.com/madler/zlib /tmp/zlib
-          # (just the inflate / deflate code the game uses, compiled straight: no configure checks to trip up)
-          cd /tmp/zlib && for f in adler32 crc32 deflate infback inffast inflate inftrees trees zutil compress uncompr; do ppu-gcc -O2 -mcpu=cell -c $f.c -o $f.o; done
-          mkdir -p "$PS3DEV/portlibs/ppu/lib" "$PS3DEV/portlibs/ppu/include"
-          ppu-ar rcs "$PS3DEV/portlibs/ppu/lib/libz.a" *.o && cp zlib.h zconf.h "$PS3DEV/portlibs/ppu/include/"
-      - name: Build the PS3 package
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -- -k 0
+      - name: Package (program, game files and the DLLs it needs)
         run: |
-          make -C ps3 pkg -j4 APP_VER=${{ needs.version.outputs.app }}
-          ls -la ps3/build/*.pkg ps3/build/*.self
+          mkdir -p dist/EnduranceMotorRacing2
+          cp build/EnduranceMotorRacing2.exe dist/EnduranceMotorRacing2/
+          cp -r DATA HD dist/EnduranceMotorRacing2/
+          [ -d PC ] && cp -r PC dist/EnduranceMotorRacing2/ || true
+          # every MinGW DLL the program loads (SDL2, zlib, and whatever they need)
+          ldd build/EnduranceMotorRacing2.exe | grep -i mingw64 | awk '{print $3}' | sort -u | xargs -I{} cp {} dist/EnduranceMotorRacing2/
+          cd dist && zip -qr ../EnduranceMotorRacing2-Windows.zip EnduranceMotorRacing2 && cd .. && ls -la EnduranceMotorRacing2-Windows.zip
       - uses: actions/upload-artifact@v6
         with:
-          name: EnduranceMotorRacing2-PS3
-          path: ps3/build/EnduranceMotorRacing2.pkg
+          name: EnduranceMotorRacing2-Windows
+          path: EnduranceMotorRacing2-Windows.zip
           compression-level: 0
 
-  # the ps3-port branch: its PS3 package as a test pre-release (tag ps3-test, never "latest"), so it can
-  # be fetched for testing in RPCS3 (each push replaces it)
-  ps3-test-release:
-    if: github.ref == 'refs/heads/ps3-port'
-    needs: ps3
+  # the same program built on Linux (a compile check, and it runs there too)
+  linux:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
-      - uses: actions/download-artifact@v6
-        with:
-          name: EnduranceMotorRacing2-PS3
-          path: out
-      - uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ps3-test
-          target_commitish: ${{ github.sha }}
-          name: PS3 test build (ps3-port branch)
-          body: "Test build of the PS3 port from the ps3-port branch (${{ github.sha }}). Install EnduranceMotorRacing2.pkg in RPCS3 (File > Install Packages) or on a PS3 with HEN / CFW."
-          prerelease: true
-          make_latest: false
-          overwrite_files: true
-          files: out/EnduranceMotorRacing2.pkg
+      - uses: actions/checkout@v5
+      - name: Packages
+        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev libgl-dev zlib1g-dev cmake
+      - name: Build (compile check)
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j4
+          ls -la build/EnduranceMotorRacing2
 
   pc-test:
     runs-on: ubuntu-latest
@@ -163,10 +138,10 @@ jobs:
         run: |
           dpkg -s zlib1g-dev >/dev/null 2>&1 || (sudo apt-get update && sudo apt-get install -y zlib1g-dev)
           make -f Makefile.pc asan
-      - name: Byte order (every data file turned round for the PS3 and back)
+      - name: Data files laid out as expected (every file walked to its end, turned round and back)
         env:
           ASAN_OPTIONS: detect_leaks=0
-        run: ./emr_test_asan swapcheck DATA HD ps3/data 2>/dev/null | tail -3
+        run: ./emr_test_asan swapcheck DATA HD PC 2>/dev/null | tail -3
       - name: Menus
         env:
           ASAN_OPTIONS: detect_leaks=0
@@ -244,10 +219,10 @@ jobs:
 
   # every push to main is released as the next version (or Run workflow with a release tag), with
   # the game and the music pack, once the Vita build and every test have passed
-  # (the PS3 package goes in too when its build worked; a failed PS3 build doesn't hold up the Vita release)
+  # (the Windows zip goes in too when its build worked; a failed PC build doesn't hold up the Vita release)
   release:
     if: ${{ !cancelled() && github.ref == 'refs/heads/main' && (github.event_name == 'push' || inputs.release != '') && needs.vita.result == 'success' && needs.pc-test.result == 'success' }}
-    needs: [version, vita, pc-test, ps3]
+    needs: [version, vita, pc-test, windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -281,9 +256,9 @@ jobs:
           name: EnduranceMotorRacing2-music
           path: out
       - uses: actions/download-artifact@v6
-        if: needs.ps3.result == 'success'
+        if: needs.windows.result == 'success'
         with:
-          name: EnduranceMotorRacing2-PS3
+          name: EnduranceMotorRacing2-Windows
           path: out
       - uses: softprops/action-gh-release@v3
         with:
@@ -296,4 +271,4 @@ jobs:
           files: |
             out/EnduranceMotorRacing2.vpk
             out/EnduranceMotorRacing2-music.zip
-            out/EnduranceMotorRacing2.pkg
+            out/EnduranceMotorRacing2-Windows.zip

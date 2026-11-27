@@ -575,6 +575,8 @@ void Game::updateRace(float dt, const Pad& p) {
     // PS Vita right stick: analogue throttle (up) and brake (down), from a light touch to full
     if (p.rstickY < 0) thr = fmaxf(thr, clampf((-p.rstickY - 0.10f) / 0.85f, 0, 1));
     if (p.rstickY > 0) brk = fmaxf(brk, clampf((p.rstickY - 0.10f) / 0.85f, 0, 1));
+    // PC controller triggers (Moonlight on the Vita: map L2 / R2 to the rear touch pad): analogue brake / throttle
+    thr = fmaxf(thr, p.trigR); brk = fmaxf(brk, p.trigL);
     int shift = (bindPressed(p, ACT_GEAR_UP) ? 1 : 0) - (bindPressed(p, ACT_GEAR_DOWN) ? 1 : 0);
     race.steerHelp = cfg.help();
     // managing: the buttons give the team's orders, never the car's controls (whatever they are bound to)

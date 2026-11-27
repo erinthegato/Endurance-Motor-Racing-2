@@ -30,14 +30,14 @@ the rules each car is built to:
 Output (PS Vita set, HD/models): car_<id>.emm, wheel_hyper.emm, wheel_gt3.emm, steering_hyper.emm,
 steering_gt3.emm, cockpit_hypercar.emm, cockpit_gt3.emm, livery_career<cls>.lvy.
     python3 tools/gen_wec.py [preview dir]
-PS3 set (ps3/data/models, read first on the PS3; denser top level of detail, rounder wheels):
-    python3 tools/gen_wec.py --ps3 [preview dir]
+PC edition set (PC/models, read first by the PC build; denser at every level of detail):
+    python3 tools/gen_wec.py --pc [preview dir]
 Axes: +X forward, +Y left, +Z up, metres, origin on the ground under the middle of the car.
 """
 import os, sys
-PS3 = '--ps3' in sys.argv
-if PS3:
-    sys.argv.remove('--ps3')
+PCSET = '--pc' in sys.argv
+if PCSET:
+    sys.argv.remove('--pc')
 sys.argv.insert(1, '--hd')                 # gen_cars: the Vita's high-detail set (HD/models)
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -45,9 +45,9 @@ import numpy as np
 import gen_cars as G
 from gen_cars import Mesh, Paint, write_emm, curve, sstep
 import wec_bodies as B
-if PS3:
-    B.PS3 = True
-    G.OUT = os.path.join(G.ROOT, 'ps3', 'data', 'models')
+if PCSET:
+    B.PCSET = True
+    G.OUT = os.path.join(G.ROOT, 'PC', 'models')
 
 # ------------------------------------------------------------------ the regulations (metres)
 REG = {
@@ -240,7 +240,7 @@ def main():
         w, d = REG[rule]['tyre_r']
         R, hw = d / 2, w / 2
         print(f'wheel_{era}', write_emm(os.path.join(out, f'wheel_{era}.emm'),
-                                        [(wheel(R, hw, 10, 32 if PS3 else 16, pairs=True), t, S), (wheel(R, hw, 6, 12), t, 128), (wheel(R, hw, 0, 8), t, 64)]))
+                                        [(wheel(R, hw, 10, 32 if PCSET else 16, pairs=True), t, S), (wheel(R, hw, 6, 12), t, 128), (wheel(R, hw, 0, 8), t, 64)]))
     NEW_DASH = (0.0, 0.0, 0.0, 0.0, 2)        # EMX1 flags bit 1: the Vita's dash instruments
     print('cockpit_hypercar', write_emm(os.path.join(out, 'cockpit_hypercar.emm'), [(B.proto_interior(), t, S)], emx=NEW_DASH))
     print('cockpit_gt3', write_emm(os.path.join(out, 'cockpit_gt3.emm'), [(B.gt_interior(), t, S)], emx=NEW_DASH))

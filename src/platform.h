@@ -1,6 +1,6 @@
 // Everything the game needs from the machine: drawing, buttons, sound, files, time.
-// platform_psp.cpp implements it with the PSP's GU graphics chip; platform_pc.cpp with a small
-// software renderer so the whole game can be tested (and screenshotted) on a PC.
+// platform_vita.cpp implements it for the PS Vita (vitaGL), platform_desktop.cpp for Windows / Linux
+// (SDL2 + OpenGL), and platform_pc.cpp with a small software renderer for the tests.
 #pragma once
 #include <cstdint>
 #include "math3d.h"
@@ -63,7 +63,7 @@ void frameTrim(void* p, int keepBytes);
 void flushCache(const void* p, int bytes);   // make data written by the CPU visible to the GPU
 // true where the graphics chip clips big triangles itself (the Vita): clip.h then draws straight through
 bool gpuClips();
-// true on the stronger machines (the PS Vita, the PS3): the rear-view mirror, the denser rain on the glass
+// true on the stronger machines (the PS Vita, the PC edition): the rear-view mirror, the denser rain on the glass
 bool highDetail();
 // Copy a texture's pixels into video memory (faster for the GPU to read). Returns false when full.
 // fastMark / fastRelease free everything moved after a mark (used for the cars of one race).
@@ -82,6 +82,10 @@ struct Pad {
     float rstickX = 0, rstickY = 0;     // right stick, -1..1 (dead zone applied)
     bool hasTilt = false; float tilt = 0;   // motion sensor: roll of the console in radians (+ = turned right)
     int touches = 0; float tx[2] = {0, 0}, ty[2] = {0, 0};   // front touch screen, in 480 x 272 screen units
+    bool backTouch = false;             // rear touch pad held
+    float backX = 0;                    // where on it (0..480, left to right as seen from the front)
+    // PC game controllers: analogue triggers, 0..1 (left = brake, right = throttle)
+    float trigL = 0, trigR = 0;
 };
 namespace input {
 void poll(Pad& p);

@@ -1,0 +1,39 @@
+l13_salsa.emu	Hey Pluto! - Salsa	hyper
+l14_home_in_a_minor.emu	Code 4 Studios - Home in A Minor	gt3
+l15_midnight_walker.emu	Code 4 Studios - Midnight Walker	gt3
+l16_midnight_resolve.emu	Code 4 Studios - Midnight Resolve	gt3
+l17_fast_flying_lap.emu	Code 4 Studios - Fast Flying Lap	gt3
+g01_talk_about_tha.emu	Wake Yourself Up - Talk About Tha	hyper
+g02_descendance.emu	Wake Yourself Up - Descendance	hyper
+g03_lets_go.emu	All Good Folks - Let's Go	hyper
+g04_flip_it.emu	Exekat - Flip It	hyper
+g05_crime.emu	DISTRXCT - C.R.I.M.E	hyper
+g06_dont_you_stop.emu	DISTRXCT - Don't You Stop	hyper
+g07_money.emu	DISTRXCT - Money	hyper
+g08_lose_control.emu	DISTRXCT - Lose Control	hyper
+g09_wanna_be_alone.emu	DISTRXCT - Wanna Be Alone	hyper
+g10_keep_calling.emu	DISTRXCT - Keep Calling	hyper
+g11_stand_up.emu	Kaleidoscope - Stand Up	hyper
+g12_the_nights.emu	Pecan Pie - The Nights	hyper
+h01_do_you_wanna_follow.emu	Velveteen - Do You Wanna Follow	hyper
+h02_action_replay.emu	Matrika - Action Replay	hyper
+h03_keep_loving_you.emu	Chill Winston - Keep Loving You	hyper
+h04_aerial.emu	IMG - Aerial	hyper
+h05_big_rush.emu	Exekat - Big Rush	hyper
+h06_infinity.emu	Exekat - Infinity	hyper
+h07_fuel.emu	Hey Pluto! - Fuel	hyper
+n01_fever_drone.emu	Ruzer - Fever Drone	gt3
+n02_summit.emu	Ruzer - Summit	gt3
+n03_turn_down.emu	Ruzer - Turn Down	gt3
+n04_neon_vision.emu	Bosnow - Neon Vision	gt3
+e01_cloud_highway.emu	Tonebox - Cloud Highway	gt3
+e02_dreamflux.emu	Trinity - Dreamflux	gt3
+e03_real_me.emu	KEM - Real Me	gt3
+e04_all_of_me.emu	Dan Varez - All of Me	gt3
+e05_mechanism_pilot.emu	Tonebox - Mechanism Pilot	gt3
+e06_space_disco.emu	Tonebox - Space Disco	gt3
+e07_love_in_bloom.emu	Hartzmann - Love in Bloom	gt3
+e08_1988.emu	Ruzer - 1988	gt3
+e09_back_to_the_future.emu	Nick Petrov - Back To The Future	gt3
+e10_2am.emu	Ben Elson - 2AM	gt3
+e11_inferadise.emu	Lupus Nocte - Inferadise	gt3

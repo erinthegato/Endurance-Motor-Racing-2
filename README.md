@@ -72,7 +72,9 @@ endurance racing of the original EMR put back. Not for distribution.
     graphics). On TV and the dashcam left / right picks the car. While you manage, no button reaches the
     car's own controls, whatever it is bound to.
 * **Positions**: your class position on the HUD and the dash, with your overall place next to it.
-* **Sound**: the endurance engines (V6 / V8 / V12 hybrids, flat-6, I6, V8 GTs), one engineer (the 2016
+* **Sound**: the endurance engines (V6 / V8 / V12 hybrids, flat-6, I6, V8 GTs), made with ElevenLabs
+  sound effects (`tools/engine_sounds.py`): loud, the Hypercars with a high hybrid whine throughout, the
+  LMGT3s with a muffled rumble under them and a high straight-cut gear whine on every shift, one engineer (the 2016
   voice and its radio beeps), the music by class.
 
 ## PS Vita

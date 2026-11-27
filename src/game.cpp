@@ -352,6 +352,24 @@ void Game::raceAudio() {
         float v = o.engineOn ? 0.55f / (1 + bd[k] / 10.0f) : 0;
         sound::setVoice(k + 1, o.def, o.rpm, v, pan, bd[k] > 50, o.throttle);
     }
+    // LMGT3: the straight-cut gearbox's whine on every shift -- ours, and the GT3s close by
+    {
+        static int prevGear[64]; static float lastT = 1e9f; static size_t lastN = 0;
+        int n = (int)race.cars.size() < 64 ? (int)race.cars.size() : 64;
+        if (race.time < lastT || race.cars.size() != lastN) for (int i = 0; i < n; i++) prevGear[i] = race.cars[i].gear;
+        lastT = race.time; lastN = race.cars.size();
+        for (int i = 0; i < n; i++) {
+            const Car& o = race.cars[i];
+            int g = o.gear; bool shifted = g != prevGear[i] && g >= 1 && prevGear[i] >= 1;
+            prevGear[i] = g;
+            if (!shifted || o.def->cls != CLASS_GT3 || !o.engineOn || o.pit != PIT_NONE || quiet || race.timeAccel > 1.01f) continue;
+            if (i == race.playerIdx) { sound::play("gt_shift", manage ? 0.4f : 0.95f, 0); continue; }
+            float d = len(o.pos - me.pos);
+            if (d > 40) continue;
+            float pan = dot(norm(o.pos - me.pos), me.left * -1.0f) * 0.8f;
+            sound::play("gt_shift", 0.75f / (1 + d / 8.0f), pan);
+        }
+    }
     // rain on the car (quieter inside the cockpit)
     float rv = race.rain * (cam == CAM_COCKPIT ? 0.4f : 0.65f);
     sound::loop(0, rv > 0.02f && screen != SCR_PAUSE ? "weather_rain" : nullptr, rv);

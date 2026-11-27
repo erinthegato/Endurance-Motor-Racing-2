@@ -22,3 +22,6 @@ built in code to the 2027 technical regulations, on the nine circuits of the 202
 - Team manager mode (Role in the race settings): run both of your cars from the pit wall, with live
   timing, a live track map, a screen per car with its orders, DRIVE to get in at a stop, and a dashcam
 - Overall position next to your class position on the HUD and the dash; overall timing with class colours
+- New engine sounds (ElevenLabs), much louder: a high hybrid whine on every Hypercar; LMGT3s with a muffled
+  rumble underneath and a high gear whine on each shift
+- The game's folder (saves, settings, music pack) on uma0 when the Vita has one

@@ -226,3 +226,40 @@ def auto_smooth(tris, angle=50.0, n_index=1):
         tt = list(t); tt[n_index] = np.array(N)
         out.append(tuple(tt))
     return out
+
+
+# ------------------------------------------------------------------ normals for the PC's real lighting
+KEY_LIGHT = np.array([0.45, 0.35, 0.82]) / np.linalg.norm([0.45, 0.35, 0.82])
+
+
+def baked_light(N):
+    """the light the tools bake into vertex colours for a surface facing N (sky from above + key light)"""
+    N = _unit(np.asarray(N, float))
+    return 0.50 + 0.30 * (N[..., 2] * 0.5 + 0.5) + 0.30 * np.clip(N @ KEY_LIGHT, 0, 1)
+
+
+def emn_block(lods, scale):
+    """'EMN1' + per level of detail, per vertex: int8 normal x, y, z and uint8 baked light. The PC build
+    lights the models itself (src/platform_desktop.cpp): it needs which way each corner faces, and how
+    much light the tools baked into the vertex colour there (so it can take the old sun out and keep
+    the shading that stays true: darker towards the ground, recesses).
+      lods: [(N (v,3) model-space normals, glass (v,) mask or None), ...] in the order written
+      scale: the model's stored scale (positions are kept as -1..1 of it): the normals are stored for
+      the scaled space (n * scale, normalised), so the game's model matrix turns them the right way"""
+    out = bytearray(b'EMN1')
+    s = np.asarray(scale, float)
+    for lod in lods:
+        N, glass = lod[0], (lod[1] if len(lod) > 1 else None)
+        N = _unit(np.asarray(N, float).reshape(-1, 3))
+        ns = _unit(N * s)
+        q = np.clip(np.round(ns * 127), -127, 127).astype(np.int8)
+        baked = baked_light(N)
+        if glass is not None:
+            g = np.asarray(glass, bool).reshape(-1)
+            gl = 0.55 + 0.6 * np.clip(N[:, 2], 0, 1) + 0.25 * np.clip(N @ KEY_LIGHT, 0, 1)
+            baked = np.where(g, gl, baked)
+        rec = np.zeros(len(N), dtype=[('x', 'i1'), ('y', 'i1'), ('z', 'i1'), ('a', 'u1')])
+        rec['x'] = q[:, 0]; rec['y'] = q[:, 1]; rec['z'] = q[:, 2]
+        rec['a'] = np.clip(np.round(baked / 1.5 * 255), 1, 255).astype(np.uint8)   # the game: colour / (a / 255 * 1.5)
+        out += rec.tobytes()
+    return bytes(out)

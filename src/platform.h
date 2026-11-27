@@ -65,6 +65,20 @@ void flushCache(const void* p, int bytes);   // make data written by the CPU vis
 bool gpuClips();
 // true on the stronger machines (the PS Vita, the PC edition): the rear-view mirror, the denser rain on the glass
 bool highDetail();
+// Real lighting (the PC edition; a no-op elsewhere, where the light stays baked into the vertex colours).
+// The renderer sets the sun and sky once per scene and switches lighting on around the 3D world;
+// models from the PC set carry their normals ('EMN1', see Model::load) and are lit per pixel.
+struct Lighting {
+    V3 sun = V3(0.45f, 0.35f, 0.82f);          // towards the sun, world space (z up)
+    float sunCol[3] = {0.6f, 0.58f, 0.52f};      // the sun's light (0 when it's down)
+    float sky[3] = {0.66f, 0.72f, 0.82f};        // light from the sky above
+    float ground[3] = {0.40f, 0.40f, 0.38f};     // light bounced up from the ground
+    float worldK[3] = {1, 1, 1};                 // scale for the circuit's baked colours (no normals)
+};
+void setLighting(const Lighting& l);
+void setLit(bool on);                          // light the 3D drawing that follows
+void setMaterial(float spec, float gloss);     // shine of what follows: 0..1, and the highlight's tightness
+void attachNormals(const ModelVertex* v, const int8_t* normals4, int count);   // (Model::load)
 // Copy a texture's pixels into video memory (faster for the GPU to read). Returns false when full.
 // fastMark / fastRelease free everything moved after a mark (used for the cars of one race).
 bool moveToFastMemory(Texture& t);

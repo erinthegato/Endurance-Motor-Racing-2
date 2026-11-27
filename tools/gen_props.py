@@ -195,8 +195,10 @@ def write_emm(path, lods, emx=None, shared_bbox=None):
     with open(path, 'wb') as f:
         f.write(b'EMM1'); f.write(struct.pack('<I', len(lods)))
         f.write(struct.pack('<3f', *scale)); f.write(struct.pack('<3f', *centre))
+        emn = []
         for kit, tex, ts in lods:
             P, UV, LT = kit.arrays()
+            emn.append((np.array([t[1] for t in kit.tris], float).reshape(-1, 3, 3),))
             vc = len(P) * 3
             f.write(struct.pack('<IIIf', vc, ts if tex is not None else 0, 0, 0.0))
             if tex is not None:
@@ -212,6 +214,8 @@ def write_emm(path, lods, emx=None, shared_bbox=None):
             f.write(rec.tobytes())
         if emx is not None:
             f.write(b'EMX1'); f.write(struct.pack('<4fI', *emx))
+        if PCSET:                # 'EMN1': the PC's real lighting (normals and shade per vertex)
+            f.write(pc_refine.emn_block(emn, scale))
     return [len(k.tris) for k, _, _ in lods], [round(float(x), 2) for x in (mx - mn)]
 
 

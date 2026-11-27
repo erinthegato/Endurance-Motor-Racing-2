@@ -413,6 +413,37 @@ void Renderer::drawHorizon(const Track& t, const Camera& cam, u32 haze) {
     gfx::drawWorld(horizonV.data(), (int)horizonV.size(), PRIM_TRIANGLES, M4::translate(V3(0, 0, base - cam.eye.z)));
 }
 
+// the PC's real lighting: where the sun is at this time of day, and the colour of its light and of the
+// sky's. (The night itself stays the old dark overlay, drawNight; this lights the day and the dusk.)
+static gfx::Lighting sceneLight(const Race& r) {
+    gfx::Lighting L;
+    float h = r.clockHour();
+    // the sun rises in the east (+x) about 6:15, is highest (62 degrees, to the south) about 12:40, sets in the west about 19:00
+    float t = (h - 6.25f) / 12.75f, a = t * 3.14159265f;
+    float elev = sinf(a) * 62.0f * 3.14159265f / 180.0f;
+    if (t < 0 || t > 1) elev = -0.15f;
+    V3 flat = norm(V3(cosf(a), -0.55f * sinf(a) - 0.25f, 0));
+    L.sun = norm(flat * cosf(elev) + V3(0, 0, sinf(elev > 0.03f ? elev : 0.03f)));
+    float up = clampf(sinf(elev) / 0.35f, 0, 1);             // 0 on the horizon .. 1 above 20 degrees
+    float sunK = clampf((sinf(elev) + 0.02f) / 0.12f, 0, 1);  // the sun fades as it sets
+    float wet = r.rain, cloud = 1 - wet * 0.8f;
+    // low sun: orange and weaker; high sun: near white
+    float sr = lerpf(1.00f, 1.00f, up), sg = lerpf(0.62f, 0.95f, up), sb = lerpf(0.36f, 0.86f, up);
+    float sk = 1.0f * sunK * cloud;
+    L.sunCol[0] = sr * sk; L.sunCol[1] = sg * sk; L.sunCol[2] = sb * sk;
+    // the sky: blue by day, warmer and dimmer at dusk, grey in the rain
+    float dusk = 1 - up, dim = 0.55f + 0.45f * clampf(sinf(elev) / 0.2f + 0.3f, 0, 1);
+    float skr = lerpf(lerpf(0.42f, 0.52f, dusk), 0.70f, wet), skg = lerpf(lerpf(0.48f, 0.46f, dusk), 0.72f, wet), skb = lerpf(lerpf(0.60f, 0.52f, dusk), 0.76f, wet);
+    L.sky[0] = skr * dim; L.sky[1] = skg * dim; L.sky[2] = skb * dim;
+    bool desert = r.track.desert;
+    L.ground[0] = (desert ? 0.32f : 0.22f) * dim; L.ground[1] = (desert ? 0.28f : 0.24f) * dim; L.ground[2] = (desert ? 0.22f : 0.19f) * dim;
+    // the circuit has no normals: its baked colours (made for a high sun) follow the light on flat
+    // ground, relative to midday in the dry
+    const float noon[3] = {0.42f + 1.00f * 0.883f, 0.48f + 0.95f * 0.883f, 0.60f + 0.86f * 0.883f};
+    for (int i = 0; i < 3; i++) L.worldK[i] = clampf((L.sky[i] + L.sunCol[i] * fmaxf(L.sun.z, 0)) / noon[i] * 1.0f, 0.2f, 1.15f);
+    return L;
+}
+
 void Renderer::drawScene(const Race& r, const Camera& cam, bool hidePlayer) {
     const Track& t = r.track;
     M4 proj = M4::perspective(cam.fov, sceneAspect, 0.8f, 1600.0f), view = M4::lookDir(V3(0, 0, 0), cam.fwd, cam.up);
@@ -430,6 +461,9 @@ void Renderer::drawScene(const Race& r, const Camera& cam, bool hidePlayer) {
     drawHorizon(t, cam, haze);
     gfx::setFog(true, (260 - r.rain * 200) * perf.distance, (FAR_TRACK + 150 - r.rain * 520) * perf.distance, haze);
     gfx::setDepthTest(true); gfx::setDepthWrite(true); gfx::setBlend(false);
+    gfx::setLighting(sceneLight(r));
+    gfx::setLit(true);
+    gfx::setMaterial(0.08f, 12);
     float tanV = tanf(cam.fov * 3.14159f / 360.0f), tanH = tanV * sceneAspect;
     camRight = norm(cross(cam.fwd, cam.up)); camUp = cross(camRight, cam.fwd);
     // which chunks are on screen: worked out once, then drawn material by material
@@ -504,6 +538,7 @@ void Renderer::drawScene(const Race& r, const Camera& cam, bool hidePlayer) {
         drawCar(c, cam.eye, cam.fwd, tanH, tanV);
         if (r.session == SES_RACE && r.countdown > 4.0f && false && !r.formation) drawGridGirl(r, c, cam);   // (no grid girls in WEC)
     }
+    gfx::setLit(false);
     if (sceneLite) return;
     drawGhost(r, cam, tanH, tanV);
     // smoke, sparks and lights: seen from outside the car, every caller draws them after the night
@@ -624,6 +659,7 @@ void Renderer::drawCar(const Car& c, const V3& eye, const V3& fwd, float tanH, f
     gfx::bindTexture(&m.lod[lod].tex);
     const PartSplit& ps = split[idx][lod];
     M4 mm = m.matrix(place);
+    gfx::setMaterial(0.55f, 70);          // the paint and glass: a clear-coat shine
     auto part = [&](int first, int count) {
         if (count <= 0) return;
         if (d < 9) clip::drawModel(m.lod[lod].verts + first, count, mm);
@@ -638,6 +674,7 @@ void Renderer::drawCar(const Car& c, const V3& eye, const V3& fwd, float tanH, f
         if (!c.wingOff) part(ps.wingFirst, ps.wingCount);
         if (!inside) part(ps.glassFirst, ps.glassCount);
     }
+    gfx::setMaterial(0.08f, 12);
     if (!c.wingOff && lod < 2 && !inside) drawFlap(c, place, d < 9);
     if (lod < 2 && !inside && !sceneLite) drawDriver(c, place, lod, d < 9);
     if (inside) { drawWheels(*c.def, place, 0, c.steer, c.wheelSpin, true, &c, &eye); return; }    // open wheels: the fronts are in view
@@ -905,12 +942,18 @@ void Renderer::drawCabin(const Car& c, const Camera& cam, M4& car, M4& wheelM, c
     clip::setMatrices(proj, view);
     gfx::setFog(false, 0, 1, 0);
     gfx::setDepthTest(true); gfx::setDepthWrite(true);
+    if (race) { gfx::setLighting(sceneLight(*race)); gfx::setLit(true); }
     float tanV = tanf(cam.fov * 3.14159f / 360.0f);
     drawCar(c, cam.eye, cam.fwd, tanV * ASPECT, tanV, true);
     drawWindscreen(c, cam, race);       // before the depth clear: the bodywork hides the wiper's ends
     gfx::clearDepth();
     car = M4::basis(c.fwd, c.left, c.up, c.pos - cam.eye) * M4::translate(V3(body.cabX, 0, 0));
     const Model& ck = cockpit[cls];     // the interior: tub, seat, dash, cage
+    if (race) {                         // (PC lighting) under the roof the sun gets in less
+        gfx::Lighting l = sceneLight(*race);
+        for (int i = 0; i < 3; i++) l.sunCol[i] *= cls == ERA_HYPER ? 0.4f : 0.6f;
+        gfx::setLighting(l);
+    }
     if (ck.lodCount) {
         gfx::bindTexture(&ck.lod[0].tex);
         clip::drawModel(ck.lod[0].verts, ck.lod[0].count, ck.matrix(car));
@@ -924,6 +967,7 @@ void Renderer::drawCabin(const Car& c, const Camera& cam, M4& car, M4& wheelM, c
         gfx::bindTexture(&sw.lod[0].tex);
         clip::drawModel(sw.lod[0].verts, sw.lod[0].count, sw.matrix(wheelM));
     }
+    gfx::setLit(false);
 }
 
 // everything the driver needs, on the car's own displays (the cockpit camera has no HUD)

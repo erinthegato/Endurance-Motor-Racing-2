@@ -161,6 +161,10 @@ namespace pc { float fakeWait = 0; }   // tests: pretend the frame waited this l
 namespace gfx {
 bool gpuClips() { return false; }
 bool highDetail() { return ::pc::touchUi; }      // (the PC test plays the Vita when it plays the touch screen)
+void setLighting(const Lighting&) {}
+void setLit(bool) {}
+void setMaterial(float, float) {}
+void attachNormals(const ModelVertex*, const int8_t*, int) {}
 void beginFrame(u32 clear) {
     for (int i = 0; i < SCREEN_W * SCREEN_H; i++) { fb[i] = clear | 0xFF000000; zb[i] = 1e9f; }
     scratchUsed = 0; trisDrawn = 0; drawCalls = 0; vertsSent = 0;

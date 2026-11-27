@@ -60,14 +60,17 @@ inline bool fixEmm(void* d, size_t n, bool fromLE) {
     uint32_t lods = w.u32();
     if (lods > 16) return false;
     w.words(6);                                   // scale, offset
+    uint32_t vcs[16] = {};
     for (uint32_t i = 0; i < lods && w.ok; i++) {
         uint32_t vc = w.u32(), ts = w.u32();
+        vcs[i] = vc;
         w.words(2);                               // glass count, cabX / panelY / panelX
         if (ts > 4096 || vc > (1u << 24)) return false;
         if (ts) { w.words(256); w.bytes((size_t)ts * ts); }
         for (uint32_t k = 0; k < vc && w.ok; k++) { w.halves(2); w.words(1); w.halves(4); }   // ModelVertex
     }
     if (w.magic("EMX1")) { w.bytes(4); w.words(5); }
+    if (w.magic("EMN1")) { w.bytes(4); for (uint32_t i = 0; i < lods && w.ok; i++) w.bytes((size_t)vcs[i] * 4); }   // int8 normals + shade
     return w.done();
 }
 

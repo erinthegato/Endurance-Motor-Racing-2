@@ -61,7 +61,7 @@ def records(part, cell, centre, scale, light_k=1.0):
     return rec
 
 
-def write(path, parts, palette, roles=()):
+def write(path, parts, palette, roles=(), normals=False):
     names = list(roles) + sorted({m for p in parts for m in p['mats']} - set(roles))
     pal, pix, cell = atlas(names, palette)
     allp = np.concatenate([np.array(p['p']).reshape(-1, 3) for p in parts])
@@ -76,6 +76,9 @@ def write(path, parts, palette, roles=()):
             if i == 0:
                 f.write(struct.pack('<256I', *pal)); f.write(pix.tobytes())
             f.write(rec.tobytes())
+        if normals:              # 'EMN1': the PC's real lighting
+            import pc_refine
+            f.write(pc_refine.emn_block([(np.array(p['n'], float).reshape(-1, 3),) for p in parts], scale))
     return os.path.getsize(path), [p['tris'] for p in parts], [round(float(x), 3) for x in (mx - mn)]
 
 
@@ -106,7 +109,7 @@ def main_pc():
     d = json.load(open(SRC))
     lods = shorter_neck(d['driver'])
     lods = [pc_refine.refine_part(lods[0], 2), pc_refine.refine_part(lods[0], 1)] + [pc_refine.refine_part(l, 1) for l in lods[1:]]
-    size, tris, dims = write(os.path.join(pc_refine.pc_dir('models'), 'driver.emm'), lods[:4], d['palette'], ROLES)
+    size, tris, dims = write(os.path.join(pc_refine.pc_dir('models'), 'driver.emm'), lods[:4], d['palette'], ROLES, normals=True)
     print(f'PC driver: triangles {tris}, {dims} m, {size / 1024:.0f} KB')
 
 

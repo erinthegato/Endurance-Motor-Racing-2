@@ -69,6 +69,7 @@ struct ModelLod {
     int count = 0;
     int glass = 0;           // vertices at the end of the list that are window glass
     const ModelVertex* verts = nullptr;
+    const int8_t* normals = nullptr;   // PC models ('EMN1'): per vertex int8 nx, ny, nz + uint8 shade, for real lighting
     Texture tex;
 };
 

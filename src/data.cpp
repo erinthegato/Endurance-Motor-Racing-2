@@ -117,8 +117,22 @@ bool Model::load(const char* path) {
     if (p + 24 <= (const u8*)blob + size && !memcmp(p, "EMX1", 4)) {
         memcpy(&axleF, p + 4, 4); memcpy(&axleR, p + 8, 4); memcpy(&wheelY, p + 12, 4); memcpy(&wheelR, p + 16, 4);
         uint32_t fl; memcpy(&fl, p + 20, 4); ownWheels = fl & 1; flags = fl;
+        p += 24;
     }
-    gfx::flushCache(blob, size);
+    // the PC edition's models: 'EMN1', then per level per vertex int8 normal x, y, z and uint8 shade
+    for (int i = 0; i < lodCount; i++) lod[i].normals = nullptr;
+    if (p + 4 <= (const u8*)blob + size && !memcmp(p, "EMN1", 4)) {
+        p += 4;
+        size_t need = 0;
+        for (int i = 0; i < lodCount; i++) need += (size_t)lod[i].count * 4;
+        if (p + need <= (const u8*)blob + size)
+            for (int i = 0; i < lodCount; i++) {
+                lod[i].normals = (const int8_t*)p; p += lod[i].count * 4;
+            }
+    }
+    gfx::flushCache(blob, size);        // (forgets what the GPU had from this memory: attach after it)
+    for (int i = 0; i < lodCount; i++)
+        if (lod[i].normals) gfx::attachNormals(lod[i].verts, lod[i].normals, lod[i].count);
     return true;
 }
 void Model::unload() { if (blob) sys::freeFile(blob); blob = nullptr; lodCount = 0; }

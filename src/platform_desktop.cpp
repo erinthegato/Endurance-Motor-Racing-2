@@ -23,6 +23,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <map>
 #include <cstddef>
 #include <zlib.h>
 #ifdef _WIN32
@@ -97,6 +98,47 @@ static void loadGlProcs() {
     fl_glDeleteBuffers = glProc<FL_DELETEBUFFERS>("glDeleteBuffers", "glDeleteBuffersARB");
     fl_glGenerateMipmap = glProc<FL_GENERATEMIPMAP>("glGenerateMipmap", "glGenerateMipmapEXT");
     haveBuffers = fl_glGenBuffers && fl_glBindBuffer && fl_glBufferData && fl_glDeleteBuffers;
+}
+
+// GLSL (OpenGL 2.0): the per-pixel lighting. Loaded by hand like the buffers above; any missing piece
+// and the game draws the old way (light baked into the colours).
+typedef unsigned int (APIENTRY* SH_CREATESHADER)(GLenum);
+typedef void (APIENTRY* SH_SHADERSOURCE)(GLuint, GLsizei, const char* const*, const GLint*);
+typedef void (APIENTRY* SH_COMPILESHADER)(GLuint);
+typedef void (APIENTRY* SH_GETSHADERIV)(GLuint, GLenum, GLint*);
+typedef void (APIENTRY* SH_GETINFOLOG)(GLuint, GLsizei, GLsizei*, char*);
+typedef unsigned int (APIENTRY* SH_CREATEPROGRAM)(void);
+typedef void (APIENTRY* SH_ATTACHSHADER)(GLuint, GLuint);
+typedef void (APIENTRY* SH_LINKPROGRAM)(GLuint);
+typedef void (APIENTRY* SH_USEPROGRAM)(GLuint);
+typedef GLint (APIENTRY* SH_GETUNIFORMLOCATION)(GLuint, const char*);
+typedef void (APIENTRY* SH_UNIFORM1F)(GLint, GLfloat);
+typedef void (APIENTRY* SH_UNIFORM1I)(GLint, GLint);
+typedef void (APIENTRY* SH_UNIFORM3F)(GLint, GLfloat, GLfloat, GLfloat);
+static SH_CREATESHADER sh_CreateShader; static SH_SHADERSOURCE sh_ShaderSource; static SH_COMPILESHADER sh_CompileShader;
+static SH_GETSHADERIV sh_GetShaderiv, sh_GetProgramiv; static SH_GETINFOLOG sh_GetShaderInfoLog, sh_GetProgramInfoLog;
+static SH_CREATEPROGRAM sh_CreateProgram; static SH_ATTACHSHADER sh_AttachShader; static SH_LINKPROGRAM sh_LinkProgram;
+static SH_USEPROGRAM sh_UseProgram; static SH_GETUNIFORMLOCATION sh_GetUniformLocation;
+static SH_UNIFORM1F sh_Uniform1f; static SH_UNIFORM1I sh_Uniform1i; static SH_UNIFORM3F sh_Uniform3f;
+static bool loadShaderProcs() {
+    sh_CreateShader = glProc<SH_CREATESHADER>("glCreateShader", nullptr);
+    sh_ShaderSource = glProc<SH_SHADERSOURCE>("glShaderSource", nullptr);
+    sh_CompileShader = glProc<SH_COMPILESHADER>("glCompileShader", nullptr);
+    sh_GetShaderiv = glProc<SH_GETSHADERIV>("glGetShaderiv", nullptr);
+    sh_GetProgramiv = glProc<SH_GETSHADERIV>("glGetProgramiv", nullptr);
+    sh_GetShaderInfoLog = glProc<SH_GETINFOLOG>("glGetShaderInfoLog", nullptr);
+    sh_GetProgramInfoLog = glProc<SH_GETINFOLOG>("glGetProgramInfoLog", nullptr);
+    sh_CreateProgram = glProc<SH_CREATEPROGRAM>("glCreateProgram", nullptr);
+    sh_AttachShader = glProc<SH_ATTACHSHADER>("glAttachShader", nullptr);
+    sh_LinkProgram = glProc<SH_LINKPROGRAM>("glLinkProgram", nullptr);
+    sh_UseProgram = glProc<SH_USEPROGRAM>("glUseProgram", nullptr);
+    sh_GetUniformLocation = glProc<SH_GETUNIFORMLOCATION>("glGetUniformLocation", nullptr);
+    sh_Uniform1f = glProc<SH_UNIFORM1F>("glUniform1f", nullptr);
+    sh_Uniform1i = glProc<SH_UNIFORM1I>("glUniform1i", nullptr);
+    sh_Uniform3f = glProc<SH_UNIFORM3F>("glUniform3f", nullptr);
+    return sh_CreateShader && sh_ShaderSource && sh_CompileShader && sh_GetShaderiv && sh_GetProgramiv && sh_GetShaderInfoLog &&
+           sh_GetProgramInfoLog && sh_CreateProgram && sh_AttachShader && sh_LinkProgram && sh_UseProgram &&
+           sh_GetUniformLocation && sh_Uniform1f && sh_Uniform1i && sh_Uniform3f;
 }
 
 // ---------------------------------------------------------------- window
@@ -192,6 +234,7 @@ bool texOn = false;
 // what the game asked for (2D drawing changes some of it for a moment)
 M4 projM = M4::identity(), viewM = M4::identity();
 bool fogWanted = false, depthWanted = true, in2D = false;
+bool progOn = false;          // the lighting program is in use (see useLit)
 
 inline bool overlaps(const void* a, int an, const void* b, int bn) {
     const u8 *x = (const u8*)a, *y = (const u8*)b;
@@ -252,13 +295,23 @@ void forget(const void* p, int n) {
 // until the game rewrites that memory (gfx::flushCache) or frees it. Per-frame arrays (frame memory)
 // are sent the slow way every time.
 struct Vbo { const u8* ptr; int bytes; GLuint id; };
-std::unordered_map<uint64_t, Vbo> vbos;
+std::unordered_map<uint64_t, Vbo> vbos, litVbos;   // (lit: the models' copies with normals)
+struct NormRange { const ModelVertex* v; int count; const int8_t* n; };
+std::map<uintptr_t, NormRange> normRanges;
 inline bool inArena(const void* p) { return arena && (const u8*)p >= arena && (const u8*)p < arena + ARENA_SIZE; }
 inline uint64_t vkey(const void* p, int count, bool model) { return ((uint64_t)(uintptr_t)p << 1) ^ ((uint64_t)count << 40) ^ (model ? 1 : 0); }
 
 void forgetVbos(const void* p, int n) {
     for (auto it = vbos.begin(); it != vbos.end();) {
         if (overlaps(p, n, it->second.ptr, it->second.bytes)) { glDeleteBuffers(1, &it->second.id); it = vbos.erase(it); }
+        else ++it;
+    }
+    for (auto it = litVbos.begin(); it != litVbos.end();) {
+        if (overlaps(p, n, it->second.ptr, it->second.bytes)) { glDeleteBuffers(1, &it->second.id); it = litVbos.erase(it); }
+        else ++it;
+    }
+    for (auto it = normRanges.begin(); it != normRanges.end();) {
+        if (overlaps(p, n, it->second.v, it->second.count * (int)sizeof(ModelVertex))) it = normRanges.erase(it);
         else ++it;
     }
 }
@@ -312,6 +365,7 @@ void enter2D() {
     glMatrixMode(GL_PROJECTION); glLoadIdentity();
     glOrtho(0, SCREEN_W, SCREEN_H, 0, -1, 1);
     glMatrixMode(GL_MODELVIEW); glLoadIdentity();
+    if (progOn) { sh_UseProgram(0); progOn = false; }
     glDisable(GL_FOG);
     glDisable(GL_DEPTH_TEST);
 }
@@ -336,6 +390,155 @@ void setModel(const M4& model) {
     M4 mv = viewM * model;
     glMatrixMode(GL_MODELVIEW);
     glLoadMatrixf(mv.m);
+}
+
+// ---------------------------------------------------------------- real lighting
+// One small GLSL program lights the 3D world per pixel: light from the sky above and the ground
+// below (by which way the surface faces), the sun on top, a highlight on shiny things, the fog.
+// The PC set's models bring their normals ('EMN1'); the circuit's strips have none and keep their
+// baked colours, scaled by how much sun and sky there is.
+const char* LIT_VS = R"(#version 120
+varying vec4 vCol; varying vec3 vN; varying vec3 vPos; varying vec2 vUV;
+void main() {
+    vec4 e = gl_ModelViewMatrix * gl_Vertex;
+    vPos = e.xyz;
+    vN = gl_NormalMatrix * gl_Normal;
+    vCol = gl_Color;
+    vUV = gl_MultiTexCoord0.xy;
+    gl_Position = gl_ProjectionMatrix * e;
+}
+)";
+const char* LIT_FS = R"(#version 120
+varying vec4 vCol; varying vec3 vN; varying vec3 vPos; varying vec2 vUV;
+uniform sampler2D uTex;
+uniform float uTexOn, uHasN, uFog, uSpec, uGloss;
+uniform vec3 uSun, uUp, uSunCol, uSky, uGround, uWorldK;
+void main() {
+    vec4 c = vCol;
+    if (uTexOn > 0.5) c *= texture2D(uTex, vUV);
+    if (c.a <= 8.0 / 255.0) discard;                 // (the old alpha test)
+    vec3 V = normalize(-vPos);
+    vec3 col;
+    if (uHasN > 0.5) {
+        vec3 N = normalize(vN);
+        // the models are drawn from both sides: turn the normal to the side we're looking at
+        vec3 F = normalize(cross(dFdx(vPos), dFdy(vPos)));
+        if (dot(F, V) < 0.0) F = -F;
+        if (dot(N, F) < 0.0) N = -N;
+        vec3 amb = mix(uGround, uSky, dot(N, uUp) * 0.5 + 0.5);
+        float d = max(dot(N, uSun), 0.0);
+        vec3 H = normalize(uSun + V);
+        float s = d > 0.0 ? pow(max(dot(N, H), 0.0), uGloss) * uSpec * (uGloss + 8.0) / 40.0 : 0.0;
+        float fr = pow(1.0 - max(dot(N, V), 0.0), 5.0) * uSpec;
+        col = c.rgb * (amb + uSunCol * d) + uSunCol * s + uSky * fr * 0.35;
+    } else {
+        col = c.rgb * uWorldK;
+    }
+    if (uFog > 0.5) col = mix(gl_Fog.color.rgb, col, clamp((gl_Fog.end - abs(vPos.z)) * gl_Fog.scale, 0.0, 1.0));
+    gl_FragColor = vec4(col, c.a);
+}
+)";
+GLuint litProg = 0;
+GLint uTex = -1, uTexOn = -1, uHasN = -1, uFog = -1, uSpec = -1, uGloss = -1, uSun = -1, uUp = -1, uSunCol = -1, uSky = -1, uGround = -1, uWorldK = -1;
+gfx::Lighting light;
+bool litWanted = false, blendOn = false, lightDirty = true;
+float matSpec = 0.15f, matGloss = 24;
+
+GLuint compileShader(GLenum type, const char* src) {
+    GLuint s = sh_CreateShader(type);
+    sh_ShaderSource(s, 1, &src, nullptr);
+    sh_CompileShader(s);
+    GLint ok = 0; sh_GetShaderiv(s, 0x8B81 /*GL_COMPILE_STATUS*/, &ok);
+    if (!ok) { char log[1024] = {0}; sh_GetShaderInfoLog(s, sizeof log, nullptr, log); sys::log("lighting shader: %s\n", log); return 0; }
+    return s;
+}
+void buildLighting() {
+    if (getenv("EMR_NOLIGHT") || !loadShaderProcs()) { sys::log("lighting: off (baked)\n"); return; }
+    GLuint vs = compileShader(0x8B31 /*GL_VERTEX_SHADER*/, LIT_VS), fs = compileShader(0x8B30 /*GL_FRAGMENT_SHADER*/, LIT_FS);
+    if (!vs || !fs) return;
+    GLuint p = sh_CreateProgram();
+    sh_AttachShader(p, vs); sh_AttachShader(p, fs);
+    sh_LinkProgram(p);
+    GLint ok = 0; sh_GetProgramiv(p, 0x8B82 /*GL_LINK_STATUS*/, &ok);
+    if (!ok) { char log[1024] = {0}; sh_GetProgramInfoLog(p, sizeof log, nullptr, log); sys::log("lighting link: %s\n", log); return; }
+    litProg = p;
+    uTex = sh_GetUniformLocation(p, "uTex"); uTexOn = sh_GetUniformLocation(p, "uTexOn"); uHasN = sh_GetUniformLocation(p, "uHasN");
+    uFog = sh_GetUniformLocation(p, "uFog"); uSpec = sh_GetUniformLocation(p, "uSpec"); uGloss = sh_GetUniformLocation(p, "uGloss");
+    uSun = sh_GetUniformLocation(p, "uSun"); uUp = sh_GetUniformLocation(p, "uUp"); uSunCol = sh_GetUniformLocation(p, "uSunCol");
+    uSky = sh_GetUniformLocation(p, "uSky"); uGround = sh_GetUniformLocation(p, "uGround"); uWorldK = sh_GetUniformLocation(p, "uWorldK");
+    sh_UseProgram(p); sh_Uniform1i(uTex, 0); sh_UseProgram(0);
+    sys::log("lighting: per pixel\n");
+}
+inline V3 toEye(const V3& v) {        // a world direction into the camera's space (the view's rotation)
+    const float* m = viewM.m;
+    return norm(V3(m[0] * v.x + m[4] * v.y + m[8] * v.z, m[1] * v.x + m[5] * v.y + m[9] * v.z, m[2] * v.x + m[6] * v.y + m[10] * v.z));
+}
+// switch the program on for a lit draw (or off): true when this draw is lit
+bool useLit(bool hasNormals) {
+    bool want = litProg && litWanted && !in2D && !blendOn;
+    if (!want) { if (progOn) { sh_UseProgram(0); progOn = false; } return false; }
+    if (!progOn) { sh_UseProgram(litProg); progOn = true; lightDirty = true; }
+    if (lightDirty) {
+        V3 s = toEye(light.sun), u = toEye(V3(0, 0, 1));
+        sh_Uniform3f(uSun, s.x, s.y, s.z); sh_Uniform3f(uUp, u.x, u.y, u.z);
+        sh_Uniform3f(uSunCol, light.sunCol[0], light.sunCol[1], light.sunCol[2]);
+        sh_Uniform3f(uSky, light.sky[0], light.sky[1], light.sky[2]);
+        sh_Uniform3f(uGround, light.ground[0], light.ground[1], light.ground[2]);
+        sh_Uniform3f(uWorldK, light.worldK[0], light.worldK[1], light.worldK[2]);
+        sh_Uniform1f(uSpec, matSpec); sh_Uniform1f(uGloss, matGloss);
+        lightDirty = false;
+    }
+    sh_Uniform1f(uTexOn, texOn ? 1.0f : 0.0f);
+    sh_Uniform1f(uHasN, hasNormals ? 1.0f : 0.0f);
+    sh_Uniform1f(uFog, fogWanted ? 1.0f : 0.0f);
+    return true;
+}
+
+// the normals the models brought ('EMN1'): looked up by the vertex memory they belong to (the
+// renderer draws parts of a model too: body, nose, wing, glass)
+const int8_t* normalsFor(const ModelVertex* v, int count) {
+    auto it = normRanges.upper_bound((uintptr_t)v);
+    if (it == normRanges.begin()) return nullptr;
+    --it;
+    const NormRange& r = it->second;
+    if (v < r.v || v + count > r.v + r.count) return nullptr;
+    return r.n + (v - r.v) * 4;
+}
+// the lit copy of a model: the baked sun taken back out of the colour, and the normal
+struct LitVertex { float u, v; u32 color; float x, y, z; int8_t nx, ny, nz, pad; };
+GLuint litVboFor(const ModelVertex* v, int count, const int8_t* n) {
+    if (!haveBuffers) return 0;
+    uint64_t k = vkey(v, count, true);
+    auto it = litVbos.find(k);
+    if (it != litVbos.end()) return it->second.id;
+    std::vector<LitVertex> tmp(count);
+    const float kk = 1.0f / 32768.0f;
+    for (int i = 0; i < count; i++) {
+        const u8* nb = (const u8*)n + i * 4;
+        float baked = nb[3] * (1.5f / 255.0f), inv = baked > 0.05f ? 1.0f / baked : 1.0f;
+        u32 c = v[i].color;
+        u32 r = (u32)fminf((c & 255) * inv, 255), g = (u32)fminf(((c >> 8) & 255) * inv, 255), b = (u32)fminf(((c >> 16) & 255) * inv, 255);
+        tmp[i] = LitVertex{v[i].u * kk, v[i].v * kk, (c & 0xFF000000u) | (b << 16) | (g << 8) | r, v[i].x * kk, v[i].y * kk, v[i].z * kk,
+                           (int8_t)nb[0], (int8_t)nb[1], (int8_t)nb[2], 0};
+    }
+    GLuint id = 0;
+    glGenBuffers(1, &id);
+    glBindBuffer(GL_ARRAY_BUFFER, id);
+    glBufferData(GL_ARRAY_BUFFER, count * sizeof(LitVertex), tmp.data(), GL_STATIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    litVbos[k] = Vbo{(const u8*)v, count * (int)sizeof(ModelVertex), id};
+    return id;
+}
+void drawLitVbo(GLuint id, int count) {
+    glBindBuffer(GL_ARRAY_BUFFER, id);
+    glEnableClientState(GL_NORMAL_ARRAY);
+    glVertexPointer(3, GL_FLOAT, sizeof(LitVertex), (void*)offsetof(LitVertex, x));
+    glColorPointer(4, GL_UNSIGNED_BYTE, sizeof(LitVertex), (void*)offsetof(LitVertex, color));
+    glNormalPointer(GL_BYTE, sizeof(LitVertex), (void*)offsetof(LitVertex, nx));
+    if (texOn) glTexCoordPointer(2, GL_FLOAT, sizeof(LitVertex), (void*)offsetof(LitVertex, u));
+    glDrawArrays(GL_TRIANGLES, 0, count);
+    glDisableClientState(GL_NORMAL_ARRAY);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 }
 
@@ -363,6 +566,7 @@ void beginFrame(u32 clear) {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     in2D = true; enter3D();
     curTex = nullptr; applyTex();
+    gfx::setLit(false);
 }
 void endFrame() {
     double t0 = sys::timeSec();
@@ -396,7 +600,7 @@ bool beginInset(float x, float y, float w, float h, u32 c) {
 }
 void endInset() { glViewport(vpX, vpY, vpW, vpH); glScissor(vpX, vpY, vpW, vpH); }
 void setProjection(const M4& p) { projM = p; if (!in2D) { glMatrixMode(GL_PROJECTION); glLoadMatrixf(p.m); } }
-void setView(const M4& v) { viewM = v; }
+void setView(const M4& v) { viewM = v; lightDirty = true; }
 void setFog(bool on, float n, float f, u32 c) {
     fogWanted = on;
     if (on) {
@@ -413,6 +617,7 @@ void bindTexture(const Texture* t) {
     curTex = want; applyTex();
 }
 void setBlend(bool on) {
+    blendOn = on;
     if (on) { glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); }
     else glDisable(GL_BLEND);
 }
@@ -422,6 +627,10 @@ void setDepthWrite(bool on) { glDepthMask(on ? GL_TRUE : GL_FALSE); }
 void drawModel(const ModelVertex* v, int count, const M4& model) {
     if (count <= 0) return;
     enter3D();
+    if (const int8_t* n = normalsFor(v, count))
+        if (useLit(true))
+            if (GLuint id = litVboFor(v, count, n)) { setModel(model); drawLitVbo(id, count); static int c = 0; if (getenv("EMR_LITLOG") && c++ % 200 == 0) sys::log("lit draw %d (%d verts)\n", c, count); return; }
+    useLit(false);
     if (GLuint id = vboFor(v, count, true)) { setModel(model); drawVbo(id, count, GL_TRIANGLES); return; }
     // 16-bit model vertices -> floats (positions and texture coordinates are value / 32768)
     WorldVertex* w = (WorldVertex*)frameAlloc(count * (int)sizeof(WorldVertex));
@@ -438,6 +647,7 @@ void drawWorld(const WorldVertex* v, int count, Prim prim, const M4& model) {
     if (count <= 0) return;
     static const GLenum P[4] = {GL_TRIANGLES, GL_TRIANGLE_STRIP, GL_LINES, GL_LINE_STRIP};
     enter3D();
+    useLit(false);             // (the circuit: lit without normals, when lighting is on)
     setModel(model);
     if (GLuint id = vboFor(v, count, false)) { drawVbo(id, count, P[prim]); return; }
     drawArrays(v, count, P[prim]);
@@ -500,6 +710,16 @@ static void applySync() {
     if (SDL_GL_SetSwapInterval(-1) != 0) SDL_GL_SetSwapInterval(1);
 }
 bool highDetail() { return true; }
+void setLighting(const Lighting& l) { light = l; light.sun = norm(l.sun); lightDirty = true; }
+void setLit(bool on) { litWanted = on; if (!on && progOn) { sh_UseProgram(0); progOn = false; } }
+void setMaterial(float spec, float gloss) {
+    if (spec == matSpec && gloss == matGloss) return;
+    matSpec = spec; matGloss = gloss;
+    if (progOn) { sh_Uniform1f(uSpec, spec); sh_Uniform1f(uGloss, gloss); } else lightDirty = true;
+}
+void attachNormals(const ModelVertex* v, const int8_t* n, int count) {
+    if (v && n && count > 0) normRanges[(uintptr_t)v] = NormRange{v, count, n};
+}
 }
 
 // ---------------------------------------------------------------- input
@@ -699,6 +919,7 @@ bool init() {
     glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
     glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST);
     glHint(GL_FOG_HINT, GL_NICEST);
+    buildLighting();
 
     for (int i = 0; i < SDL_NumJoysticks(); i++) input::openPad(i);
     return true;
@@ -765,6 +986,8 @@ void log(const char* fmt, ...) {
 }
 
 // ---------------------------------------------------------------- main
+// (EMR_HEADLESS: the offscreen test build, Makefile.headless, where tests/pc_main.cpp drives the game)
+#ifndef EMR_HEADLESS
 static Game game;
 int main(int argc, char** argv) {
     sys::parseArgs(argc, argv);
@@ -790,3 +1013,4 @@ int main(int argc, char** argv) {
     sys::shutdown();
     return 0;
 }
+#endif

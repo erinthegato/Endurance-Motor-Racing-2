@@ -115,6 +115,8 @@ def main(prev=None):
             if tex:
                 fo.write(struct.pack('<256I', *pal)); fo.write(sw.tobytes())
             fo.write(rec.tobytes())
+            if PCSET:            # 'EMN1': the PC's real lighting
+                fo.write(pc_refine.emn_block([(n,)], scale))
 
     total = 0
     for folder in (('PC/models',) if PCSET else ('DATA/models', 'HD/models')):

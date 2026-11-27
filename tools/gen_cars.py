@@ -217,6 +217,10 @@ class Mesh:
         self.part(V, F, uv, group, glass_faces=gl)
 
     # ---- output
+    def normals(self):
+        """the corners' normals (m,3,3), in the same order as arrays()"""
+        return np.array([t[1] for t in self.tris], float).reshape(-1, 3, 3) if self.tris else np.zeros((0, 3, 3))
+
     def refined(self, levels=1):
         """a copy with every triangle split into four on its curved surface (tools/pc_refine.py; the PC set)"""
         import pc_refine
@@ -283,6 +287,8 @@ def write_emm(path, lods, meta=(0.0, 0.0, 0.0), emx=None, share_tex=False):
     mn, mx = P0.min(0), P0.max(0)
     centre = (mn + mx) / 2
     scale = np.maximum((mx - mn) / 2, 1e-4)
+    import pc_refine
+    emn = []
     with open(path, 'wb') as f:
         f.write(b'EMM1'); f.write(struct.pack('<I', len(lods)))
         f.write(struct.pack('<3f', *scale)); f.write(struct.pack('<3f', *centre))
@@ -290,6 +296,7 @@ def write_emm(path, lods, meta=(0.0, 0.0, 0.0), emx=None, share_tex=False):
             P, UV, LT, G = mesh.arrays()
             order = np.argsort(G, kind='stable')
             P, UV, LT, G = P[order], UV[order], LT[order], G[order]
+            emn.append((mesh.normals()[order], np.repeat(G, 3)))
             vc = len(P) * 3
             shared = share_tex and li > 0 and tex is lods[0][1]
             # header (16 bytes): vertex count, texture size (0: level 0's), glass vertex count, one extra
@@ -309,6 +316,8 @@ def write_emm(path, lods, meta=(0.0, 0.0, 0.0), emx=None, share_tex=False):
             f.write(rec.tobytes())
         if emx is not None:      # 'EMX1' axleF, axleR, wheelY, wheelR, flags (bit 1: the Vita's new instrument layout)
             f.write(b'EMX1'); f.write(struct.pack('<4fI', *emx))
+        if pc_refine.pc_mode():  # 'EMN1': the PC's real lighting (normals and shade per vertex)
+            f.write(pc_refine.emn_block(emn, scale))
     return [len(l[0].tris) for l in lods]
 
 

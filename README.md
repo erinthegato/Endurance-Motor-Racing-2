@@ -127,6 +127,17 @@ The same game for Windows (and Linux), made to be streamed from the PC to **Moon
     distance, smoother engine pitching (cubic), equal-power stereo
 * The PC test build reads `PC/` with `EMR_PCSET=1`.
 
+### Real lighting (PC)
+The PC edition lights the world itself instead of using the light baked into the Vita's vertex
+colours. The sun moves with the race clock (rises in the east, high at midday, low and orange at
+dusk), the sky and the ground light each surface by which way it faces, and car paint gets a
+clear-coat shine. The PC models carry their normals in an `EMN1` block (written by the tools with
+`--pc`). Start the game with the environment variable `EMR_NOLIGHT=1` to compare with the old look.
+
+To check the PC renderer without a Windows machine: `make -f Makefile.headless` builds `emr_gl`,
+which draws with OpenGL offscreen (EGL + Mesa) and saves screenshots, e.g.
+`mkdir -p /tmp/gl && EMR_WX=1 EMR_CLOCK=18.3 ./emr_gl race lemans 0 1 11 /tmp/gl 25`.
+
 ## PC test build
 `make -f Makefile.pc`, then from this folder e.g. `./emr_test race lemans 0 3 39 shots 20 60` (car 0, 39
 opponents, screenshots at 20 s and 60 s), `./emr_test physlap spa 1 3` (an LMGT3's lap times),

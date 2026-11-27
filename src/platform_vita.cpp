@@ -406,6 +406,10 @@ void frameTrim(void* p, int keepBytes) {
 void flushCache(const void* p, int bytes) { if (p && bytes > 0 && !inArena(p)) { forget(p, bytes); forgetVbos(p, bytes); } }
 bool gpuClips() { return true; }
 bool highDetail() { return true; }
+void setLighting(const Lighting&) {}
+void setLit(bool) {}
+void setMaterial(float, float) {}
+void attachNormals(const ModelVertex*, const int8_t*, int) {}
 // The Vita has plenty of video memory; textures already live on the GPU once bound.
 bool moveToFastMemory(Texture&) { return false; }
 int fastMark() { return 0; }

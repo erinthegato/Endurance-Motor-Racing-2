@@ -30,12 +30,13 @@ struct Voice {
     volatile float rate = 1;      // source samples per output sample
     volatile float vol = 0, pan = 0;
     volatile bool muffled = false;
-    float pos = 0, curVol = 0, lp = 0;
+    volatile float dull = -1;     // 0..1 continuous muffling (the PC: by distance); -1 = `muffled`
+    float pos = 0, curVol = 0, lp = 0, lp2 = 0;
     volatile int clipOff = -1;    // the off-throttle (overrun) loop, if the car has one
     volatile float offMix = 0;    // 0 on the throttle .. 1 off it
     float posOff = 0, curOff = 0;
 };
-Voice voices[4];
+Voice voices[1 + sound::OPPONENT_VOICES];
 volatile float master = 0.9f;
 volatile float volMusic = 0.7f, volEngine = 0.8f, volSfx = 0.8f, volRadio = 0.9f;
 
@@ -225,12 +226,27 @@ void mix(int16_t* out, int frames) {
         if (target < 0.0005f && v.curVol < 0.0005f) { v.curVol = 0; continue; }   // silent: skip the work
         bool muff = v.muffled;
         float eng = volEngine * 1.25f;
+#ifdef PLATFORM_DESKTOP
+        // the PC: equal-power panning (no dip in the middle), distance muffling that grows smoothly
+        float gl = sqrtf(0.5f * (1 - pan)) * 1.41421f, gr = sqrtf(0.5f * (1 + pan)) * 1.41421f;
+        float dl = v.dull;
+        float lpk = dl >= 0 ? 1.0f - 0.85f * clampf(dl, 0, 1) : (muff ? 0.25f : 1.0f);
+#else
         float gl = 1 - (pan > 0 ? pan : 0), gr = 1 + (pan < 0 ? pan : 0);
+#endif
         for (int i = 0; i < frames; i++) {
             v.curVol += (target - v.curVol) * 0.002f;
             int a = (int)v.pos; float t = v.pos - a;
             int b = a + 1; if (b >= c.len) b = 0;
+#ifdef PLATFORM_DESKTOP
+            // cubic (Hermite) between four samples: less grit when the loop is pitched up and down
+            int a0 = a > 0 ? a - 1 : c.len - 1, b1 = b + 1 >= c.len ? 0 : b + 1;
+            float y0 = c.data[a0], y1 = c.data[a], y2 = c.data[b], y3 = c.data[b1];
+            float c1 = 0.5f * (y2 - y0), c2 = y0 - 2.5f * y1 + 2.0f * y2 - 0.5f * y3, c3 = 0.5f * (y3 - y0) + 1.5f * (y1 - y2);
+            float s = (((c3 * t + c2) * t + c1) * t + y1) * (1.0f / 32768.0f);
+#else
             float s = (c.data[a] * (1 - t) + c.data[b] * t) * (1.0f / 32768.0f);
+#endif
             int co = v.clipOff;
             if (co >= 0 && co < clipCount) {
                 // the overrun layer, crossfaded in as the throttle closes (equal power)
@@ -245,7 +261,11 @@ void mix(int16_t* out, int frames) {
                 if (v.posOff >= o.len) v.posOff -= o.len;
             }
             // a muffled engine (heard from inside the cockpit / far away) loses its fizz
+#ifdef PLATFORM_DESKTOP
+            if (lpk < 0.999f) { v.lp += (s - v.lp) * lpk; v.lp2 += (v.lp - v.lp2) * lpk; s = v.lp2; }   // (two poles: a softer roll-off)
+#else
             if (muff) { v.lp += (s - v.lp) * 0.25f; s = v.lp; }
+#endif
             s *= v.curVol * eng;
             buf[i * 2] += s * gl; buf[i * 2 + 1] += s * gr;
             v.pos += rate;
@@ -372,8 +392,8 @@ void shutdown() {
     for (int i = 0; i < sfxCount; i++) sys::freeFile(sfx[i].data);
     sfxCount = 0;
 }
-void setVoice(int i, const CarDef* car, float rpm, float volume, float pan, bool muffled, float throttle) {
-    if (i < 0 || i > 3) return;
+void setVoice(int i, const CarDef* car, float rpm, float volume, float pan, bool muffled, float throttle, float doppler, float dull) {
+    if (i < 0 || i > OPPONENT_VOICES) return;
     Voice& v = voices[i];
     if (!car) { v.vol = 0; return; }
     int c = clipFor(car->sound);
@@ -392,8 +412,8 @@ void setVoice(int i, const CarDef* car, float rpm, float volume, float pan, bool
         v.offMix = clampf(1 - throttle * 1.6f, 0, 1);
     }
     float ref = car->idleRpm + (car->maxRpm - car->idleRpm) * 0.72f;
-    v.rate = clampf(rpm / ref, 0.3f, 1.6f) * (22050.0f / 44100.0f);
-    v.vol = volume; v.pan = clampf(pan, -1, 1); v.muffled = muffled;
+    v.rate = clampf(rpm / ref, 0.3f, 1.6f) * clampf(doppler, 0.6f, 1.5f) * (22050.0f / 44100.0f);
+    v.vol = volume; v.pan = clampf(pan, -1, 1); v.muffled = muffled; v.dull = dull;
 }
 void silence() { for (auto& v : voices) v.vol = 0; }
 

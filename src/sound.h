@@ -6,8 +6,16 @@
 namespace sound {
 void init();
 void shutdown();
-// voice 0 = the player's car, 1..3 = the nearest opponents
-void setVoice(int voice, const CarDef* car, float rpm, float volume, float pan, bool muffled, float throttle = 1);   // engines with a "<sound>_off" loop blend it in off the throttle
+// voice 0 = the player's car, 1..OPPONENT_VOICES = the nearest opponents (3 on the Vita, 8 on the PC)
+#ifdef PLATFORM_DESKTOP
+static const int OPPONENT_VOICES = 8;
+#else
+static const int OPPONENT_VOICES = 3;
+#endif
+// engines with a "<sound>_off" loop blend it in off the throttle. doppler: pitch factor (a passing car
+// higher coming, lower going); dull: 0..1 treble lost to distance (-1: just `muffled`)
+void setVoice(int voice, const CarDef* car, float rpm, float volume, float pan, bool muffled, float throttle = 1,
+              float doppler = 1, float dull = -1);
 void silence();
 void setMaster(float v);
 void setVolumes(float music, float engine, float sfx, float radio);   // each 0..1

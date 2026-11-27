@@ -336,23 +336,35 @@ void Game::raceAudio() {
     if (manage) vol *= 0.4f;
     if (!me.engineOn) vol = 0;
     sound::setVoice(0, me.def, me.rpm, quiet ? 0 : vol, 0, false, race.countdown > 0 ? 1.0f : me.throttle);
-    // the three nearest opponents
-    int best[3] = {-1, -1, -1}; float bd[3] = {1e9f, 1e9f, 1e9f};
+    // the nearest opponents (3 on the Vita, 8 on the PC)
+    const int NV = sound::OPPONENT_VOICES;
+    int best[8]; float bd[8];
+    for (int k = 0; k < NV; k++) { best[k] = -1; bd[k] = 1e9f; }
     for (int i = 0; i < (int)race.cars.size(); i++) {
         if (i == race.playerIdx) continue;
         float d = len(race.cars[i].pos - me.pos);
-        for (int k = 0; k < 3; k++) if (d < bd[k]) {
-            for (int m = 2; m > k; m--) { bd[m] = bd[m - 1]; best[m] = best[m - 1]; }
+        for (int k = 0; k < NV; k++) if (d < bd[k]) {
+            for (int m = NV - 1; m > k; m--) { bd[m] = bd[m - 1]; best[m] = best[m - 1]; }
             bd[k] = d; best[k] = i; break;
         }
     }
-    for (int k = 0; k < 3; k++) {
+    for (int k = 0; k < NV; k++) {
         if (best[k] < 0 || quiet) { sound::setVoice(k + 1, nullptr, 0, 0, 0, false); continue; }
         const Car& o = race.cars[best[k]];
         V3 rel = o.pos - me.pos;
         float pan = dot(norm(rel), me.left * -1.0f) * 0.8f;
+#ifdef PLATFORM_DESKTOP
+        // the PC: a pack of eight, a little quieter each so they add up; Doppler from the two cars'
+        // speeds along the line between them (343 m/s); the treble fades with distance (air, ~250 m)
+        float v = o.engineOn ? 0.48f / (1 + bd[k] / 10.0f) : 0;
+        V3 u = norm(rel);
+        float closingMe = dot(me.fwd * me.v, u), closingO = dot(o.fwd * o.v, u * -1.0f);
+        float doppler = (343.0f + closingMe) / fmaxf(343.0f - closingO, 150.0f);
+        sound::setVoice(k + 1, o.def, o.rpm, v, pan, bd[k] > 50, o.throttle, doppler, clampf(bd[k] / 250.0f, 0, 0.85f));
+#else
         float v = o.engineOn ? 0.55f / (1 + bd[k] / 10.0f) : 0;
         sound::setVoice(k + 1, o.def, o.rpm, v, pan, bd[k] > 50, o.throttle);
+#endif
     }
     // LMGT3: the straight-cut gearbox's whine on every shift -- ours, and the GT3s close by
     {

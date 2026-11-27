@@ -482,7 +482,7 @@ void Renderer::drawScene(const Race& r, const Camera& cam, bool hidePlayer) {
     if (!sceneLite) { drawBoards(r, cam, tanH, tanV); drawPit(r, cam); drawTrackLife(r, cam); }
     // cars
     for (const Car& c : r.cars) {
-        if (hidePlayer && c.player) continue;
+        if ((hidePlayer && c.player) || (int)(&c - &r.cars[0]) == hideCar) continue;
         if (!c.player) {
             // a car right on our tail can swallow the chase camera: skip it while the camera is inside
             // (or within a hand's width of) its body, instead of filling the screen with its inside
@@ -717,6 +717,49 @@ static u32 flagColour(const Race& r, const Car& c, const char*& word) {
     if (r.zoneAt(c.s)) { word = "SLOW"; return RGBA(255, 215, 40); }
     if (r.session == SES_RACE && r.greenTime > 0 && r.time - r.greenTime < 5) { word = "GO"; return RGBA(40, 220, 70); }
     return RGBA(22, 26, 30);
+}
+
+// ------------------------------------------------------------------ the manager's dashcam
+// A small camera stuck to the top of the dash behind the windscreen, on the car's centre line, a wide
+// lens looking out over the nose: it rides every bump and kerb with the car (no head to steady it)
+Camera Renderer::dashCamera(const Race& r, int idx, float dt) {
+    const Car& c = r.cars[idx];
+    int cls = c.def->era % ERA_COUNT;
+    const CockpitLayout& L = COCKPIT[cls];
+    // in front of the driver's eye, centred, just under the screen's top edge (Hypercar canopy /
+    // GT3 roof line): cabin space, like the cockpit layouts
+    V3 at = cls == ERA_HYPER ? V3(L.eye.x + 0.62f, 0, L.eye.z + 0.13f) : V3(L.eye.x + 0.90f, 0, L.eye.z + 0.04f);
+    at.x += carModel[idx].cabX;
+    M4 place = M4::basis(c.fwd, c.left, c.up, c.pos);
+    // the kerbs and bumps through the car's body (the mount is stiff: a quick, small shake)
+    float bump = c.v > 5 ? clampf(fabsf(c.body.pitchV) * 0.02f + fabsf(c.body.rollV) * 0.02f + fabsf(c.body.vz) * 0.01f, 0, 0.02f) : 0;
+    dashShake += (bump - dashShake) * clampf(dt * 12, 0, 1);
+    Camera cam;
+    cam.eye = place.point(at) + c.up * (sinf(r.time * 61.0f) * dashShake);
+    cam.fwd = norm(c.fwd - c.up * 0.07f);
+    cam.up = c.up;
+    cam.fov = 76;
+    return cam;
+}
+
+void Renderer::drawDashcam(const Race& r, int idx, const Camera& cam) {
+    const Car& c = r.cars[idx];
+    hideCar = idx;
+    drawScene(r, cam, false);
+    hideCar = -1;
+    drawNight(r, 0);
+    M4 proj = M4::perspective(cam.fov, (float)SCREEN_W / SCREEN_H, 0.8f, 1600.0f), view = M4::lookDir(V3(0, 0, 0), cam.fwd, cam.up);
+    gfx::setProjection(proj); gfx::setView(view);
+    gfx::setFog(false, 0, 1, 0);
+    drawBeam(r, cam);
+    drawEffects(r, cam);
+    // the car itself from inside: the nose, the fenders and the front wheels ahead of the lens
+    proj = M4::perspective(cam.fov, (float)SCREEN_W / SCREEN_H, 0.05f, 30.0f);
+    gfx::clearDepth();
+    gfx::setProjection(proj); gfx::setView(view); clip::setMatrices(proj, view);
+    gfx::setDepthTest(true); gfx::setDepthWrite(true);
+    float tanV = tanf(cam.fov * 3.14159f / 360.0f);
+    drawCar(c, cam.eye, cam.fwd, tanV * ASPECT, tanV, true);
 }
 
 V3 Renderer::cockpitEye(int carIdx) const { return COCKPIT[CARS[carIdx].era % ERA_COUNT].eye + V3(carModel[carIdx].cabX, 0, 0); }
@@ -1027,7 +1070,8 @@ void Renderer::drawNewInstruments(const Race& r, const Car& c, const M4& car, co
         // left: position and race progress, last / best lap
         position(b, sizeof b); d.text(-0.150f, 0.016f, b, 0.022f, white);
         progress(b, sizeof b); d.text(-0.150f, -0.004f, b, 0.012f, amber);
-        formatTime(t, c.bestLap); snprintf(b, sizeof b, "BEST %s", t); d.text(-0.150f, -0.022f, b, 0.0095f, purple);
+        formatTime(t, c.bestLap); snprintf(b, sizeof b, "BEST %s", t); d.text(-0.150f, -0.020f, b, 0.0095f, purple);
+        snprintf(b, sizeof b, "OVERALL P%d", c.position); d.text(-0.150f, -0.033f, b, 0.0085f, dim);
         // middle: flag panel and race control
         d.box(-0.085f, 0.014f, 0.085f, H - 0.004f, fc, 0.002f);
         if (fw[0]) d.text(0, 0.023f, fw, 0.013f, RGBA(10, 10, 12));
@@ -1071,7 +1115,8 @@ void Renderer::drawNewInstruments(const Race& r, const Car& c, const M4& car, co
         m.box(-MW + 0.004f, MH - 0.022f, MW - 0.004f, MH - 0.004f, fc, 0.002f);
         if (fw[0]) m.text(0, MH - 0.013f, fw, 0.013f, RGBA(10, 10, 12));
         position(b, sizeof b); m.text(-0.050f, 0.012f, b, 0.024f, white);
-        progress(b, sizeof b); m.text(-0.050f, -0.010f, b, 0.012f, amber);
+        progress(b, sizeof b); m.text(-0.050f, -0.008f, b, 0.012f, amber);
+        snprintf(b, sizeof b, "OVERALL P%d", c.position); m.text(-0.050f, -0.022f, b, 0.0085f, dim);
         tyres(m, 0.062f, 0.006f, 0.022f);
         { Display tx{*this, m.m * M4::translate(V3(0, -0.032f, 0))}; message(tx, 0, 0.0085f, 26); }
         u32 sc; statusLine(b, sizeof b, sc); m.text(0, -0.050f, b, 0.0095f, sc);
@@ -1170,7 +1215,7 @@ void Renderer::drawHUD(const Race& r, int mode) {
     const bool lean = mode == CAM_COCKPIT && !cfg.hideWheel && !cfg.cockpitHud;
     if (!lean) {
     // position + lap
-    gfx::drawFill2D(6, 6, 104, 40, panel);
+    gfx::drawFill2D(6, 6, 136, 40, panel);
     // WEC: the position in your class, the class's colour tag (Hypercar red, LMGT3 orange) and overall
     snprintf(b, sizeof b, "P%d", r.classPosition(c));
     font.draw(12, 6, b, white, 1.9f);
@@ -1180,6 +1225,9 @@ void Renderer::drawHUD(const Race& r, int mode) {
         float tx = 14 + font.width("P00", 1.9f) + font.width("/00", 0.8f);
         gfx::drawFill2D(tx, 11, 26, 10, c.def->cls == CLASS_HYPER ? RGBA(220, 40, 40, 230) : RGBA(255, 150, 30, 230));
         font.draw(tx + 2, 10, c.def->cls == CLASS_HYPER ? "HY" : "GT3", white, 0.55f);
+        // and the overall place in the whole multi-class field
+        snprintf(b, sizeof b, "OVR %d", c.position);
+        font.draw(tx + 30, 10, b, dim, 0.62f);
     }
     if (r.session == SES_RACE && r.set.raceMin > 0) {
         // timed race: race-clock time left (the event's hours) and the time of day
@@ -1214,9 +1262,9 @@ void Renderer::drawHUD(const Race& r, int mode) {
     font.drawRight(SCREEN_W - 12, 37, b, dim, 0.8f);
     }
     // speed + gear (the cockpit has its own displays, unless its wheel is hidden)
-    if (mode != CAM_COCKPIT || cfg.hideWheel) drawSpeedBox(c);
+    if ((mode != CAM_COCKPIT || cfg.hideWheel) && !hudManage) drawSpeedBox(c);
     // map
-    if (!lean) {
+    if (!lean && !hudManage) {
         gfx::drawFill2D(6, SCREEN_H - 86, 80, 80, RGBA(0, 0, 0, 90));
         drawMap(r.track, &r, 10, SCREEN_H - 82, 72, RGBA(230, 230, 230, 200));
     }

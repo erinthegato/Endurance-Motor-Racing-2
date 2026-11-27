@@ -573,7 +573,7 @@ int main(int argc, char** argv) {
         g.startRace();
         settle(40); shot(g, out + "/g_1_garage.ppm");
         g.setupTab = 1; settle(2); shot(g, out + "/g_1w_weather.ppm");
-        g.setupTab = 2; settle(400); shot(g, out + "/g_1t_timing.ppm"); g.setupTab = 0;
+        g.setupTab = 2; settle(400); shot(g, out + "/g_1t_timing.ppm"); g.timingOverall = true; shot(g, out + "/g_1t_timing_overall.ppm"); g.timingOverall = false; g.setupTab = 0;
         int inG = 0; for (auto& c : g.race.cars) if (c.pit == PIT_STOP) inG++;
         fprintf(stderr, "practice start: screen %d, player at the computer %d, cars in garages %d/%d\n", (int)g.screen, g.race.inGarage(), inG, (int)g.race.cars.size());
         g.setupSel = 0; press(g, &Pad::right); press(g, &Pad::right);          // wing 3 -> 5
@@ -1174,6 +1174,85 @@ int main(int argc, char** argv) {
         printf("era %d: %d cars, %d retired (%.0f %%), mean damage %.2f, flats at the end %d\n", era, cars, nret, 100.0f * nret / cars, sumDmg / cars, flats);
         for (int k = 0; k < MF_COUNT; k++) printf("  %-28s failed %2d  retired %2d\n", MECH_NAME[k], fail[k], ret[k]);
         return 0;
+    }
+    if (mode == "manager") {
+        // team manager <track> <car> <outdir>: the race from the pit wall -- orders for both cars, the
+        // three cameras, a stop on the manager's plan, then DRIVE when our car stands in its box
+        std::string tid = argv[2], out = argv[4];
+        for (int i = 0; i < TRACK_COUNT; i++) if (tid == TRACKS[i].id) g.set.track = i;
+        g.set.car = atoi(argv[3]); g.set.opponents = 19; g.set.raceMin = 8; g.set.weather = WX_DRY;
+        g.mgrMode = true; g.aiDrivesPlayer = false;
+        g.startRace();
+        if (g.screen != SCR_RACE || !g.race.managing()) { printf("manager: did not start managing\n"); return 1; }
+        auto run = [&](float sec) { for (float t = 0; t < sec && g.screen == SCR_RACE; t += 1.0f / 30) { Pad z{}; g.frame(1.0f / 30, z); } };
+        int bad = 0;
+        int mate = g.race.teamCar(1);
+        printf("manager: our cars #%d (idx %d) and #%d (idx %d), driver in ours: %d, AI drives: %d\n", g.race.player().number, g.race.playerIdx,
+               mate >= 0 ? g.race.cars[mate].number : 0, mate, g.race.player().driver, (int)g.race.player().plan.aiDrives);
+        if (mate < 0) bad++;
+        run(45);
+        const char* camn[3] = {"wall", "tv", "dash"};
+        for (int cm = 0; cm < 3; cm++) { g.mgrCam = cm; g.R.tvInit = false; run(0.5f); shot(g, out + "/mgr_" + camn[cm] + ".ppm", 0); }
+        g.mgrCam = 0;
+        // the left screen (d-pad left from our first car) and its MAP tab (R), then back to TIMING (L)
+        press(g, &Pad::left); press(g, &Pad::r); run(0.3f); shot(g, out + "/mgr_wall_map.ppm", 0);
+        if (g.mgrFocus != 0 || g.mgrTab[0] != 1) { printf("manager: left + R did not show the map (focus %d tab %d)\n", g.mgrFocus, g.mgrTab[0]); bad++; }
+        press(g, &Pad::l);
+        // our first car's DRIVERS tab
+        press(g, &Pad::right); press(g, &Pad::r); run(0.3f); shot(g, out + "/mgr_wall_drivers.ppm", 0);
+        if (g.mgrFocus != 1 || g.mgrTab[1] != 1) { printf("manager: no DRIVERS tab (focus %d)\n", g.mgrFocus); bad++; }
+        press(g, &Pad::l);
+        // no button may reach the car's own controls while managing, whatever they're bound to: every
+        // action bound in turn to each button, then that button pressed
+        {
+            Car& me = g.race.player();
+            int cam0 = g.cam, map0 = me.su.map; bool pit0 = me.wantPit;
+            int keepRow = g.mgrRow; g.mgrRow = 5;            // (the STRATEGY row: X toggles it, undone below)
+            bool Pad::*BTN[] = {&Pad::select, &Pad::up, &Pad::down};
+            int saved[ACT_COUNT]; for (int a = 0; a < ACT_COUNT; a++) saved[a] = cfg.bind[a];
+            for (int a = 0; a < ACT_COUNT; a++) for (int bt = 0; bt < 3; bt++) {
+                for (int z = 0; z < ACT_COUNT; z++) cfg.bind[z] = BTN_NONE;
+                cfg.bind[a] = bt == 0 ? BTN_SELECT : (bt == 1 ? BTN_UP : BTN_DOWN);
+                press(g, BTN[bt]);
+            }
+            for (int a = 0; a < ACT_COUNT; a++) saved[a] = saved[a], cfg.bind[a] = saved[a];
+            g.mgrRow = keepRow;
+            bool same = g.cam == cam0 && me.su.map == map0 && me.wantPit == pit0 && !g.race.drsPress && g.race.managing();
+            printf("manager: buttons with every binding while managing: %s\n", same ? "no effect on the car" : "CHANGED THE CAR");
+            if (!same) bad++;
+        }
+        // the team-mate (d-pad right to its screen): push, then box this lap for wets and a full tank
+        press(g, &Pad::right);
+        if (g.mgrSel != 1 || g.mgrFocus != 2) { printf("manager: right did not focus the second car\n"); bad++; }
+        g.mgrRow = 0; press(g, &Pad::cross);
+        int k = g.race.teamCar(1);
+        printf("manager: #%d pace map %d\n", g.race.cars[k].number, g.race.cars[k].su.map);
+        if (g.race.cars[k].su.map != MAP_ATTACK) bad++;
+        g.mgrRow = 2; for (int i = 0; i < 6; i++) press(g, &Pad::cross); press(g, &Pad::square);   // TEAM -> S M H I W NO CHANGE, back to W
+        g.mgrRow = 3; for (int i = 0; i < 4; i++) press(g, &Pad::cross);     // TEAM -> 25 .. 100
+        g.mgrRow = 1; press(g, &Pad::cross);
+        const MgrOrders& o = g.race.cars[k].mgr;
+        printf("manager: orders tyre %d fuel %d auto %d, box %d\n", o.tyre, o.fuel, (int)o.autoStrat, (int)g.race.cars[k].wantPit);
+        shot(g, out + "/mgr_wall_orders.ppm", 0);
+        int stops0 = g.race.cars[k].stops;
+        for (int i = 0; i < 400 && g.race.cars[k].stops == stops0; i++) run(1);
+        for (int i = 0; i < 60 && g.race.cars[k].pit != PIT_NONE; i++) run(1);
+        printf("manager: #%d stopped (%d stops) and left on %s, orders now tyre %d\n", g.race.cars[k].number, g.race.cars[k].stops, TYRE_NAME[g.race.cars[k].tyre], g.race.cars[k].mgr.tyre);
+        if (g.race.cars[k].tyre != TY_WET || g.race.cars[k].mgr.tyre != -1) bad++;
+        // our car: box, then DRIVE in the box
+        press(g, &Pad::left);
+        g.mgrRow = 1; press(g, &Pad::cross);
+        bool took = false;
+        for (int i = 0; i < 400 * 30 && !took && g.screen == SCR_RACE; i++) {
+            Pad z{}; g.frame(1.0f / 30, z);
+            if (g.race.canTakeOver(g.race.playerIdx)) { g.mgrRow = 6; press(g, &Pad::cross); took = true; }
+        }
+        printf("manager: DRIVE %s -- managing now %d, our driver %d\n", took ? "pressed in the box" : "never possible", (int)g.race.managing(), g.race.player().driver);
+        if (!took || g.race.managing() || g.race.player().driver != 0) bad++;
+        run(20);
+        g.cam = 0; shot(g, out + "/mgr_after_drive.ppm", 0);
+        printf("manager: %s\n", bad ? "FAILED" : "ok");
+        return bad ? 1 : 0;
     }
     if (mode == "race") {
         std::string tid = argv[2];

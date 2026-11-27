@@ -55,8 +55,23 @@ endurance racing of the original EMR put back. Not for distribution.
   * SETUP: wing, springs, gearing, brakes, engine map, fuel, tyres (inters and wets as well)
   * WEATHER: the forecast strip (now and the next hour: an icon, the time, the chance of rain), the
     track's condition and the tyres it calls for
-  * TIMING: the circuit with every car on it and the session's timing, class by class
+  * TIMING: the circuit with every car on it and the session's timing, class by class or overall
+    (Square), each car tagged with its class colour
   While the garage clock runs at x4 / x16 the music fades in fully, as plain mono.
+* **Team manager** (from Endurance Motor Racing; race settings > Role: Team manager): your team's drivers
+  race both of your cars while you run the team from the engineers' stand on the pit wall at your box.
+  Three screens on the desk, each with two tabs:
+  * live timing for the whole field, each car in its class colour (tabs: TIMING / MAP, a live track map
+    with your cars marked)
+  * one screen per car (tabs: ORDERS / DRIVERS): fuel, tyres, driver, stint and damage, and the orders --
+    pace (save / normal / push), box this lap, the next stop's tyres, fuel and driver, the team's strategy
+    or yours, and DRIVE: get in while the car is stopped in its box (hand back to a team-mate at a later stop)
+  * controls: d-pad left / right the screen, up / down the order, X / Square change it (X also boxes and
+    DRIVEs), L / R the screen's tab, Triangle the speed of time (up to x16), Circle the camera: the pit
+    wall, TV, or the **dashcam** (manager mode only: on the dash of the car you picked, with broadcast-style
+    graphics). On TV and the dashcam left / right picks the car. While you manage, no button reaches the
+    car's own controls, whatever it is bound to.
+* **Positions**: your class position on the HUD and the dash, with your overall place next to it.
 * **Sound**: the endurance engines (V6 / V8 / V12 hybrids, flat-6, I6, V8 GTs), one engineer (the 2016
   voice and its radio beeps), the music by class.
 

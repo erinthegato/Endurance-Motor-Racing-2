@@ -343,6 +343,44 @@ float Race::boxS(const Car& c) const {
     return track.wrap(pitIn + PIT_BOX0 + pitSlot(c.def) * 16.0f + (c.number % 2) * 6.0f);
 }
 
+int Race::teamCar(int k) const {
+    if (k == 0) return playerIdx;
+    for (int i = 0; i < (int)cars.size(); i++) if (i != playerIdx && cars[i].mgr.team) return i;
+    return -1;
+}
+
+void Race::startManager() {
+    // the team's drivers start; we watch from the pit wall and can get in at a stop
+    for (Car& c : cars) {
+        if (!c.mgr.team) continue;
+        c.mgr.autoStrat = true;
+        if (c.player) { c.plan.aiDrives = true; if (c.driver == 0) { c.driver = 1; c.plan.nextDriver = 1; } }
+    }
+    message("Team manager: your drivers are in the cars", RGBA(120, 200, 255));
+}
+
+bool Race::canTakeOver(int idx) const {
+    if (idx < 0 || idx >= (int)cars.size() || session != SES_RACE) return false;
+    const Car& c = cars[idx];
+    return c.mgr.team && c.pit == PIT_STOP && !c.finished && !c.rel.retired && c.pitPhase >= 0;
+}
+
+void Race::takeOver(int idx) {
+    if (!canTakeOver(idx)) return;
+    if (idx != playerIdx) {
+        // the other car: it becomes ours to drive, the one we left goes on with the team's drivers
+        Car& old = cars[playerIdx];
+        old.player = false; old.plan.aiDrives = false;
+        if (old.driver == 0) { old.driver = 1; old.stint = 0; }
+        playerIdx = idx; cars[idx].player = true;
+    }
+    Car& c = cars[idx];
+    c.plan.aiDrives = false;
+    c.plan.nextDriver = 0; c.plan.swapDriver = false;
+    if (c.driver != 0) { c.driver = 0; c.stint = 0; c.stintWarn = 0; c.tiredWarn = 0; }
+    message("You're in the car: the crew sends you out", RGBA(120, 200, 255), RADIO_BOX_ACK);
+}
+
 bool Race::playerAtBox() const { return session == SES_RACE && player().pit == PIT_STOP && player().pitPhase == -2; }
 
 void Race::releasePlayer() {
@@ -781,7 +819,8 @@ void Race::strategy(Car& c) {
     float twoLapsH = 2.2f * lapTime * consumeScale / 3600.0f;
     bool driverDue = c.stint / 3600.0f + twoLapsH > MAX_STINT_H || c.drv[c.driver].hours + twoLapsH > MAX_DRIVE_H;
     bool box = c.driveThrough || ((fuelLow || wrongTyre || worn || broken || driverDue) && !(lastLaps && !fuelLow));
-    if (c.player && !autoPlayer) {
+    if (c.mgr.team && !c.mgr.autoStrat && !(fuelLow || driverDue || c.driveThrough)) box = false;   // the manager calls the stops
+    if (c.player && !autoPlayer && !c.plan.aiDrives) {
         // the engineer tells the player (they choose to come in with Select)
         if (c.driveThrough) return;
         if (fuelLow) message("Fuel is low - box this lap", RGBA(255, 200, 60), RADIO_FUEL);
@@ -828,6 +867,19 @@ void Race::choosePlan(Car& c) {
     if (left >= 0 && left * consumeScale < 1800 && c.stint < (MAX_STINT_H - 0.6f) * 3600 && d.hours < MAX_DRIVE_H - 0.6f &&
         d.fatigue + nextH / (2.75f * d.stamina) < 0.9f) change = false;   // nearly over: whoever is in finishes
     c.plan.nextDriver = change ? freshestDriver(c, c.driver) : c.driver;
+    // managing: the team never puts us in (driver 0) by itself -- only the manager's order or DRIVE does
+    if (c.player && c.plan.aiDrives && c.plan.nextDriver == 0) {
+        int k = c.drv[1].fatigue <= c.drv[2].fatigue ? 1 : 2;
+        if (c.drv[k].hours >= MAX_DRIVE_H - 0.5f) k = 3 - k;
+        c.plan.nextDriver = k;
+    }
+    if (c.mgr.team && !c.mgr.autoStrat) {
+        if (c.mgr.tyre >= TY_COUNT) c.plan.tyres = false;                      // "no change"
+        else if (c.mgr.tyre >= 0) { c.plan.tyres = true; c.plan.tyre = c.mgr.tyre; }
+        if (c.mgr.fuel >= 0) c.plan.fuel = fmaxf(c.fuel, c.mgr.fuel / 100.0f);
+        if (c.mgr.driver >= 0) c.plan.nextDriver = c.mgr.driver;
+        c.mgr.tyre = c.mgr.fuel = c.mgr.driver = -1;                            // (orders for this stop only)
+    }
     c.plan.swapDriver = c.plan.nextDriver != c.driver;
     if (c.player) c.plan.aiDrives = c.plan.nextDriver != 0;   // a team-mate in the car: the AI drives, you manage
 }
@@ -858,10 +910,11 @@ bool Race::pitDrive(Car& c, float dt) {
         } else if (r >= rb - 0.6f) {
             c.pit = PIT_STOP; c.v = 0; c.pitTimer = 0; c.pitTotal = 0;
             if (session != SES_RACE) { c.pitPhase = -4; return true; }     // practice / qualifying: into the garage
-            c.pitPhase = c.player ? -2 : 0;     // the player's team screen opens
-            if (!c.player) choosePlan(c);
+            bool ours = c.player && !c.plan.aiDrives;
+            c.pitPhase = ours ? -2 : 0;         // the player's team screen opens (managing: the crew gets on with it)
+            if (!ours) choosePlan(c);
             c.stops++;
-            if (c.player) { choosePlan(c); c.plan.tyres = true; }
+            if (ours) { choosePlan(c); c.plan.tyres = true; }
         }
     }
     if (c.pit == PIT_OUT && r > LANE_LEN) { c.pit = PIT_NONE; c.d = fminf(c.d, track.pts[track.index(c.s)].hw - 1); }
@@ -1213,7 +1266,7 @@ bool Race::save(const char* path) const {
     FILE* f = fopen(path, "wb");
     if (!f) return false;
     SaveHead h; memset((void*)&h, 0, sizeof h);
-    memcpy(h.magic, "EMS1", 4); h.version = 8;   // v8: CarRel (temperatures, failures, retirement) at the end of the Car record; v7: the body on its springs (CarBody) at the end of the Car record; v6: tyre temperatures at the end of the Car record; v5: spins, slow zones, hybrid
+    memcpy(h.magic, "EMS1", 4); h.version = 9;   // v9: the manager's orders (MgrOrders) at the end of the Car record; v8: CarRel (temperatures, failures, retirement) at the end of the Car record; v7: the body on its springs (CarBody) at the end of the Car record; v6: tyre temperatures at the end of the Car record; v5: spins, slow zones, hybrid
     h.set = set; h.session = session; h.playerIdx = playerIdx; h.carCount = (int)cars.size();
     h.time = time; h.countdown = countdown; h.timeScale = timeScale; h.consumeScale = consumeScale; h.startHour = startHour; h.timeAccel = timeAccel; h.greenTime = greenTime;
     h.rain = rain; h.wet = wet; h.rainTarget = rainTarget; h.rainTimer = rainTimer; h.scCooldown = scCooldown;
@@ -1232,16 +1285,17 @@ bool Race::load(const char* path) {
     FILE* f = fopen(path, "rb");
     if (!f) return false;
     SaveHead h;
-    if (fread(&h, sizeof h, 1, f) != 1 || memcmp(h.magic, "EMS1", 4) || (h.version < 5 || h.version > 8) || h.carCount <= 0 || h.carCount > 64) { fclose(f); return false; }
+    if (fread(&h, sizeof h, 1, f) != 1 || memcmp(h.magic, "EMS1", 4) || (h.version < 5 || h.version > 9) || h.carCount <= 0 || h.carCount > 64) { fclose(f); return false; }
     std::vector<Car> cs(h.carCount);
     for (auto& c : cs) {
         int def = 0;
         // version 5: no tyre temperatures; 6: no CarBody (it starts on the road)
-        size_t recSize = h.version == 8 ? sizeof(Car) : h.version == 7 ? offsetof(Car, rel) : (h.version == 6 ? offsetof(Car, body) : offsetof(Car, tyreT));
+        size_t recSize = h.version == 9 ? sizeof(Car) : h.version == 8 ? offsetof(Car, mgr) : h.version == 7 ? offsetof(Car, rel) : (h.version == 6 ? offsetof(Car, body) : offsetof(Car, tyreT));
         if (fread(&def, 4, 1, f) != 1 || fread(&c, recSize, 1, f) != 1 || def < 0 || def >= CAR_COUNT) { fclose(f); return false; }
         if (h.version == 5) for (float& t : c.tyreT) t = 80;
         if (h.version < 7) c.body = CarBody();
         if (h.version < 8) c.rel = CarRel();
+        if (h.version < 9) c.mgr = MgrOrders();
         c.def = &CARS[def];
     }
     fclose(f);

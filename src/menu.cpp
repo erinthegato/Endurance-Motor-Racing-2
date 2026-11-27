@@ -487,7 +487,7 @@ void Game::screenSetupTablet(Panel& P) {
     snprintf(v[4], 48, "Grid:  < %s >", STARTP[set.startPos]);
     snprintf(v[5], 48, "Start:  < %s >", STARTT[set.startType]);
     snprintf(v[6], 48, "Weather:  < %s >", WXN[set.weather]);
-    snprintf(v[7], 48, "Pit stops:  < %s >", set.manualPits ? "Manual (QTE)" : "Auto crew");
+    snprintf(v[7], 48, "Role:  < %s >", mgrMode ? "Team manager" : (set.manualPits ? "Driver, manual stops" : "Driver, auto crew"));
     snprintf(v[8], 48, "Gears:  < %s >", set.manualGears ? "Manual" : "Auto");
     snprintf(v[9], 48, "Camera:  < %s >", CAMS[cam]);
     snprintf(v[10], 48, "Weekend:  < %s >", set.weekend ? "Practice+Quali" : "Race only");
@@ -533,7 +533,7 @@ void Game::screenSetupComputer(Panel& P, bool trackGarage) {
         P.textR(P.vw - 6, 4, "L / R", DIM, 0.56f);
         if (setupTab != 0) {
             if (setupTab == 1) screenForecast(P); else screenTiming(P);
-            P.textC(P.vw / 2, 212, "L / R  tabs     X drive out     START pause", DIM, 0.58f);
+            P.textC(P.vw / 2, 212, setupTab == 2 ? "L / R  tabs   SQUARE  class / overall   X drive out" : "L / R  tabs     X drive out     START pause", DIM, 0.58f);
             return;
         }
     } else P.text(6, 2, b, WHITE, 0.8f);
@@ -673,10 +673,44 @@ void Game::screenTiming(Panel& P) {
             float r = c.player ? 3.0f : 2.0f;
             P.fill(mx(p) - r, my(p) - r, r * 2, r * 2, col);
         }
+    char b[48], t2[16];
+    // the timing, overall: the whole multi-class field in one order (best laps in practice and
+    // qualifying, race order in the race), each row tagged with its class colour
+    if (timingOverall) {
+        std::vector<const Car*> ord;
+        if (race.session == SES_RACE) { ord.resize(race.cars.size()); for (const Car& c : race.cars) ord[c.position - 1] = &c; }
+        else for (int num : race.qualifyingOrder()) for (const Car& o : race.cars) if (o.number == num) ord.push_back(&o);
+        float tx = 132, ty = 26;
+        P.fill(tx, ty, 160, 10, RGBA(60, 66, 80, 220));
+        P.text(tx + 3, ty - 1, "OVERALL", WHITE, 0.5f);
+        P.textR(tx + 158, ty - 1, "SQUARE: BY CLASS", DIM, 0.42f);
+        int me = 0; for (int k = 0; k < (int)ord.size(); k++) if (ord[k]->player) me = k;
+        int first = me > 12 ? me - 12 : 0;          // the top of the order, or the rows up to you
+        float lead = ord.empty() ? 0 : ord[0]->bestLap;
+        for (int k = first, row = 1; k < (int)ord.size() && row < 16; k++, row++) {
+            const Car* c = ord[k];
+            float yy = ty + row * 11;
+            if (c->player) P.fill(tx, yy, 160, 10, RGBA(255, 210, 40, 70));
+            u32 col = c->player ? RGBA(255, 220, 90) : WHITE;
+            snprintf(b, sizeof b, "%d", k + 1); P.textR(tx + 12, yy - 1, b, DIM, 0.5f);
+            P.fill(tx + 15, yy + 1, 3, 8, c->def->cls == CLASS_HYPER ? RGBA(235, 50, 45) : RGBA(255, 150, 30));   // the class colour
+            snprintf(b, sizeof b, "#%d %s", c->number, c->def->make); P.text(tx + 21, yy - 1, b, col, 0.5f);
+            if (race.session == SES_RACE) {
+                if (k == 0) snprintf(b, sizeof b, "L%d", c->lap + 1);
+                else { const Car* a = ord[0]; int laps = a->lap - c->lap; float gap = (a->total - c->total) / fmaxf(a->v, 30.0f);
+                       if (laps > 0 && a->total - c->total > race.track.length) snprintf(b, sizeof b, "+%d LAP%s", laps, laps > 1 ? "S" : "");
+                       else snprintf(b, sizeof b, "+%.1f", gap); }
+                P.textR(tx + 158, yy - 1, c->pit != PIT_NONE ? "PIT" : b, c->pit != PIT_NONE ? DIM : col, 0.5f);
+            } else if (c->bestLap > 0) {
+                if (k == 0 || lead <= 0) { formatTime(t2, c->bestLap); P.textR(tx + 158, yy - 1, t2, col, 0.5f); }
+                else { snprintf(b, sizeof b, "+%.3f", c->bestLap - lead); P.textR(tx + 158, yy - 1, b, col, 0.5f); }
+            } else P.textR(tx + 158, yy - 1, c->pit == PIT_STOP ? "garage" : "no time", DIM, 0.5f);
+        }
+    } else {
     // the timing: each class by best lap
     std::vector<int> order = race.qualifyingOrder();
     float tx = 132, ty = 26;
-    char b[48], t2[16];
+    P.textR(tx + 158, ty - 11, "SQUARE: OVERALL", DIM, 0.42f);
     int shownCls = -1, pos = 0, row = 0;
     float leadBest[2] = {0, 0};
     for (int num : order) {
@@ -704,6 +738,7 @@ void Game::screenTiming(Panel& P) {
             else { snprintf(b, sizeof b, "+%.3f", c->bestLap - leadBest[cls]); P.textR(tx + 158, yy - 1, b, col, 0.5f); }
         } else P.textR(tx + 158, yy - 1, c->pit == PIT_STOP ? "garage" : "no time", DIM, 0.5f);
         row++;
+    }
     }
     float left = fmaxf(0, race.sessionLength - race.time);
     snprintf(b, sizeof b, "%s  %d:%02d left", race.session == SES_PRACTICE ? "PRACTICE" : "QUALIFYING", (int)left / 60, (int)left % 60);
@@ -1244,8 +1279,9 @@ static void gapText(char* b, int n, const Race& r, const Car& c) {
 }
 
 void Game::drawPitWall(const Camera& cam) {
+    // the engineers' stand on the pit wall at our box: a roof over it, a desk, and three screens --
+    // live timing for the whole multi-class field, then one for each of our cars with its orders
     const Race& r = race;
-    const Car& me = r.player();
     gfx::setFog(false, 0, 1, 0);
     gfx::setProjection(M4::perspective(cam.fov, (float)SCREEN_W / SCREEN_H, 0.05f, 50.0f));
     gfx::setView(M4::lookDir(V3(0, 0, 0), cam.fwd, cam.up));
@@ -1258,125 +1294,183 @@ void Game::drawPitWall(const Camera& cam) {
         V3 xx = norm(cross(V3(0, 0, 1), z)), yy = cross(z, xx);
         return M4::basis(xx, yy, z, at);
     };
-    // the desk front, under the screens
-    R.quad3D(rel * facing(0, -0.62f, 0.9f, 0), -1.2f, -0.25f, 1.2f, 0.12f, RGBA(28, 30, 36));
-    R.quad3D(rel * facing(0, -0.505f, 0.89f, 0), -1.2f, -0.006f, 1.2f, 0.006f, RGBA(255, 150, 40));
+    // the stand: the roof's edge across the top, its two posts, the desk under the screens
+    R.quad3D(rel * facing(0, 0.47f, 0.9f, 0), -1.3f, -0.03f, 1.3f, 0.10f, RGBA(22, 24, 30));
+    R.quad3D(rel * facing(0, 0.445f, 0.9f, 0), -1.3f, -0.006f, 1.3f, 0.006f, RGBA(255, 150, 40));
+    for (int s = -1; s <= 1; s += 2) R.quad3D(rel * facing(s * 0.86f, 0.0f, 0.9f, 0), -0.025f, -0.5f, 0.025f, 0.45f, RGBA(30, 32, 38));
+    R.quad3D(rel * facing(0, -0.47f, 0.9f, 0), -1.3f, -0.12f, 1.3f, 0.06f, RGBA(28, 30, 36));
+    R.quad3D(rel * facing(0, -0.415f, 0.89f, 0), -1.3f, -0.005f, 1.3f, 0.005f, RGBA(255, 150, 40));
     const u32 W = RGBA(235, 240, 250), D = RGBA(140, 150, 170), A = RGBA(255, 150, 40), G = RGBA(255, 215, 70);
+    const u32 HYC = RGBA(230, 45, 40), GTC = RGBA(255, 150, 30);
     static const u32 TYC[TY_COUNT] = {RGBA(235, 40, 40), RGBA(250, 210, 30), RGBA(240, 240, 240), RGBA(40, 200, 60), RGBA(40, 120, 255)};
     char b[64];
     std::vector<const Car*> order(r.cars.size());
     for (auto& c : r.cars) order[c.position - 1] = &c;
-
-    // ---- screen 1: live timing (the 8 cars around ours; leader's gap, interval, tyres, stops)
-    {
-        Panel P; P.R = &R; P.vw = 252; P.vh = 172; P.k = 0.0025f;
-        P.m = facing(-0.318f, -0.16f, 0.86f, -0.03f);
+    int nTeam = r.teamCar(1) >= 0 ? 2 : 1;
+    auto screen = [&](Panel& P, float x, float toe, bool lit) {
+        P.R = &R; P.vw = 196; P.vh = 172; P.k = 0.0025f;
+        P.m = facing(x, -0.188f, 0.86f, toe);
         float w = P.vw * P.k * 0.5f, h = P.vh * P.k * 0.5f;
-        R.quad3D(rel * P.m * M4::translate(V3(0, 0, -0.006f)), -w - 0.012f, -h - 0.012f, w + 0.012f, h + 0.012f, RGBA(20, 21, 24));
+        R.quad3D(rel * P.m * M4::translate(V3(0, 0, -0.006f)), -w - 0.012f, -h - 0.012f, w + 0.012f, h + 0.012f, lit ? A : RGBA(20, 21, 24));
+        R.quad3D(rel * P.m * M4::translate(V3(0, 0, -0.004f)), -w - 0.006f, -h - 0.006f, w + 0.006f, h + 0.006f, RGBA(20, 21, 24));
         R.quad3D(rel * P.m * M4::translate(V3(0, 0, -0.003f)), -w, -h, w, h, RGBA(6, 9, 16));
+    };
+
+    // ---- screen 1, MAP tab (Square): the live track map, every car in its class colour, ours highlighted
+    if (mgrTab[0] == 1) {
+        Panel P; screen(P, -0.53f, -0.22f, mgrFocus == 0);
         P.fill(0, 0, P.vw, 15, RGBA(30, 34, 46));
-        P.text(4, 1, "LIVE TIMING", A, 0.74f);
-        float left = r.raceLeft();
-        if (left >= 0) { int s = (int)(left * r.timeScale); snprintf(b, sizeof b, "%d:%02d:%02d left", s / 3600, (s / 60) % 60, s % 60); }
-        else snprintf(b, sizeof b, "lap %d/%d", order[0]->lap + 1, r.set.laps);
-        P.textR(P.vw - 4, 1, b, W, 0.72f);
-        float y = 17;
-        P.text(4, y, "P", D, 0.64f); P.text(30, y, "DRIVER", D, 0.64f);
-        P.text(114, y, "GAP", D, 0.64f); P.text(176, y, "INT", D, 0.64f); P.text(206, y, "TYRE", D, 0.64f); P.text(240, y, "S", D, 0.64f);
-        y += 12;
-        int first = me.position - 4; if (first > (int)order.size() - 8) first = (int)order.size() - 8; if (first < 0) first = 0;
-        for (int k = 0; k < 8 && first + k < (int)order.size(); k++) {
-            const Car& c = *order[first + k];
-            const Car* ahead = first + k > 0 ? order[first + k - 1] : nullptr;
-            if (c.player) P.fill(1, y - 1, P.vw - 2, 15, RGBA(95, 64, 12));
-            u32 col = c.player ? G : W;
-            snprintf(b, sizeof b, "%d", c.position); P.text(4, y, b, col, 0.74f);
-            P.fill(22, y + 1, 3, 11, c.def->cls == CLASS_HYPER ? RGBA(230, 40, 40) : RGBA(40, 160, 255));
-            Race::driverName(c, c.driver, b, sizeof b); P.text(30, y, b, col, 0.74f);
-            if (c.pit != PIT_NONE) P.text(114, y, c.pit == PIT_STOP ? "IN PIT" : "PIT", A, 0.74f);
-            else { gapText(b, sizeof b, r, c); P.text(114, y, b, col, 0.74f); }
-            if (ahead) {
-                float g1 = r.gap(c), g0 = r.gap(*ahead);
-                int dl = r.lapsDown(c) - r.lapsDown(*ahead);
-                if (dl >= 1) snprintf(b, sizeof b, "+%dL", dl);
-                else if (g1 >= 0 && g0 >= 0) snprintf(b, sizeof b, "%.1f", fmaxf(0, g1 - g0));
-                else snprintf(b, sizeof b, "-");
-                P.text(176, y, b, D, 0.72f);
+        P.text(4, 1, "TIMING", D, 0.62f); P.fill(44, 0, 36, 15, RGBA(255, 150, 40)); P.text(48, 1, "MAP", RGBA(16, 18, 24), 0.7f);
+        float h0 = r.clockHour(); snprintf(b, sizeof b, "%02d:%02d  x%d", (int)h0, (int)(h0 * 60) % 60, (int)r.timeAccel); P.textR(P.vw - 4, 1, b, W, 0.64f);
+        const Track& T = r.track;
+        float x0 = 6, y0 = 19, bw = P.vw - 12, bh = P.vh - 19 - 18;
+        float mnx = 1e9f, mxx = -1e9f, mny = 1e9f, mxy = -1e9f;
+        for (int i = 0; i < T.n; i += 8) { const V3& q = T.pts[i].p; mnx = fminf(mnx, q.x); mxx = fmaxf(mxx, q.x); mny = fminf(mny, q.y); mxy = fmaxf(mxy, q.y); }
+        float sc = fminf((bw - 8) / fmaxf(mxx - mnx, 1.0f), (bh - 8) / fmaxf(mxy - mny, 1.0f));
+        float ox = x0 + bw * 0.5f - (mnx + mxx) * 0.5f * sc, oy = y0 + bh * 0.5f + (mny + mxy) * 0.5f * sc;
+        auto mx = [&](const V3& q) { return ox + q.x * sc; };
+        auto my = [&](const V3& q) { return oy - q.y * sc; };
+        int stepPts = T.n / 220 + 1;
+        for (int i = 0; i < T.n; i += stepPts) P.fill(mx(T.pts[i].p) - 1, my(T.pts[i].p) - 1, 2, 2, RGBA(150, 156, 170));
+        { const V3& s0 = T.pts[0].p; P.fill(mx(s0) - 1, my(s0) - 4, 2, 8, W); }        // the line
+        for (int pass = 0; pass < 2; pass++)
+            for (const Car& c : r.cars) {
+                if (c.mgr.team != (pass == 1)) continue;               // ours on top
+                V3 q = T.pts[T.index(c.s)].p;
+                if (c.mgr.team) {
+                    bool sel = &c == &r.cars[r.teamCar(mgrSel) >= 0 ? r.teamCar(mgrSel) : r.playerIdx];
+                    P.fill(mx(q) - 4, my(q) - 4, 8, 8, sel ? G : RGBA(255, 255, 255));
+                    P.fill(mx(q) - 3, my(q) - 3, 6, 6, c.def->cls == CLASS_HYPER ? HYC : GTC);
+                    snprintf(b, sizeof b, "%d", c.number); P.text(mx(q) + 5, my(q) - 6, b, sel ? G : W, 0.56f);
+                } else {
+                    u32 col = c.pit != PIT_NONE ? RGBA(90, 90, 100) : (c.def->cls == CLASS_HYPER ? HYC : GTC);
+                    P.fill(mx(q) - 1.5f, my(q) - 1.5f, 3, 3, col);
+                }
             }
-            P.fill(206, y + 2, 6, 10, TYC[c.tyre]);
-            snprintf(b, sizeof b, "%d", c.tyreLaps); P.text(215, y, b, D, 0.72f);
-            snprintf(b, sizeof b, "%d", c.stops); P.text(240, y, b, D, 0.72f);
-            y += 15;
-        }
-        // race control: the latest message as a ticker
         P.fill(0, P.vh - 14, P.vw, 14, RGBA(30, 34, 46));
-        if (!r.msgs.empty()) P.text(4, P.vh - 13, r.msgs[0].text, (r.msgs[0].color & 0xFFFFFFu) | 0xFF000000u, 0.6f);
-        else P.text(4, P.vh - 13, "Race control", D, 0.6f);
+        P.fill(4, P.vh - 10, 6, 6, HYC); P.text(13, P.vh - 13, "HYPERCAR", D, 0.56f);
+        P.fill(66, P.vh - 10, 6, 6, GTC); P.text(75, P.vh - 13, "LMGT3", D, 0.56f);
+        P.fill(116, P.vh - 11, 8, 8, G); P.text(127, P.vh - 13, "OURS", D, 0.56f);
+        P.flush(cam.eye);
+    }
+    // ---- screen 1: live timing, overall, each car tagged with its class colour
+    else {
+        Panel P; screen(P, -0.53f, -0.22f, mgrFocus == 0);
+        P.fill(0, 0, P.vw, 15, RGBA(30, 34, 46));
+        P.fill(0, 0, 52, 15, RGBA(255, 150, 40)); P.text(4, 1, "TIMING", RGBA(16, 18, 24), 0.7f); P.text(56, 1, "MAP", D, 0.62f);
+        float left = r.raceLeft();
+        if (left >= 0) { int sec = (int)(left * r.timeScale); snprintf(b, sizeof b, "%d:%02d:%02d", sec / 3600, (sec / 60) % 60, sec % 60); }
+        else snprintf(b, sizeof b, "lap %d/%d", order[0]->lap + 1, r.set.laps);
+        P.textR(P.vw - 4, 1, b, W, 0.7f);
+        float y = 17;
+        P.text(3, y, "P", D, 0.6f); P.text(26, y, "CAR", D, 0.6f); P.text(118, y, "GAP", D, 0.6f); P.text(176, y, "T", D, 0.6f);
+        y += 12;
+        // the leaders, then the rows round the selected car
+        int sel = r.teamCar(mgrSel); if (sel < 0) sel = r.playerIdx;
+        int me = r.cars[sel].position - 1;
+        int first = me - 4; if (first > (int)order.size() - 7) first = (int)order.size() - 9; if (first < 0) first = 0;
+        int rowsShown = 0;
+        for (int k = 0; k < (int)order.size() && rowsShown < 9; k++) {
+            if (k >= 2 && k < first) continue;                  // P1, P2, then the window
+            const Car& c = *order[k];
+            if (k == first && first > 2) { P.fill(3, y + 5, P.vw - 6, 1, RGBA(60, 66, 80)); }
+            bool ours = c.mgr.team;
+            if (ours) P.fill(1, y - 1, P.vw - 2, 13, &c == &r.cars[sel] ? RGBA(110, 70, 12) : RGBA(60, 46, 16));
+            u32 col = ours ? G : W;
+            snprintf(b, sizeof b, "%d", c.position); P.textR(18, y, b, col, 0.66f);
+            P.fill(21, y + 1, 3, 10, c.def->cls == CLASS_HYPER ? HYC : GTC);
+            snprintf(b, sizeof b, "#%d %s", c.number, c.def->make); P.text(27, y, b, col, 0.66f);
+            if (c.pit != PIT_NONE) P.text(118, y, c.pit == PIT_STOP ? "IN PIT" : "PIT", A, 0.66f);
+            else { gapText(b, sizeof b, r, c); P.text(118, y, b, col, 0.66f); }
+            P.fill(176, y + 2, 5, 9, TYC[c.tyre]);
+            snprintf(b, sizeof b, "%d", c.stops); P.textR(P.vw - 3, y, b, D, 0.62f);
+            y += 13; rowsShown++;
+        }
+        P.fill(0, P.vh - 14, P.vw, 14, RGBA(30, 34, 46));
+        if (!r.msgs.empty()) P.text(4, P.vh - 13, r.msgs[0].text, (r.msgs[0].color & 0xFFFFFFu) | 0xFF000000u, 0.56f);
+        else { const char* wx = r.rain < 0.05f ? "Dry" : (r.rain < 0.5f ? "Light rain" : "Heavy rain");
+               float h0 = r.clockHour(); snprintf(b, sizeof b, "%02d:%02d  %s, track %d%% wet  x%d", (int)h0, (int)(h0 * 60) % 60, wx, (int)(r.wet * 100), (int)r.timeAccel);
+               P.text(4, P.vh - 13, b, RGBA(140, 190, 255), 0.56f); }
         P.flush(cam.eye);
     }
 
-    // ---- screen 2: our car
-    {
-        Panel P; P.R = &R; P.vw = 236; P.vh = 172; P.k = 0.0025f;
-        P.m = facing(0.333f, -0.16f, 0.86f, 0.03f);
-        float w = P.vw * P.k * 0.5f, h = P.vh * P.k * 0.5f;
-        R.quad3D(rel * P.m * M4::translate(V3(0, 0, -0.006f)), -w - 0.012f, -h - 0.012f, w + 0.012f, h + 0.012f, RGBA(20, 21, 24));
-        R.quad3D(rel * P.m * M4::translate(V3(0, 0, -0.003f)), -w, -h, w, h, RGBA(6, 9, 16));
-        int clsPos = 1; for (auto& o : r.cars) if (o.def->cls == me.def->cls && o.position < me.position) clsPos++;
+    // ---- screens 2 and 3: our cars, each with its numbers and the manager's orders
+    for (int t = 0; t < 2; t++) {
+        int idx = r.teamCar(t);
+        bool selected = t == mgrSel, focused = mgrFocus == t + 1;
+        Panel P; screen(P, t == 0 ? 0.0f : 0.53f, t == 0 ? 0.0f : 0.22f, focused && idx >= 0);
+        if (idx < 0) { P.textC(P.vw / 2, P.vh / 2 - 6, t < nTeam ? "" : "ONE CAR TEAM", D, 0.7f); P.flush(cam.eye); continue; }
+        const Car& c = r.cars[idx];
+        const MgrOrders& o = c.mgr;
         P.fill(0, 0, P.vw, 15, RGBA(30, 34, 46));
-        snprintf(b, sizeof b, "#%d %s", me.number, me.def->model); P.text(4, 1, b, G, 0.74f);
-        snprintf(b, sizeof b, "P%d  class P%d", me.position, clsPos); P.textR(P.vw - 4, 1, b, W, 0.72f);
-        float y = 18;
-        auto bar = [&](float x, float yy, float ww, float v, u32 c) { P.fill(x, yy, ww, 7, RGBA(40, 44, 54)); P.fill(x, yy, ww * clampf(v, 0, 1), 7, c); };
-        float lf = r.lapFuel(me);
-        int lapsFuel = lf > 0 ? (int)(me.fuel / lf) : 0;
-        P.text(4, y, "FUEL", D, 0.72f);
-        bar(48, y + 3, 70, me.fuel, me.fuel > 0.15f ? RGBA(80, 180, 255) : RGBA(250, 60, 40));
-        snprintf(b, sizeof b, "%d%%  %d laps", (int)(me.fuel * 100), lapsFuel); P.text(124, y, b, W, 0.72f);
-        y += 15;
-        float life = 1 - me.wear;
-        P.text(4, y, "TYRES", D, 0.72f);
-        bar(48, y + 3, 70, life, life > 0.4f ? RGBA(80, 220, 90) : (life > 0.15f ? RGBA(250, 200, 40) : RGBA(250, 60, 40)));
-        P.fill(124, y + 2, 6, 10, TYC[me.tyre]);
-        snprintf(b, sizeof b, "%s %d laps", TYRE_NAME[me.tyre], me.tyreLaps); P.text(134, y, b, W, 0.72f);
-        y += 15;
-        snprintf(b, sizeof b, "DAMAGE %d%%%s", (int)(me.damage() * 100), me.noseOff ? " nose" : (me.wingOff ? " wing" : ""));
-        P.text(4, y, b, me.damage() > 0.3f ? RGBA(255, 120, 60) : D, 0.72f);
-        static const char* MP[MAP_COUNT] = {"SC", "NORMAL", "ATTACK"};
-        snprintf(b, sizeof b, "MAP %s", MP[me.su.map]); P.textR(P.vw - 4, y, b, D, 0.64f);
-        y += 15;
+        P.fill(0, 0, 4, 15, c.def->cls == CLASS_HYPER ? HYC : GTC);
+        snprintf(b, sizeof b, "#%d", c.number); P.text(7, 1, b, selected ? G : W, 0.7f);
+        snprintf(b, sizeof b, "P%d %s  OVR %d", r.classPosition(c), c.def->cls == CLASS_HYPER ? "HY" : "GT3", c.position); P.textR(P.vw - 4, 1, b, W, 0.6f);
+        bool drvTab = mgrTab[t + 1] == 1;
+        P.fill(drvTab ? 76 : 32, 0, drvTab ? 46 : 42, 15, RGBA(255, 150, 40));
+        P.text(35, 1, "ORDERS", drvTab ? D : RGBA(16, 18, 24), 0.56f);
+        P.text(79, 1, "DRIVERS", drvTab ? RGBA(16, 18, 24) : D, 0.56f);
+        float y = 17;
+        auto bar = [&](float x, float yy, float ww, float v, u32 col) { P.fill(x, yy, ww, 6, RGBA(40, 44, 54)); P.fill(x, yy, ww * clampf(v, 0, 1), 6, col); };
+        float lf = r.lapFuel(c); int lapsFuel = lf > 0 ? (int)(c.fuel / lf) : 0;
+        P.text(4, y, "FUEL", D, 0.62f); bar(38, y + 3, 64, c.fuel, c.fuel > 0.15f ? RGBA(80, 180, 255) : RGBA(250, 60, 40));
+        snprintf(b, sizeof b, "%d%% %dL", (int)(c.fuel * 100), lapsFuel); P.textR(P.vw - 4, y, b, W, 0.62f);
+        y += 12;
+        float life = 1 - c.wear;
+        P.text(4, y, "TYRE", D, 0.62f); bar(38, y + 3, 64, life, life > 0.4f ? RGBA(80, 220, 90) : (life > 0.15f ? RGBA(250, 200, 40) : RGBA(250, 60, 40)));
+        P.fill(106, y + 2, 5, 9, TYC[c.tyre]);
+        snprintf(b, sizeof b, "%s %dL", TYRE_NAME[c.tyre], c.tyreLaps); P.textR(P.vw - 4, y, b, W, 0.62f);
+        y += 12;
+        { char nm[24]; Race::driverName(c, c.driver, nm, sizeof nm); const Driver& d = c.drv[c.driver];
+          P.text(4, y, nm, W, 0.62f); bar(84, y + 3, 40, d.fatigue, d.fatigue < 0.45f ? RGBA(80, 220, 90) : (d.fatigue < 0.7f ? RGBA(250, 200, 40) : RGBA(250, 60, 40)));
+          snprintf(b, sizeof b, "%d:%02d", (int)c.stint / 3600, ((int)c.stint / 60) % 60);
+          P.textR(P.vw - 4, y, b, c.stint > (MAX_STINT_H - 0.5f) * 3600 ? RGBA(255, 120, 60) : D, 0.62f); }
+        y += 12;
+        if (c.pit != PIT_NONE) snprintf(b, sizeof b, "%s", c.pit == PIT_STOP ? "IN THE BOX" : "PIT LANE");
+        else if (c.lastLap > 0) { char t1[16]; formatTime(t1, c.lastLap); snprintf(b, sizeof b, "LAST %s  DMG %d%%", t1, (int)(c.damage() * 100)); }
+        else snprintf(b, sizeof b, "DMG %d%%", (int)(c.damage() * 100));
+        P.text(4, y, b, c.pit != PIT_NONE ? A : D, 0.62f);
+        y += 13;
         P.fill(3, y - 2, P.vw - 6, 1, RGBA(60, 66, 80));
-        for (int k = 0; k < DRIVERS_PER_CAR; k++) {
-            const Driver& d = me.drv[k];
-            char nm[24]; Race::driverName(me, k, nm, sizeof nm);
-            snprintf(b, sizeof b, "%s%s", k == me.driver ? ">" : " ", nm);
-            P.text(4, y, b, k == me.driver ? W : D, 0.72f);
-            bar(104, y + 3, 64, d.fatigue, d.fatigue < 0.45f ? RGBA(80, 220, 90) : (d.fatigue < 0.7f ? RGBA(250, 200, 40) : RGBA(250, 60, 40)));
-            if (k == me.driver) snprintf(b, sizeof b, "%d:%02d", (int)me.stint / 3600, ((int)me.stint / 60) % 60);
-            else snprintf(b, sizeof b, "%.1fh", d.hours);
-            P.textR(P.vw - 4, y, b, k == me.driver && me.stint > (MAX_STINT_H - 0.5f) * 3600 ? RGBA(255, 120, 60) : D, 0.72f);
-            y += 15;
+        if (drvTab) {
+            // DRIVERS: the three of them -- who's in, how tired, hours driven against the limits
+            for (int k = 0; k < DRIVERS_PER_CAR; k++) {
+                const Driver& d = c.drv[k];
+                char nm[24]; Race::driverName(c, k, nm, sizeof nm);
+                bool in = k == c.driver;
+                if (in) P.fill(2, y - 1, P.vw - 4, 25, RGBA(60, 46, 16));
+                snprintf(b, sizeof b, "%s%s", in ? "> " : "  ", nm); P.text(4, y, b, in ? G : W, 0.64f);
+                if (c.mgr.driver == k) P.textR(P.vw - 4, y, "NEXT", A, 0.56f);
+                y += 12;
+                P.text(14, y, "TIRED", D, 0.54f);
+                bar(46, y + 3, 50, d.fatigue, d.fatigue < 0.45f ? RGBA(80, 220, 90) : (d.fatigue < 0.7f ? RGBA(250, 200, 40) : RGBA(250, 60, 40)));
+                snprintf(b, sizeof b, "%.1f / %.0f h", d.hours, (float)MAX_DRIVE_H); P.textR(P.vw - 4, y, b, d.hours > MAX_DRIVE_H - 1.5f ? RGBA(255, 120, 60) : D, 0.56f);
+                y += 14;
+            }
+            snprintf(b, sizeof b, "Stint limit %.0f h, in the car %d:%02d", (float)MAX_STINT_H, (int)c.stint / 3600, ((int)c.stint / 60) % 60);
+            P.text(4, y + 2, b, D, 0.54f);
+            P.flush(cam.eye);
+            continue;
         }
-        P.fill(3, y - 1, P.vw - 6, 1, RGBA(60, 66, 80));
-        y += 2;
-        const char* wx = r.rain < 0.05f ? "Dry" : (r.rain < 0.5f ? "Light rain" : (r.storm ? "Storm" : "Heavy rain"));
-        if (r.wet > 0.05f) snprintf(b, sizeof b, "%s, track %d%% wet", wx, (int)(r.wet * 100));
-        else snprintf(b, sizeof b, "%s, rubber %d%%", wx, (int)(r.rubber * 100));
-        P.text(4, y, b, RGBA(140, 190, 255), 0.72f);
-        float h0 = r.clockHour(); snprintf(b, sizeof b, "%02d:%02d", (int)h0, (int)(h0 * 60) % 60); P.textR(P.vw - 4, y, b, D, 0.72f);
-        y += 15;
-        const char* call;
-        if (me.pit != PIT_NONE) call = "In the pits";
-        else if (me.wantPit) call = "BOX THIS LAP";
-        else if (lapsFuel <= 2) call = "Box soon: fuel";
-        else if (life < 0.3f) call = "Box soon: tyres";
-        else if (me.drv[me.driver].fatigue > 0.7f) call = "Driver tired: change him";
-        else call = nullptr;
-        if (call) P.text(4, y, call, A, 0.74f);
-        else { snprintf(b, sizeof b, "Next stop in ~%d laps", lapsFuel > 1 ? lapsFuel - 1 : 1); P.text(4, y, b, D, 0.72f); }
-        P.fill(0, P.vh - 14, P.vw, 14, RGBA(30, 34, 46));
-        snprintf(b, sizeof b, "x%d", (int)r.timeAccel); P.text(4, P.vh - 13, b, RGBA(120, 200, 255), 0.66f);
-        if (me.lastLap > 0) { char t1[16], t2[16]; formatTime(t1, me.lastLap); formatTime(t2, me.bestLap); snprintf(b, sizeof b, "last %s  best %s", t1, t2); P.textR(P.vw - 4, P.vh - 13, b, W, 0.64f); }
+        // the orders
+        static const char* PACE[MAP_COUNT] = {"SAVE", "NORMAL", "PUSH"};
+        char v[7][40], nm[24];
+        snprintf(v[0], 40, "PACE  < %s >", PACE[c.su.map]);
+        snprintf(v[1], 40, "BOX THIS LAP  < %s >", c.wantPit ? "YES" : "NO");
+        snprintf(v[2], 40, "TYRES  < %s >", o.tyre < 0 ? "TEAM" : (o.tyre >= TY_COUNT ? "NO CHANGE" : TYRE_NAME[o.tyre]));
+        if (o.fuel < 0) snprintf(v[3], 40, "FUEL  < TEAM >"); else snprintf(v[3], 40, "FUEL  < %d%% >", o.fuel);
+        if (o.driver < 0) snprintf(v[4], 40, "DRIVER  < TEAM >");
+        else { Race::driverName(c, o.driver, nm, sizeof nm); snprintf(v[4], 40, "DRIVER  < %s >", nm); }
+        snprintf(v[5], 40, "STRATEGY  < %s >", o.autoStrat ? "TEAM" : "MINE");
+        bool canDrive = r.canTakeOver(idx);
+        snprintf(v[6], 40, canDrive ? "X  DRIVE" : "DRIVE  (in the box)");
+        for (int k = 0; k < 7; k++) {
+            if (focused && k == mgrRow) P.fill(2, y - 1, P.vw - 4, 12, RGBA(255, 150, 40, 220));
+            u32 col = focused && k == mgrRow ? RGBA(16, 18, 24) : (k == 6 ? (canDrive ? G : D) : W);
+            if (k == 1 && c.wantPit && !(focused && k == mgrRow)) col = A;
+            P.text(6, y, v[k], col, 0.62f);
+            y += 12;
+        }
         P.flush(cam.eye);
     }
     gfx::setDepthTest(true);

@@ -54,6 +54,10 @@ struct CarSetup {
     float bias() const { return brakeF / (float)(brakeF + brakeR); }
 };
 
+// team manager (EMR's manager mode): the team's orders for one of our cars. Pace is the car's engine
+// map; tyre / fuel / driver are the plan for its next stop (-1: the team decides), cleared after it
+struct MgrOrders { bool team = false; bool autoStrat = true; int tyre = -1; int fuel = -1; int driver = -1; };
+
 struct PitPlan { int tyre = TY_MEDIUM; bool tyres = true; float fuel = 1; bool repair = true; bool swapDriver = false; bool aiDrives = false;
                  int nextDriver = 0; };   // who drives the next stint (the player's car: 0 = you, 1-2 = team-mates, driven by the AI)
 
@@ -153,6 +157,7 @@ struct Car {
     bool hold = false;            // the intro: this car stands still where it was put (not driven)
     CarBody body;                 // (save version 7) suspension and the car in the air
     CarRel rel;                   // (save version 8) temperatures, slipstream, mechanical problems, retirement
+    MgrOrders mgr;                // (save version 9) our team's cars: the manager's orders
 
     float damage() const { float m = 0; for (float x : dmg) m = m > x ? m : x; return m; }
 };
@@ -391,6 +396,12 @@ struct Race {
     float lapGap(float sFrom, float sTo) const { float g = track.wrap(sTo - sFrom); return g > track.length * 0.5f ? g - track.length : g; }
     void qtePress(int button);                  // a face button during a manual stop
     bool manualStop(const Car& c) const;
+    // team manager: our cars run by the AI while we watch from the pit wall
+    bool managing() const { return player().mgr.team && player().plan.aiDrives && session == SES_RACE; }
+    int teamCar(int k) const;                   // index of our k-th car (0: the one we drive), -1 if none
+    void startManager();                        // the race begins with the team's drivers in our car
+    bool canTakeOver(int idx) const;            // our car stopped in its box: we can get in
+    void takeOver(int idx);                     // ... and we drive it from here (the other one stays with the team)
     bool save(const char* path) const;
     bool load(const char* path);
     // time trial (set.timeTrial): no other cars, always dry, a lap that leaves the track or spins

@@ -128,6 +128,12 @@ jobs:
         env:
           ASAN_OPTIONS: detect_leaks=0
         run: ./emr_test_asan timetrial 3 2 3 shots 2>&1 | grep -E "^lap|reload"
+      - name: Team manager (orders, a stop on the manager's plan, DRIVE, no button reaches the car)
+        env:
+          ASAN_OPTIONS: detect_leaks=0
+        run: |
+          set -o pipefail
+          ./emr_test_asan manager imola 2 shots 2>&1 | grep -E "^manager"
       - name: Cars, replay, steering help
         env:
           ASAN_OPTIONS: detect_leaks=0

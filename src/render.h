@@ -15,6 +15,8 @@ struct Camera { V3 eye, fwd, up; float fov = 60; };
 struct Renderer {
     float sceneAspect = (float)SCREEN_W / SCREEN_H;   // drawScene's width / height (the mirror is wider)
     bool sceneMirrorX = false;                       // drawScene flipped left-right (a mirror)
+    bool hudManage = false;                          // drawHUD: managing (the team panel and the controls take the bottom)
+    int hideCar = -1;                                // drawScene: leave this car out (the manager's dashcam is inside it)
     bool sceneLite = false;                          // drawScene: road and cars only (the mirror)
     Model carModel[48];
     bool carLoaded[48] = {};
@@ -88,6 +90,10 @@ struct Renderer {
     Camera camera(const Race& r, int mode, float dt, bool lookBack);
     void drawScene(const Race& r, const Camera& cam, bool hidePlayer);
     void drawCockpit(const Race& r, const Camera& cam);
+    // team manager: a broadcast-style camera on the dash of one of our cars, looking out over the nose
+    Camera dashCamera(const Race& r, int idx, float dt);
+    void drawDashcam(const Race& r, int idx, const Camera& cam);
+    float dashShake = 0;
     void drawCabin(const Car& c, const Camera& cam, M4& car, M4& wheelM, const Race* race = nullptr);
     // windscreen wiper and rain drops on the glass (cockpit view)
     struct Screen { bool done = false, ok = false; V3 base, top; float halfW = 0, h = 0; };

@@ -91,7 +91,16 @@ struct Game {
     }
     bool aiDrivesPlayer = false;  // used by the PC test build
     double trafficStuck = 0;      // tests
-    bool wallView = true;         // managing: Circle swaps between the pit wall and the TV pictures
+    bool wallView = true;         // (old) managing: the pit wall or the TV pictures -- now mgrCam
+    // team manager (EMR's manager mode): the race settings' role, the camera (0 the pit wall stand at our
+    // box, 1 TV, 2 the dashcam), which of our two cars is selected (L / R) and the order row (up / down)
+    bool mgrMode = false;
+    int mgrCam = 0, mgrSel = 0, mgrRow = 0;
+    // the pit wall's screens: the d-pad's left / right moves the focus (0 timing, 1 and 2 our cars), L / R
+    // switch the focused screen's tab (timing: TIMING / MAP; a car: ORDERS / DRIVERS)
+    int mgrFocus = 1, mgrTab[3] = {0, 0, 0};
+    void updateManager(const Pad& p);
+    void drawDashOverlay(int idx);
     float accum = 0;
     int saveSlot = 0;
     char note[64] = "";           // short confirmation shown on the team / load screens
@@ -102,6 +111,7 @@ struct Game {
     float fps = 60, lastDt = 1.0f / 60;
     // in-car menus: race settings on the tablet, car setup on the diagnostics computer to the right
     bool setupPage = false; float look = 0; int setupSel = 0;
+    bool timingOverall = false;      // garage TIMING tab: the whole field in one order (Square) instead of by class
     int setupTab = 0;                // the diagnostics computer at the track: 0 SETUP, 1 WEATHER, 2 TIMING (L / R)
     float podiumScr[3][2] = {{240, 120}, {150, 140}, {330, 150}};   // the winners' heads on screen (champagne)
     // garage camera

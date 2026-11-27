@@ -97,6 +97,8 @@ void Game::startSession(Session ses) {
     if (!raceLoaded) { screen = SCR_TRACK; return; }
     afterLoad();
     if (ttMode) { char gp[64]; ghostPath(gp, sizeof gp); race.loadGhost(gp); }
+    // team manager: the race starts with our drivers in both cars, seen from the pit wall
+    if (mgrMode && ses == SES_RACE && !ttMode && !aiDrivesPlayer) { race.startManager(); mgrCam = 0; mgrSel = 0; mgrRow = 0; }
     screen = SCR_RACE;
     if (ses != SES_RACE && !aiDrivesPlayer) {
         // practice and qualifying start in the garage, at the diagnostics computer
@@ -444,14 +446,15 @@ void Game::updateRace(float dt, const Pad& p) {
     Car& me = race.player();
     bool manage = me.plan.aiDrives && !aiDrivesPlayer;
     if (pressed(p, &Pad::start) || tapIn(p, SCREEN_W - 130, 0, SCREEN_W, 50)) { screen = SCR_PAUSE; sel = 0; raceAudio(); return; }
-    if (tapIn(p, 0, SCREEN_H - 90, 92, SCREEN_H) && !race.qte.on) race.cycleMap();      // tap the track map
+    if (manage && race.session == SES_RACE) updateManager(p);
+    if (tapIn(p, 0, SCREEN_H - 90, 92, SCREEN_H) && !race.qte.on && !manage) race.cycleMap();      // tap the track map
     if (manage) {
         // managing: the team's driver races; Triangle changes the speed of time
         if (pressed(p, &Pad::triangle)) {
             int k = 0; for (int i = 0; i < 5; i++) if (ACCEL[i] == (int)race.timeAccel) k = i;
             race.timeAccel = (float)ACCEL[(k + 1) % 5];
         }
-        if (pressed(p, &Pad::circle)) wallView = !wallView;      // pit wall <-> TV pictures
+        if (pressed(p, &Pad::circle)) mgrCam = (mgrCam + 1) % 3;   // the pit wall -> TV -> the dashcam
     } else {
         race.timeAccel = 1;
         if (race.qte.on) {
@@ -468,7 +471,7 @@ void Game::updateRace(float dt, const Pad& p) {
     if (bindPressed(p, ACT_MAP) && !manage && !race.qte.on) race.cycleMap();
     if (bindPressed(p, ACT_DRS) && !manage && !race.qte.on) race.drsPress = true;
     // pit request: box this lap (press again to cancel)
-    if (bindPressed(p, ACT_PIT) && me.pit == PIT_NONE && !me.finished) {
+    if (bindPressed(p, ACT_PIT) && me.pit == PIT_NONE && !me.finished && !manage) {
         me.wantPit = !me.wantPit;
         race.message(me.wantPit ? (race.session == SES_RACE ? "Box this lap - copy" : "Come in - to the garage") : "Stay out", RGBA(255, 220, 60), me.wantPit ? RADIO_BOX_ACK : -1);
     }
@@ -534,6 +537,8 @@ void Game::updateRace(float dt, const Pad& p) {
     if (p.rstickY > 0) brk = fmaxf(brk, clampf((p.rstickY - 0.10f) / 0.85f, 0, 1));
     int shift = (bindPressed(p, ACT_GEAR_UP) ? 1 : 0) - (bindPressed(p, ACT_GEAR_DOWN) ? 1 : 0);
     race.steerHelp = cfg.help();
+    // managing: the buttons give the team's orders, never the car's controls (whatever they are bound to)
+    if (manage) { thr = brk = 0; shift = 0; steer = 0; }
     if (race.qte.on) { thr = 0; brk = 0; shift = 0; }
     // time: 60 steps a second; sped up by taking more (and at 4x+ longer) steps per frame
     int accel = (int)race.timeAccel;
@@ -790,7 +795,11 @@ void Game::update(float dt, const Pad& p) {
             if (sel == 4) set.startPos = cyc(set.startPos, 3);
             if (sel == 5) set.startType = (set.startType + (dx < 0 ? 3 : 1)) % 4;   // rolling (the norm), standing, the classic Le Mans start
             if (sel == 6) set.weather = cyc(set.weather, 4);
-            if (sel == 7) set.manualPits = !set.manualPits;
+            if (sel == 7) {      // role: driver with manual stops -> driver, auto crew -> team manager
+                int role = mgrMode ? 2 : (set.manualPits ? 0 : 1);
+                role = (role + dx + 3) % 3;
+                mgrMode = role == 2; set.manualPits = role == 0;
+            }
             if (sel == 8) set.manualGears = !set.manualGears;
             if (sel == 9) cam = cyc(cam, CAM_COUNT);
             if (sel == 10) set.weekend = !set.weekend;
@@ -825,6 +834,7 @@ void Game::update(float dt, const Pad& p) {
         if (pressed(p, &Pad::start)) { screen = SCR_PAUSE; sel = 0; break; }
         if (pressed(p, &Pad::r)) setupTab = (setupTab + 1) % 3;                         // SETUP, WEATHER, TIMING
         if (pressed(p, &Pad::l)) setupTab = (setupTab + 2) % 3;
+        if (setupTab == 2 && pressed(p, &Pad::square)) timingOverall = !timingOverall;   // by class <-> overall
         int act = setupTab != 0 ? (ok ? 1 : 0) : updateSetup(dx, dy, ok, back, true);   // (weather tab: X drives out)
         if (act == 1) { race.leaveGarage(set.setup); race.timeAccel = 1; screen = SCR_RACE; R.camInit = false; }
         if (act == 2) { race.flyingLap(set.setup); race.timeAccel = 1; screen = SCR_RACE; R.camInit = false; }
@@ -949,20 +959,28 @@ void Game::drawRaceView() {
     gfx::beginFrame(R.skyColour(race));
     Camera c;
     int mode = manage ? CAM_TV : cam;
-    bool wall = manage && wallView && screen != SCR_REEL;
+    bool wall = manage && mgrCam == 0 && screen != SCR_REEL;
+    // the manager's dashcam (only when managing): on the dash of the car selected with L / R
+    bool dash = manage && mgrCam == 2 && screen == SCR_RACE || (manage && mgrCam == 2 && (screen == SCR_PAUSE || screen == SCR_TEAM));
+    int watch = race.playerIdx;
+    if (manage && screen != SCR_REEL) { int w = race.teamCar(mgrSel); if (w >= 0) watch = w; }
     // pit stops and the garage moves: the cinematic camera (Settings)
     bool cine = !manage && screen != SCR_REEL && screen != SCR_RESULTS && cfg.pitCam == 0 && me.pit == PIT_STOP && !aiDrivesPlayer;
     if (cine) { mode = CAM_TV + 1; c = R.cinematicCamera(race, me, race.time); }
     else if (wall) c = pitWallCamera();
-    else if (mode == CAM_TV) c = R.tvCamera(race, screen == SCR_REEL ? reelFocus : race.playerIdx, 1.0f / 60);
+    else if (dash) c = R.dashCamera(race, watch, 1.0f / 60);
+    else if (mode == CAM_TV) c = R.tvCamera(race, screen == SCR_REEL ? reelFocus : watch, 1.0f / 60);
     else c = R.camera(race, mode, screen == SCR_RACE ? 1.0f / 60 : 0, held(prev, ACT_LOOK_BACK) && screen == SCR_RACE && !race.qte.on);
-    if (screen == SCR_REPLAY || screen == SCR_PHOTO) { c = viewCam; mode = viewMode; cine = false; wall = false; }
+    if (screen == SCR_REPLAY || screen == SCR_PHOTO) { c = viewCam; mode = viewMode; cine = false; wall = false; dash = false; }
     bool cockpit = mode == CAM_COCKPIT;
+    if (dash) R.drawDashcam(race, watch, c);
+    else {
     R.drawScene(race, c, cockpit);
     R.drawMarshalFlags(race, c);
     // in the car the cabin's night darkness goes over the whole screen, so the outside gets less here
     R.drawNight(race, cockpit ? R.cabinDark(race) : 0);
-    if (!cockpit) {
+    }
+    if (!cockpit && !dash) {
         // lights after the darkness, so they glow
         M4 proj = M4::perspective(c.fov, (float)SCREEN_W / SCREEN_H, 0.8f, 1600.0f), view = M4::lookDir(V3(0, 0, 0), c.fwd, c.up);
         gfx::setProjection(proj); gfx::setView(view);
@@ -1025,36 +1043,145 @@ void Game::drawRaceView() {
     }
 }
 
+// ------------------------------------------------------------------ team manager (EMR's manager mode)
+// L / R pick one of our two cars, up / down an order on its screen on the pit wall, left / right (or X)
+// change it. The orders: pace (the engine map), box this lap, the next stop's tyres, fuel and driver,
+// the team's strategy on or off, and DRIVE -- get in while the car is stopped in its box.
+void Game::updateManager(const Pad& p) {
+    int nCars = race.teamCar(1) >= 0 ? 2 : 1;
+    // left / right: the focused screen on the pit wall (the timing screen, then our cars); on TV and the
+    // dashcam, which have no screens, our cars only
+    int fx = (pressed(p, &Pad::right) ? 1 : 0) - (pressed(p, &Pad::left) ? 1 : 0);
+    if (fx) {
+        int lo = mgrCam == 0 ? 0 : 1, n = nCars + 1 - lo;
+        mgrFocus = lo + ((mgrFocus - lo + fx) % n + n) % n;
+        if (mgrFocus > 0 && mgrFocus - 1 != mgrSel) { mgrSel = mgrFocus - 1; R.tvInit = false; }
+    }
+    if (mgrFocus > nCars || (mgrCam != 0 && mgrFocus == 0)) mgrFocus = mgrSel + 1;
+    if (mgrSel >= nCars) mgrSel = 0;
+    // L / R: the focused screen's tab
+    if (pressed(p, &Pad::l) || pressed(p, &Pad::r)) mgrTab[mgrFocus] ^= 1;
+    if (mgrFocus == 0 || mgrTab[mgrFocus] != 0) return;          // the orders are on a car's ORDERS tab
+    const int ROWS = 7;
+    if (pressed(p, &Pad::up)) mgrRow = (mgrRow + ROWS - 1) % ROWS;
+    if (pressed(p, &Pad::down)) mgrRow = (mgrRow + 1) % ROWS;
+    // X: the next value (or do it: box, DRIVE), Square: the one before
+    int dx = (pressed(p, &Pad::cross) ? 1 : 0) - (pressed(p, &Pad::square) ? 1 : 0);
+    bool ok = pressed(p, &Pad::cross);
+    int idx = race.teamCar(mgrSel);
+    if (idx < 0) return;
+    Car& c = race.cars[idx];
+    if (!dx && !ok) return;
+    int step = dx ? dx : 1;
+    auto cyc = [&](int v, int lo, int hi) { int n = hi - lo + 1; return lo + ((v - lo + step) % n + n) % n; };
+    MgrOrders& o = c.mgr;
+    char b[64];
+    switch (mgrRow) {
+    case 0:      // pace: save / normal / push (the engine map)
+        c.su.map = cyc(c.su.map, 0, MAP_COUNT - 1);
+        snprintf(b, sizeof b, "#%d: %s", c.number, c.su.map == MAP_SC ? "save fuel" : (c.su.map == MAP_ATTACK ? "push now" : "normal pace"));
+        race.message(b, RGBA(120, 200, 255));
+        break;
+    case 1:      // box this lap
+        if (c.pit != PIT_NONE || c.finished) break;
+        c.wantPit = !c.wantPit;
+        snprintf(b, sizeof b, "#%d: %s", c.number, c.wantPit ? "box this lap" : "stay out");
+        race.message(b, RGBA(255, 220, 60), c.wantPit && c.player ? RADIO_BOX_ACK : -1);
+        break;
+    case 2: o.tyre = cyc(o.tyre, -1, TY_COUNT); if (o.tyre >= 0) o.autoStrat = false; break;     // -1 team, TY_COUNT no change
+    case 3: { static const int F[5] = {-1, 25, 50, 75, 100}; int k = 0; for (int i = 0; i < 5; i++) if (F[i] == o.fuel) k = i;
+              k = ((k + step) % 5 + 5) % 5; o.fuel = F[k]; if (o.fuel >= 0) o.autoStrat = false; break; }
+    case 4: o.driver = cyc(o.driver, -1, DRIVERS_PER_CAR - 1); if (o.driver >= 0) o.autoStrat = false; break;
+    case 5: o.autoStrat = !o.autoStrat; if (o.autoStrat) o.tyre = o.fuel = o.driver = -1; break;
+    case 6:      // DRIVE: only while the car stands in its box
+        if (!ok) break;
+        if (race.canTakeOver(idx)) {
+            race.takeOver(idx);
+            mgrSel = 0; R.hdCar = (int)(race.player().def - CARS); R.camInit = false;
+            race.timeAccel = 1; accum = 0;
+        } else { snprintf(note, sizeof note, "DRIVE: when the car is stopped in its box"); noteT = 2.0f; }
+        break;
+    }
+}
+
+// the dashcam's broadcast graphics: the car, its driver, speed, gear, revs, throttle and brake
+void Game::drawDashOverlay(int idx) {
+    const Car& c = race.cars[idx];
+    gfx::setDepthTest(false); gfx::setBlend(true);
+    char b[64], nm[24];
+    u32 cc = c.def->cls == CLASS_HYPER ? RGBA(230, 45, 40) : RGBA(255, 150, 30);
+    // top left: ONBOARD, the class, the car and its driver
+    gfx::drawFill2D(8, 8, 168, 34, RGBA(0, 0, 0, 170));
+    gfx::drawFill2D(8, 8, 4, 34, cc);
+    R.font.draw(16, 8, "ONBOARD", RGBA(255, 210, 60), 0.62f);
+    R.font.draw(66, 8, c.def->cls == CLASS_HYPER ? "HYPERCAR" : "LMGT3", cc, 0.58f);
+    snprintf(b, sizeof b, "#%d %s %s", c.number, c.def->make, c.def->model);
+    R.font.draw(16, 19, b, WHITE, 0.72f);
+    Race::driverName(c, c.driver, nm, sizeof nm);
+    snprintf(b, sizeof b, "P%d %s  OVR %d   %s", race.classPosition(c), c.def->cls == CLASS_HYPER ? "HY" : "GT3", c.position, nm);
+    R.font.draw(16, 30, b, DIM, 0.58f);
+    // bottom right: speed and gear over a rev bar, throttle and brake
+    float x = SCREEN_W - 128, y = SCREEN_H - 60;
+    gfx::drawFill2D(x, y, 120, 40, RGBA(0, 0, 0, 170));
+    snprintf(b, sizeof b, "%d", (int)(c.v * 3.6f + 0.5f));
+    R.font.drawRight(x + 70, y + 2, b, WHITE, 1.5f);
+    R.font.draw(x + 73, y + 12, "KM/H", DIM, 0.5f);
+    snprintf(b, sizeof b, "%d", c.gear); R.font.drawCentre(x + 104, y + 2, c.gear == 0 ? "N" : b, RGBA(255, 220, 60), 1.5f);
+    float rpmF = clampf((c.rpm - c.def->idleRpm) / (c.def->maxRpm - c.def->idleRpm), 0, 1);
+    gfx::drawFill2D(x + 6, y + 27, 108, 3, RGBA(50, 54, 64));
+    gfx::drawFill2D(x + 6, y + 27, 108 * rpmF, 3, rpmF > 0.92f ? RGBA(255, 60, 40) : RGBA(80, 200, 255));
+    gfx::drawFill2D(x + 6, y + 33, 52, 3, RGBA(50, 54, 64)); gfx::drawFill2D(x + 6, y + 33, 52 * clampf(c.throttle, 0, 1), 3, RGBA(70, 220, 90));
+    gfx::drawFill2D(x + 62, y + 33, 52, 3, RGBA(50, 54, 64)); gfx::drawFill2D(x + 62, y + 33, 52 * clampf(c.brake, 0, 1), 3, RGBA(240, 60, 50));
+    // the race clock and our place, top right
+    if (race.raceLeft() >= 0) {
+        int sec = (int)(race.raceLeft() * race.timeScale);
+        snprintf(b, sizeof b, "%d:%02d:%02d", sec / 3600, (sec / 60) % 60, sec % 60);
+        gfx::drawFill2D(SCREEN_W - 84, 8, 76, 16, RGBA(0, 0, 0, 170));
+        R.font.drawCentre(SCREEN_W - 46, 8, b, WHITE, 0.8f);
+    }
+    if (c.pit != PIT_NONE) R.font.drawCentre(SCREEN_W / 2, 50, c.pit == PIT_STOP ? "IN THE BOX" : "PIT LANE", RGBA(255, 220, 60), 1.0f);
+    gfx::setBlend(false); gfx::setDepthTest(true);
+}
+
 void Game::drawManage(bool wall) {
     // team view: the order, our car's status, controls (on the pit wall the screens show all that)
     gfx::setDepthTest(false); gfx::setBlend(true);
-    const Car& me = race.player();
     char b[96];
     if (wall) {
         gfx::drawFill2D(0, SCREEN_H - 18, SCREEN_W, 18, RGBA(0, 0, 0, 150));
-        snprintf(b, sizeof b, "TRIANGLE time x%d   O  TV view   %s  %s   START pause", (int)race.timeAccel, BUTTON_NAME[cfg.bind[ACT_PIT]], me.wantPit ? "cancel pit" : "pit (take over)");
-        R.font.drawCentre(SCREEN_W / 2, SCREEN_H - 17, b, DIM, 0.68f);
+        static const char* CAMN[3] = {"PIT WALL", "TV", "DASHCAM"};
+        if (mgrCam == 0) snprintf(b, sizeof b, "D-PAD screen / order   X SQUARE change   L R tab   TRIANGLE x%d   O %s", (int)race.timeAccel, CAMN[1]);
+        else snprintf(b, sizeof b, "LEFT RIGHT car   UP DOWN order   X SQUARE change   TRIANGLE x%d   O %s", (int)race.timeAccel, CAMN[(mgrCam + 1) % 3]);
+        R.font.drawCentre(SCREEN_W / 2, SCREEN_H - 17, b, DIM, 0.6f);
         gfx::setBlend(false);
         return;
     }
-    gfx::drawFill2D(SCREEN_W - 150, 72, 144, 150, RGBA(0, 0, 0, 150));
+    gfx::drawFill2D(SCREEN_W - 150, 72, 144, 156, RGBA(0, 0, 0, 150));
+    int wi = race.teamCar(mgrSel); if (wi < 0) wi = race.playerIdx;
+    const Car& w = race.cars[wi];
     R.font.draw(SCREEN_W - 144, 74, "TEAM VIEW", ACC, 0.8f);
+    snprintf(b, sizeof b, "#%d", w.number); R.font.drawRight(SCREEN_W - 10, 74, b, GOLD, 0.8f);
     std::vector<const Car*> order(race.cars.size());
     for (auto& c : race.cars) order[c.position - 1] = &c;
-    int first = me.position - 4; if (first < 0) first = 0;
+    int first = w.position - 4; if (first < 0) first = 0;
     if (first > (int)order.size() - 8) first = (int)order.size() - 8;
     if (first < 0) first = 0;
     for (int k = 0; k < 8 && first + k < (int)order.size(); k++) {
         const Car& c = *order[first + k];
-        snprintf(b, sizeof b, "%2d #%-3d %s%s", c.position, c.number, c.def->make, c.pit != PIT_NONE ? " PIT" : "");
-        R.font.draw(SCREEN_W - 144, 90 + k * 15, b, c.player ? GOLD : (c.def->cls == CLASS_HYPER ? WHITE : RGBA(140, 200, 255)), 0.68f);
+        float y = 90 + k * 15;
+        if (&c == &w) gfx::drawFill2D(SCREEN_W - 148, y, 140, 14, RGBA(110, 70, 12, 200));
+        gfx::drawFill2D(SCREEN_W - 128, y + 2, 3, 10, c.def->cls == CLASS_HYPER ? RGBA(230, 45, 40) : RGBA(255, 150, 30));   // the class colour
+        snprintf(b, sizeof b, "%2d", c.position); R.font.draw(SCREEN_W - 146, y, b, c.mgr.team ? GOLD : WHITE, 0.68f);
+        snprintf(b, sizeof b, "#%-3d %s%s", c.number, c.def->make, c.pit != PIT_NONE ? " PIT" : "");
+        R.font.draw(SCREEN_W - 122, y, b, c.mgr.team ? GOLD : WHITE, 0.68f);
     }
-    { char nm[24]; Race::driverName(me, me.driver, nm, sizeof nm);
-      snprintf(b, sizeof b, "%s %d%%  stint %d:%02d", nm, (int)(me.drv[me.driver].fatigue * 100), (int)me.stint / 3600, ((int)me.stint / 60) % 60); }
-    R.font.draw(SCREEN_W - 144, 212 - 2, b, DIM, 0.62f);
+    { char nm[24]; Race::driverName(w, w.driver, nm, sizeof nm);
+      static const char* PACE[MAP_COUNT] = {"SAVE", "NORMAL", "PUSH"};
+      snprintf(b, sizeof b, "%s %d%%  %s%s", nm, (int)(w.drv[w.driver].fatigue * 100), PACE[w.su.map], w.wantPit ? "  BOX" : ""); }
+    R.font.draw(SCREEN_W - 144, 212, b, DIM, 0.62f);
     gfx::drawFill2D(0, SCREEN_H - 18, SCREEN_W, 18, RGBA(0, 0, 0, 150));
-    snprintf(b, sizeof b, "TRIANGLE time x%d   O  pit wall   %s  %s   START pause", (int)race.timeAccel, BUTTON_NAME[cfg.bind[ACT_PIT]], me.wantPit ? "cancel pit" : "pit (take over)");
-    R.font.drawCentre(SCREEN_W / 2, SCREEN_H - 17, b, DIM, 0.72f);
+    snprintf(b, sizeof b, "LEFT RIGHT car   UP DOWN order   X SQUARE change   TRIANGLE x%d   O %s", (int)race.timeAccel, mgrCam == 2 ? "PIT WALL" : "DASHCAM");
+    R.font.drawCentre(SCREEN_W / 2, SCREEN_H - 17, b, DIM, 0.6f);
     gfx::setBlend(false);
 }
 
@@ -1121,10 +1248,12 @@ void Game::draw() {
         const Car& me = race.player();
         bool manage = me.plan.aiDrives && !aiDrivesPlayer;
         bool cineNow = cfg.pitCam == 0 && me.pit == PIT_STOP && !aiDrivesPlayer;
-        bool wallNow = manage && wallView && !cineNow;
+        bool wallNow = manage && mgrCam == 0 && !cineNow;
+        bool dashNow = manage && mgrCam == 2;
         if (screen == SCR_RACE) {
-            if (!wallNow) R.drawHUD(race, manage ? CAM_TV : (cineNow ? CAM_COCKPIT : this->cam));   // the pit wall has its own screens
-            if (manage) drawManage(wallNow);
+            if (dashNow) { int w = race.teamCar(mgrSel); drawDashOverlay(w >= 0 ? w : race.playerIdx); }
+            else if (!wallNow) { R.hudManage = manage; R.drawHUD(race, manage ? CAM_TV : (cineNow ? CAM_COCKPIT : this->cam)); R.hudManage = false; }   // the pit wall has its own screens
+            if (manage) drawManage(wallNow || dashNow);
             if (cfg.showFps) drawFps();
         }
         if (screen == SCR_REEL) {

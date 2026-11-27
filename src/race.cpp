@@ -164,6 +164,7 @@ bool Race::start(const RaceSettings& s0, Session ses, const std::vector<int>* gr
         if (c.player && s.career) { c.drv[1] = s.crew[1]; c.drv[2] = s.crew[2]; c.drv[1].fatigue = c.drv[2].fatigue = 0; c.drv[1].hours = c.drv[2].hours = 0; }
         // career: the team's second car is driven by your first hired driver
         if (!c.player && s.career && c.def == me) { c.drv[0] = s.crew[1]; c.drv[0].fatigue = 0; c.driver = 0; }
+        c.mgr.team = c.def == me && s.opponents > 0;     // our team's cars (the manager's)
         if (c.player) playerIdx = k;
         cars.push_back(c);
     }

@@ -23,7 +23,7 @@ void paddockSpeakers();        // the fixed set used in the menus
 float musicLevel();            // current music fade level 0..1 (tests)
 // Effects from DATA/sfx: one-shots (pan -1..1), the engineer's radio, and two loops (0 rain, 1 crowd)
 void play(const char* name, float vol, float pan);
-void radio(const char* name);  // e.g. "box" plays radio_box.raw (a new call cuts the last one off)
+bool radio(const char* name);  // e.g. "16_box" plays radio_16_box.raw (a new call cuts the last one off); false: no such clip
 bool radioBusy();
 void loop(int slot, const char* name, float vol);
 void stopEffects();

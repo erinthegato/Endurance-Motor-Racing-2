@@ -12,7 +12,8 @@ const char* TYRE_NAME[TY_COUNT] = {"Soft", "Medium", "Hard", "Inter", "Wet"};
 const char* MAP_NAME[MAP_COUNT] = {"Safety car", "Normal", "Attack"};
 const char* RADIO_FILE[RADIO_COUNT] = {"bestlap", "box", "box_ack", "contact", "damage", "drivethrough", "finish",
     "formation", "fuel", "giveback", "go", "green", "lastlap", "lemans", "limits", "overtake", "penalty", "sc", "sc_in", "tyres",
-    "engine", "gearbox", "turbo", "suspension", "puncture", "wheel", "leak", "throttle", "brakes", "steering", "overheat"};
+    "engine", "gearbox", "turbo", "suspension", "puncture", "wheel", "leak", "throttle", "brakes", "steering", "overheat",
+    "finish_bad", "finish_bad_swear", "retired", "retired_swear"};
 const char* SFX_FILE[SFX_COUNT] = {"pit_airjack_up", "pit_jack_drop", "pit_refuel", "pit_wheelgun", "podium_champagne",
     "podium_crowd", "thunder_close", "thunder_mid", "thunder_far1", "thunder_far2"};
 

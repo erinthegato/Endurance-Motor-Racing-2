@@ -1,0 +1,19 @@
+Team radio: the bad-day lines (Endurance Motor Racing 2.0)
+Same race engineer as the rest of the radio. Record them in this order in one take, with a clear
+pause (half a second or more) between lines, then:
+    python3 tools/radio/make_radio.py - DATA/sfx bad_day.mp3
+
+finish_bad        (finished outside the top half of the class)
+  Chequered flag. Not the result we wanted today. Heads up, we'll regroup for the next one.
+
+finish_bad_swear  (the same, with the engineer swearing on)
+  Chequered flag. Well, that was shit. Bloody awful day. We'll sort it out for the next one.
+
+retired           (plays a few seconds after the call saying what broke)
+  That's it, we're out. Park it up safely, mate. Sorry, everyone.
+
+retired_swear
+  Oh, for fuck's sake. That's it, we're out. Park it up, mate.
+
+Keep each line under about four seconds: the results screen comes up nine seconds after a
+retirement, and the line that says what broke plays first.

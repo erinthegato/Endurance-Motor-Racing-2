@@ -31,7 +31,10 @@ enum Radio { RADIO_BESTLAP = 0, RADIO_BOX, RADIO_BOX_ACK, RADIO_CONTACT, RADIO_D
              RADIO_FINISH, RADIO_FORMATION, RADIO_FUEL, RADIO_GIVEBACK, RADIO_GO, RADIO_GREEN, RADIO_LASTLAP,
              RADIO_LEMANS, RADIO_LIMITS, RADIO_OVERTAKE, RADIO_PENALTY, RADIO_SC, RADIO_SC_IN, RADIO_TYRES,
              RADIO_ENGINE, RADIO_GEARBOX, RADIO_TURBO, RADIO_SUSPENSION, RADIO_PUNCTURE, RADIO_WHEEL, RADIO_LEAK,
-             RADIO_THROTTLE, RADIO_BRAKES, RADIO_STEERING, RADIO_OVERHEAT, RADIO_COUNT };
+             RADIO_THROTTLE, RADIO_BRAKES, RADIO_STEERING, RADIO_OVERHEAT,
+             // bad results: a poor finish, out of the race. Each has a swearing take (Settings > Sound > Engineer),
+             // played instead when it is on (Game::raceEvents falls back to the clean one if it isn't there)
+             RADIO_FINISH_BAD, RADIO_FINISH_BAD_SWEAR, RADIO_RETIRED, RADIO_RETIRED_SWEAR, RADIO_COUNT };
 enum Sfx { SFX_AIRJACK = 0, SFX_JACKDROP, SFX_REFUEL, SFX_WHEELGUN, SFX_CHAMPAGNE, SFX_CROWD,
            SFX_THUNDER_CLOSE, SFX_THUNDER_MID, SFX_THUNDER_FAR1, SFX_THUNDER_FAR2, SFX_COUNT };
 extern const char* RADIO_FILE[RADIO_COUNT];
@@ -307,6 +310,8 @@ struct Race {
     // position in the car's own class (WEC results and points are per class)
     int classPosition(const Car& c) const { int p = 1; for (const Car& o : cars) if (&o != &c && o.def->cls == c.def->cls && o.position < c.position) p++; return p; }
     int classCount(int cls) const { int n = 0; for (const Car& o : cars) if ((int)o.def->cls == cls) n++; return n; }
+    // a bad day: outside the top half of the class (and off the podium)
+    bool badResult(const Car& c) const { int n = classCount((int)c.def->cls); return classPosition(c) > (n / 2 > 3 ? n / 2 : 3); }
     const Car& player() const { return cars[playerIdx]; }
     void pose(Car& c) const;
     void surfaceFrame(const Car& c, V3& pos, V3& fwd, V3& left) const;   // the road (or verge) under the car

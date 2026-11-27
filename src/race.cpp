@@ -1053,7 +1053,7 @@ void Race::update(float dt, float steer, float throttle, float brake, int shift,
             if (!c.finished && done) {
                 c.finished = true; c.finishTime = time;
                 if (session == SES_RACE) leaderDone = true;
-                if (c.player) radioPending = RADIO_FINISH;
+                if (c.player) radioPending = session == SES_RACE && !set.timeTrial && badResult(c) ? RADIO_FINISH_BAD : RADIO_FINISH;
             }
             if (c.player && session == SES_RACE && set.raceMin <= 0 && c.lap == set.laps - 1 && set.laps > 1) radioPending = RADIO_LASTLAP;
             strategy(c);
@@ -1070,7 +1070,7 @@ void Race::update(float dt, float steer, float throttle, float brake, int shift,
     Car& me = player();
     if (session == SES_RACE) {
         if (me.finished && time - me.finishTime > 8 && me.pit == PIT_NONE) over = true;
-        if (me.rel.retired && time - me.rel.retireT > 7) over = true;    // out of the race: on to the results
+        if (me.rel.retired && time - me.rel.retireT > 9) over = true;    // out of the race: on to the results (after the engineer's word)
     }
     else if (me.finished) {
         bool all = true;

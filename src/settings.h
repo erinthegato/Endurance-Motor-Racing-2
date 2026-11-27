@@ -33,6 +33,7 @@ struct Config {
     // button (d-pad) steering: 0 quick, 1 smooth, 2 extra smooth (the wheel winds on and back more gently)
     int padSteer = 1;        // (Smooth for new players)
     int help() const;   // PS Vita: holding the rear touch pad looks behind (off: fingers resting on it would)
+    bool swearing = false;   // the engineer swears on a bad day (Settings > Sound)
     int pitCam = 0;          // pit stops and the garage: 0 cinematic camera, 1 your own camera        // seconds idle on the main menu before the highlights start (5..30)
     // BTN_NONE = the action has no button
     Realism real;            // car realism and mechanical problems (settings > Car realism)

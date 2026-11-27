@@ -68,7 +68,7 @@ void Config::save() const {
     fprintf(f, "realism %d %d %d %d %d %d %d %d %d %d", (int)real.full, (int)real.opponents, (int)real.tyres, (int)real.brakes,
             (int)real.cooling, (int)real.slipstream, (int)real.blowTyre, (int)real.ground, (int)real.fuel, real.damagePct);
     for (bool m : real.mech) fprintf(f, " %d", (int)m);
-    fprintf(f, "\n");
+    fprintf(f, "\nengineer %d\n", (int)swearing);
     fclose(f);
 }
 
@@ -104,6 +104,8 @@ void Config::load() {
             for (int k = 0; k < MF_COUNT; k++) if (fscanf(f, " %d", &r[10 + k]) == 1) R.mech[k] = r[10 + k] != 0;
         }
     }
+    int sw = 0;
+    if (ok && fscanf(f, "\nengineer %d", &sw) == 1) c.swearing = sw != 0;   // (optional line: off in older files)
     fclose(f);
     if (!ok) return;
     auto in = [](int x, int lo, int hi) { return x < lo ? lo : (x > hi ? hi : x); };

@@ -7,7 +7,10 @@ into clips and give each era its own radio sound. Same engineer in every era; on
   2016  digital: wider band, clean compression, a short double beep in front
   2025  clean modern: nearly full band, light compression, a soft click
 
-usage: make_radio.py take.mp3 DATA/sfx
+usage: make_radio.py take.mp3 DATA/sfx [bad_day.mp3]
+  take.mp3     every line in LINES, in order (or LINES + BAD_DAY in one take)
+  bad_day.mp3  only the bad-day lines (BAD_DAY, in order; text in bad_day_lines.txt), recorded later
+  Either take alone also works: give "-" for take.mp3 to cut just the bad-day lines.
 writes DATA/sfx/radio_<era>_<line>.raw (ULW1: 8-bit mu-law, mono 11025 Hz -- a radio's band fits; see
 tools/sfx/adpcm.py), era = 80 / 10 / 16 / 25
 """
@@ -22,6 +25,8 @@ LINES = ["bestlap", "box", "box_ack", "contact", "damage", "drivethrough", "fini
          "giveback", "go", "green", "lastlap", "lemans", "limits", "overtake", "penalty", "sc", "sc_in", "tyres",
          "engine", "gearbox", "turbo", "suspension", "puncture", "wheel", "leak", "throttle", "brakes",
          "steering", "overheat"]
+# a bad day (a poor finish, out of the race), each clean and then swearing (Settings > Sound > Engineer)
+BAD_DAY = ["finish_bad", "finish_bad_swear", "retired", "retired_swear"]
 
 
 def load(path):
@@ -130,10 +135,22 @@ ERAS = {"80": era80, "10": era10, "16": era16, "25": era25}
 
 def main():
     take, out = sys.argv[1], sys.argv[2]
-    clips = segments(load(take), len(LINES))
+    extra = sys.argv[3] if len(sys.argv) > 3 else None
+    names, clips = [], []
+    if take != "-":
+        x = load(take)
+        # one take with the bad-day lines on the end, or the original take alone
+        n = len(LINES) + (0 if extra else len(BAD_DAY))
+        try:
+            clips += segments(x, n); names += (LINES + BAD_DAY)[:n]
+        except SystemExit:
+            if extra: raise
+            clips += segments(x, len(LINES)); names += LINES
+    if extra:
+        clips += segments(load(extra), len(BAD_DAY)); names += BAD_DAY
     for tag, fx in ERAS.items():
         rng = np.random.default_rng(len(tag) * 7 + int(tag))
-        for name, x in zip(LINES, clips):
+        for name, x in zip(names, clips):
             y = fx(x.copy(), rng)
             y = resample_poly(y, 1, 2)                           # 11025 Hz: radio is band-limited
             y = y / max(1e-6, np.max(np.abs(y))) * 0.82          # every clip as loud as the next

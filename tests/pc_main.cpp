@@ -468,6 +468,42 @@ int main(int argc, char** argv) {
         Career c2; bool okLoad = c2.load(eraSave("career", c2.cls = g.career.cls)); fprintf(stderr, "saved career loads: %d round %d\n", (int)okLoad, c2.champ.round);
         return 0;
     }
+    if (mode == "badradio") {   // badradio <track>: the engineer's bad-day lines (a poor finish, a retirement)
+        int tr = atoi(argv[2]);
+        RaceSettings rs; rs.track = tr; rs.car = 1; rs.laps = 1; rs.opponents = 19; rs.startPos = 2; rs.weather = WX_DRY; rs.difficulty = 2;
+        g.set = rs; g.aiDrivesPlayer = true; g.startSession(SES_RACE); g.screen = SCR_RACE;
+        Car& me = g.race.player(); me.skill *= 0.85f;                    // from the back, slowly: a bad day
+        int heard = -1; float simT = 0;
+        while (!g.race.over && simT < 1500) {
+            g.race.update(1.0f / 60, 0, 0, 0, 0, true); simT += 1.0f / 60;
+            if (g.race.radioPending == RADIO_FINISH || g.race.radioPending == RADIO_FINISH_BAD) heard = g.race.radioPending;
+            g.race.radioPending = -1;
+        }
+        const Car& m2 = g.race.player();
+        fprintf(stderr, "finish: class P%d of %d, bad %d, radio %s\n", g.race.classPosition(m2), g.race.classCount(m2.def->cls),
+                (int)g.race.badResult(m2), heard >= 0 ? RADIO_FILE[heard] : "none");
+        fprintf(stderr, "clips: finish %d, finish_bad %d (missing is fine until recorded)\n", (int)sound::radio("16_finish"), (int)sound::radio("16_finish_bad"));
+        // a retirement in a fresh race: the failure call, then (once it has finished) the engineer's word
+        g.aiDrivesPlayer = false; cfg.swearing = true;
+        rs.laps = 3; g.set = rs; g.startSession(SES_RACE); g.screen = SCR_RACE;
+        Pad q{}; for (int i = 0; i < 60 * 40; i++) g.step(1.0f / 60, q);
+        g.race.failure(g.race.player(), MF_WHEEL);
+        bool first = false, gap = false, second = false; float t0 = g.race.time;
+        static int16_t abuf[735 * 2];
+        for (int i = 0; i < 60 * 10 && !g.race.over; i++) {
+            g.step(1.0f / 60, q);
+            if (pc::mixFn) pc::mixFn(abuf, 735);                      // the audio clock (1/60 s)
+            bool busy = sound::radioBusy();
+            if (busy && !first) first = true;
+            if (first && !busy) gap = true;
+            if (gap && busy && !second) { second = true; fprintf(stderr, "retired call at +%.1f s\n", g.race.time - t0); }
+        }
+        fprintf(stderr, "retirement: failure call %d, then the last word %d, results at +%.1f s\n", (int)first, (int)second, g.race.time - t0);
+        Config keep = cfg; cfg.swearing = true; cfg.save(); Config c2; c2.load();
+        fprintf(stderr, "setting saved and loaded: swearing %d\n", (int)c2.swearing);
+        cfg = keep; cfg.save();
+        return 0;
+    }
     if (mode == "timetrial") {   // timetrial <track> <car> <laps> <outdir>: AI laps against its own ghost, saved and reloaded
         int tr = atoi(argv[2]), car = atoi(argv[3]), laps = atoi(argv[4]); std::string out = argv[5];
         g.ttMode = true; g.set.track = tr; g.set.car = car; g.aiDrivesPlayer = true;

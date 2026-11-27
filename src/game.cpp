@@ -422,12 +422,32 @@ void Game::raceEvents() {
             prevPit[i] = c.pit; prevPh[i] = c.pitPhase; prevTm[i] = c.pitTimer;
         }
     }
+    // out of the race: once the engineer has said what broke, his word on the day
+    {
+        static bool dnfCalled = false; static float lastT = 1e9f;
+        if (race.time < lastT) dnfCalled = false;              // a new race
+        lastT = race.time;
+        const Car& me = race.player();
+        if (race.session == SES_RACE && me.rel.retired && !dnfCalled && race.time - me.rel.retireT > 1.0f && (!sound::radioBusy() || race.time - me.rel.retireT > 4.5f)) {
+            dnfCalled = true;
+            if (race.radioPending < 0) race.radioPending = RADIO_RETIRED;
+        }
+    }
     if (race.radioPending >= 0 && race.radioPending < RADIO_COUNT) {
         if (screen != SCR_REEL && !aiDrivesPlayer) {
             // the same engineer in every era; the radio itself sounds of its time
             static const char* ERA_RADIO[ERA_COUNT] = {"16", "16"};     // (one engineer for both classes: the 2016 voice and its radio beeps)
-            char name[40]; snprintf(name, sizeof name, "%s_%s", ERA_RADIO[race.player().def->era % ERA_COUNT], RADIO_FILE[race.radioPending]);
-            sound::radio(name);
+            const char* era = ERA_RADIO[race.player().def->era % ERA_COUNT];
+            // a bad day: the swearing take if it's switched on; if a clip hasn't been recorded yet, the
+            // clean take, then the plain line
+            int tries[3] = {race.radioPending, -1, -1};
+            if (race.radioPending == RADIO_FINISH_BAD) { tries[1] = RADIO_FINISH; if (cfg.swearing) { tries[0] = RADIO_FINISH_BAD_SWEAR; tries[1] = RADIO_FINISH_BAD; tries[2] = RADIO_FINISH; } }
+            if (race.radioPending == RADIO_RETIRED && cfg.swearing) { tries[0] = RADIO_RETIRED_SWEAR; tries[1] = RADIO_RETIRED; }
+            for (int r : tries) {
+                if (r < 0) break;
+                char name[40]; snprintf(name, sizeof name, "%s_%s", era, RADIO_FILE[r]);
+                if (sound::radio(name)) break;
+            }
         }
         race.radioPending = -1;
     }
@@ -1425,19 +1445,21 @@ void Game::updateOptions(const Pad& p, int dx, int dy, bool ok, bool back) {
             case 11: cfg.showFps = !cfg.showFps; break;
             case 12: cfg.autoQuality = !cfg.autoQuality; if (!cfg.autoQuality) autoLevel = 0; break;
             case 14: cfg.pitCam ^= 1; break;
+            case 20: cfg.swearing = !cfg.swearing; break;
             case 13: cfg.attract += dx * 5; if (cfg.attract < 5) cfg.attract = 5; if (cfg.attract > 30) cfg.attract = 30; break;
         }
         if (custom) { cfg.preset = 3; autoLevel = 0; }      // the player's own choice: start again from it
         if (id == 5) autoLevel = 0;
         cfg.apply(autoLevel);
         if (id == 4) sound::radio("16_box");          // hear the new level
+        if (id == 20 && !sound::radio(cfg.swearing ? "16_finish_bad_swear" : "16_finish_bad")) sound::radio("16_finish");   // hear how he talks
         if (id == 3) sound::play("pit_wheelgun", 0.8f, 0);
     }
 }
 
 int Game::optRows(int* ids) const {
     int n = 0;
-    if (optCat == OC_SOUND) for (int i = 0; i <= 4; i++) ids[n++] = i;
+    if (optCat == OC_SOUND) { for (int i = 0; i <= 4; i++) ids[n++] = i; ids[n++] = 20; }
     if (optCat == OC_DISPLAY) for (int i = 5; i <= 12; i++) ids[n++] = i;
     if (optCat == OC_CAMERA) { ids[n++] = 13; ids[n++] = 14; ids[n++] = 17; ids[n++] = 18; if (input::hasTouch()) ids[n++] = 19; }
     ids[n++] = 16;   // Back

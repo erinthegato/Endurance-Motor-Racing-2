@@ -484,8 +484,8 @@ void Game::walkPitLayout() {
         for (int k = 0; k < nd; k++) {
             float dx = ours ? deskXs[k] : a + 2.5f;
             box(dx - 1.0f, g + 11.1f, 0, dx + 1.0f, g + 11.85f, 0.76f, DESK, true);
-            box(dx - 0.5f, g + 11.45f, 0.84f, dx + 0.5f, g + 11.55f, 1.88f, SCREEN, false);      // the monitor (its picture drawn live on ours)
-            box(dx - 0.06f, g + 11.55f, 0.76f, dx + 0.06f, g + 11.65f, 0.86f, DESK, false);
+            box(dx - 0.53f, g + 11.45f, 0.98f, dx + 0.53f, g + 11.55f, 1.74f, SCREEN, false);     // the monitor, landscape (its picture drawn live on ours)
+            box(dx - 0.06f, g + 11.55f, 0.76f, dx + 0.06f, g + 11.65f, 1.0f, DESK, false);
         }
         if (!ours) {
             box(a + 6.0f, g + 11.0f, 0, a + 7.3f, g + 11.85f, 1.05f, CHEST, true);
@@ -855,7 +855,7 @@ Camera Game::walkPitCamera() const {
     // at a desk: the camera goes round to look at its monitor
     if (walkFocus >= 0 && walkFocusK > 0.001f) {
         for (int k = 0; k < deskCount; k++) if (desks[k].id == walkFocus || (walkFocus == WST_PLANS && desks[k].id == WST_PLANS)) {
-            V3 fe(desks[k].x, desks[k].y - 1.2f, desks[k].z + 0.06f), ft(desks[k].x, desks[k].y, desks[k].z);
+            V3 fe(desks[k].x, desks[k].y - 0.98f, desks[k].z + 0.02f), ft(desks[k].x, desks[k].y, desks[k].z);
             float s = walkFocusK * walkFocusK * (3 - 2 * walkFocusK);
             e = e + (fe - e) * s; tg = tg + (ft - tg) * s;
         }
@@ -947,7 +947,7 @@ void Game::drawWalkPit() {
     R.drawEffects(race, c);
     R.drawWeather(race, false);
     // the words (or the plan editor, framed over its monitor)
-    if (walkFocus == WST_PLANS && walkFocusK > 0.6f) drawPlans();
+    if (walkFocus == WST_PLANS) walkHud(R, nullptr, "UP / DOWN  row     LEFT / RIGHT  change     X  select     O  back", nullptr);   // (the editor is on the monitor)
     else if (walkFocus == WST_SETUPENG || (engUi.open && engUi.sub[0])) {
         walkHud(R, nullptr, engUi.pending() ? "X  make the change     O  leave it" : "", engUi.sub[0] ? "SETUP ENGINEER" : nullptr);
         if (engUi.sub[0]) {      // her words, as subtitles

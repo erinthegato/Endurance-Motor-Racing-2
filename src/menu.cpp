@@ -279,21 +279,53 @@ int menuStands(V3* pos, V3* facing, int max) {
 // ------------------------------------------------------------------ drawing the garage and its screens
 // [walk] a desk monitor in our garage at the track (walk.cpp): the setup computer, the session screen
 // (weather / timing), the pit plans' title; `live`: the whole screen, else just its title (far off)
+static const char* PLAN_CORNER[4] = {"top left", "top right", "bottom left", "bottom right"};
 void Game::drawGarageDesk(int which, const V3& pos, const V3& facing, const V3& eye, bool live) {
-    Panel p; p.R = &R; p.vw = 236; p.vh = 258; p.k = 0.0038f;
+    // (a landscape screen laid out at the setup computer's own size -- it runs to x ~296 and y ~224 -- so
+    // nothing hangs off its edges: 306 x 228 units on 0.98 x 0.73 m of glass)
+    Panel p; p.R = &R; p.vw = 306; p.vh = 228; p.k = 0.0032f;
     V3 pr = norm(cross(Z, facing));
     p.m = M4::basis(pr, Z, facing, pos);
     p.fill(0, 0, p.vw, p.vh, RGBA(8, 11, 18));
     static const char* TITLE[3] = {"CAR SETUP", "SESSION", "PIT PLANS"};
-    if (!live || which == 2) {
-        p.textC(p.vw / 2, p.vh / 2 - 20, TITLE[which], WHITE, 1.3f);
+    if (live && which == 2 && screen == SCR_WALK && walkFocus == WST_PLANS) {
+        // the plan editor, on the monitor (laid out to its 306 x 228)
+        p.fill(0, 0, p.vw, 22, RGBA(0, 0, 0, 160)); p.fill(0, 22, p.vw, 2, ACC);
+        p.textC(p.vw / 2, 3, "PIT PLANS", WHITE, 0.9f);
+        for (int i = 0; i < PLANS; i++) {
+            float bx = 13 + i * 72, by = 30;
+            u32 c = i == planEdit ? ACC : (pitPlanSet[i] ? RGBA(60, 70, 90) : RGBA(30, 34, 44));
+            p.fill(bx, by, 64, 18, c);
+            char b[8]; snprintf(b, sizeof b, "%d", i + 1);
+            p.textC(bx + 32, by + 2, b, i == planEdit ? INK : WHITE, 0.8f);
+        }
+        const PitPlan& q = pitPlans[planEdit];
+        char v[7][64];
+        snprintf(v[0], 64, "Plan %d  (the %s corner)", planEdit + 1, PLAN_CORNER[planEdit]);
+        snprintf(v[1], 64, "Tyres  < %s >", q.tyres ? TYRE_NAME[q.tyre] : "stay on");
+        if (raceLoaded && !race.ep().refuel) snprintf(v[2], 64, "Fuel  (no refuelling)");
+        else snprintf(v[2], 64, "Fuel  < fill to %.0f%% >", q.fuel * 100);
+        snprintf(v[3], 64, "Repairs  < %s >", q.repair ? "yes" : "no");
+        if (q.swapDriver && raceLoaded) { char dn[24]; Race::driverName(race.player(), q.nextDriver, dn, sizeof dn); snprintf(v[4], 64, "Driver  < change to %s >", dn); }
+        else snprintf(v[4], 64, "Driver  < stay in >");
+        snprintf(v[5], 64, "In use  < %s >", pitPlanSet[planEdit] ? "yes" : "no (empty)");
+        snprintf(v[6], 64, "Done");
+        for (int r = 0; r < 7; r++) {
+            float y = 56 + r * 19;
+            if (r == planRow) p.fill(10, y - 2, p.vw - 20, 16, RGBA(255, 150, 40, 230));
+            p.textC(p.vw / 2, y, v[r], r == planRow ? INK : (r >= 1 && r <= 4 && !pitPlanSet[planEdit] ? DIM : WHITE), 0.7f);
+        }
+        p.textC(p.vw / 2, 192, "In the race: touch a corner to call that plan, again to call it off", DIM, 0.5f);
+        p.textC(p.vw / 2, 210, "UP/DOWN  row   LEFT/RIGHT  change   X  select   O  back", DIM, 0.56f);
+    } else if (!live || which == 2) {
+        p.textC(p.vw / 2, p.vh / 2 - 34, TITLE[which], WHITE, 1.3f);
         if (which == 2) {
             char b[48];
             for (int i = 0; i < PLANS; i++) {
                 const PitPlan& q = pitPlans[i];
                 if (pitPlanSet[i]) snprintf(b, sizeof b, "%d  %s  %.0f%%%s", i + 1, q.tyres ? TYRE_NAME[q.tyre] : "no tyres", q.fuel * 100, q.swapDriver ? "  swap" : "");
                 else snprintf(b, sizeof b, "%d  (empty)", i + 1);
-                p.text(30, p.vh / 2 + 10 + i * 18, b, DIM, 0.72f);
+                p.text(40, p.vh / 2 - 4 + i * 18, b, DIM, 0.72f);
             }
         }
     } else {
@@ -570,7 +602,7 @@ void Game::screenSetupComputer(Panel& P, bool trackGarage) {
         P.textR(P.vw - 6, 4, "L / R", DIM, 0.56f);
         if (setupTab != 0) {
             if (setupTab == 1) screenForecast(P); else screenTiming(P);
-            P.textC(P.vw / 2, 212, setupTab == 2 ? "L / R  tabs   SQUARE  class / overall   X drive out   O pause" : "L / R  tabs     X drive out     O pause", DIM, 0.58f);
+            P.textC(P.vw / 2, 212, walkMenus ? (setupTab == 2 ? "L / R  tabs   SQUARE  class / overall   O back" : "L / R  tabs     O back") : (setupTab == 2 ? "L / R  tabs   SQUARE  class / overall   X drive out   O pause" : "L / R  tabs     X drive out     O pause"), DIM, 0.58f);
             return;
         }
     } else P.text(6, 2, b, WHITE, 0.8f);

@@ -77,12 +77,16 @@ for c in G.read_cars():
     spec = G.car_spec(dict(c, id=G.REF_ALIAS.get(c['id'], c['id'])) if c['id'] in G.REF_ALIAS else c)
     spec = W.apply_rules(spec, rule)
     spec = B.proto_spec(c['id'], spec, rule) if c['hyper'] else B.gt_spec(c['id'], spec)
-    target = c['L'] + max(0.0, spec.get('wing_back', 0.0) - 0.10)   # (a wing hung out behind the tail is not body length)
+    target = c['L']
     for it in range(3):
         if rule != 'GT3': G.HY_AXLES = W.proto_axles(spec['L'], rule)
         spec['axles'] = G.HY_AXLES if c['hyper'] else B.gt_axles(spec)
-        P = (B.build_proto if c['hyper'] else B.build_gt)(spec, -1).arrays()[0].reshape(-1, 3)
-        over = (P[:, 0].max() - P[:, 0].min()) - target
+        m_ = (B.build_proto if c['hyper'] else B.build_gt)(spec, -1)
+        P = m_.arrays()[0].reshape(-1, 3)
+        x_rear = P[:, 0].min()
+        if spec.get('wing_back'):                 # (a wing / pipes hung out behind the tail: measure to the body's tail)
+            x_rear = m_.lofts[0]['rings'][:, :, 0].min()
+        over = (P[:, 0].max() - x_rear) - target
         if abs(over) < 0.002: break
         spec['L'] = spec['L'] - over
     if rule != 'GT3': G.HY_AXLES = W.proto_axles(spec['L'], rule)

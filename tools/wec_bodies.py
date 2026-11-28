@@ -462,7 +462,7 @@ GT = {
     'woking720':     ('mid',   0.48, 0.64, 0.86, 'eye',   1.29, 0.00),
     'sterneamg':     ('front', 0.62, 0.84, 0.94, 'slim',  1.34, 0.05),
     'kotobukigr':    ('front', 0.58, 0.80, 0.90, 'eye',   1.31, 0.02),
-    'dearbornstallion':('front',0.64, 0.84, 0.92, 'bar',  1.33, 0.05),
+    'dearbornstallion':('front',0.70, 0.82, 0.95, 'bar',  1.22, 0.00),
     'torotgt':       ('mid',   0.34, 0.68, 0.90, 'eye',   1.20, 0.00),
     'careergt3':     ('front', 0.58, 0.80, 0.90, 'slim',  1.32, 0.02),
 }
@@ -481,6 +481,12 @@ GT_X = {
     #  forward with one long windscreen, the roof running straight down to a high, squared-off tail; a roof
     #  scoop, hexagonal intakes behind the doors, twin exhausts high in the middle of an open mesh tail and a
     #  wing hung out behind the bodywork on swan necks)
+    # (the Mustang-like car: a 2.72 m wheelbase, a tall blunt nose and a long bonnet with two vents, the cabin
+    #  set back under a fastback whose side windows run to a pointed quarter light, a ducktail, side-exit
+    #  exhausts ahead of the rear wheels, a tall wing with big end plates just behind the tail)
+    'dearbornstallion': dict(wheelbase=2.72, axle_shift=0.145, cab_shift=0.21, gt_nose_w=0.80, fender_rise=0.04,
+                             side_glass=(1, 4), twin_hood_vents=True, side_exhaust=True, exhaust=False, wing_back=0.13,
+                             endplate_drop=0.30),
     'torotgt': dict(wheelbase=2.62, axle_shift=-0.16, cab_shift=-0.30, wedge=True, fender_rise=0.07, gt_nose_w=0.66,
                     wing_back=0.30, exhaust=(0.26, 0.44, 0.058), hex_intake=True, roof_scoop=True, mesh_tail=True, deck_vents=True),
 }
@@ -796,9 +802,16 @@ def build_gt(spec, lod):
         m.box((mx - 0.03, my - 0.012, mz - 0.02), (mx + 0.02, my + 0.012, mz + 0.06), uv='carbon')
         m.box((mx - 0.06, my - 0.004 if s > 0 else my - 0.14, mz + 0.05), (mx + 0.04, my + 0.14 if s > 0 else my + 0.004, mz + 0.13), uv='paint' if lod < 0 else 'carbon')
     bx = spec['bonnet_x']
-    for k in range(3 if lod < 0 else 2):
-        x0 = bx - 0.05 - k * 0.12
-        m.quad((x0, -0.30, top(x0) + 0.006), (x0, 0.30, top(x0) + 0.006), (x0 - 0.06, 0.30, top(x0 - 0.06) + 0.006), (x0 - 0.06, -0.30, top(x0 - 0.06) + 0.006), uv='carbon', shade=0.35)
+    if spec.get('twin_hood_vents'):              # (two separate vents either side of the bonnet's middle)
+        for s in (-1, 1):
+            for k in range(5 if lod < 0 else 3):
+                x0 = bx + 0.05 - k * 0.09
+                y0, y1 = s * 0.14, s * 0.46
+                m.quad((x0, y0, top(x0) + 0.008), (x0, y1, top(x0) + 0.008), (x0 - 0.05, y1, top(x0 - 0.05) + 0.008), (x0 - 0.05, y0, top(x0 - 0.05) + 0.008), uv='carbon', shade=0.2)
+    else:
+        for k in range(3 if lod < 0 else 2):
+            x0 = bx - 0.05 - k * 0.12
+            m.quad((x0, -0.30, top(x0) + 0.006), (x0, 0.30, top(x0) + 0.006), (x0 - 0.06, 0.30, top(x0 - 0.06) + 0.006), (x0 - 0.06, -0.30, top(x0 - 0.06) + 0.006), uv='carbon', shade=0.35)
     m.quad((xr - 0.004, -0.80, 0.09), (xr - 0.004, 0.80, 0.09), (xr - 0.004, 0.80, 0.34), (xr - 0.004, -0.80, 0.34), uv='carbon', shade=0.5)
     for k in range(-2, 3):
         m.box((xr - 0.02, k * 0.28 - 0.008, 0.08), (xr + 0.30, k * 0.28 + 0.008, 0.32), uv='carbon')
@@ -818,8 +831,8 @@ def build_gt(spec, lod):
     if lod < 0 and PCSET:
         # the PC's close-up details: twin exhausts under the tail, the refuelling coupling in the rear
         # side window, the roof's position lights, the front tow eye
-        ey, ez, er = spec.get('exhaust', (0.36, 0.20, 0.048))
-        for s in (-1, 1):
+        ey, ez, er = spec.get('exhaust') or (0.36, 0.20, 0.048)
+        for s in ((-1, 1) if spec.get('exhaust', True) is not False else ()):   # (False: the pipes exit at the sides)
             m.cyl((xr + 0.22, s * ey, ez), (xr - 0.03, s * ey, ez), er, sides=12, uv='grey', shade=1.1)
             m.cyl((xr - 0.026, s * ey, ez), (xr + 0.24, s * ey, ez), er * 0.75, sides=12, uv='carbon', shade=0.3, caps=False)   # the dark inside
         xs_, roof = gt_cabin(spec, fns)
@@ -841,7 +854,7 @@ def _gt_wing(m, spec, fns, lod):
     if lod < 2:
         m.box((x0 - 0.04, -ws, wz + 0.035), (x0 + 0.10, ws, wz + 0.055), uv='carbon')
         for s in (-1, 1):
-            m.box((x0 - 0.05, s * ws - 0.008, wz - 0.12), (x0 + 0.34, s * ws + 0.008, wz + 0.08), uv='second')
+            m.box((x0 - 0.05, s * ws - 0.008, wz - spec.get('endplate_drop', 0.12)), (x0 + 0.34, s * ws + 0.008, wz + 0.08), uv='second')
             # swan-neck uprights from the boot lid
             yb = s * 0.42
             if wb:                                   # (a swan neck: from the deck, up and back, curling onto the wing's top)
@@ -892,6 +905,13 @@ def _gt_extras(m, spec, fns):
             return V
         m.box((x0, -0.15, rz - 0.03), (x1, 0.15, rz + 0.04), uv='second', taper=ramp)
         m.quad((x1 + 0.002, -0.12, rz), (x1 + 0.002, 0.12, rz), (x1 + 0.002, 0.12, rz + 0.035), (x1 + 0.002, -0.12, rz + 0.035), uv='carbon', shade=0.15)
+    if spec.get('side_exhaust'):                # (side-exit pipes in the sill, just ahead of the rear wheels)
+        fa, ra = spec['axles']
+        xe = ra + 0.52
+        for s in (-1, 1):
+            ye = W(xe) + 0.01
+            m.cyl((xe, s * (ye - 0.12), 0.17), (xe, s * (ye + 0.015), 0.17), 0.04, sides=10, uv='grey', shade=1.1)
+            m.cyl((xe, s * (ye + 0.012), 0.17), (xe, s * (ye - 0.10), 0.17), 0.03, sides=10, uv='carbon', shade=0.3, caps=False)
     if spec.get('deck_vents'):                  # (two louvred openings in the engine cover)
         for s in (-1, 1):
             xa, xb = cab - 1.20, xr + 0.45

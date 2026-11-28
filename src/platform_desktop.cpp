@@ -242,6 +242,8 @@ extern "C" int __wrap_remove(const char* path) {
     return removeReal(p);
 }
 
+namespace perfstat { long calls = 0, verts = 0; }   // (draw calls and vertices this frame: the perf test reads them)
+
 namespace gfx { static void applySync(); }
 
 // ---------------------------------------------------------------- graphics
@@ -399,6 +401,7 @@ void enter2D() {
 }
 
 void drawVbo(GLuint id, int count, GLenum mode) {
+    perfstat::calls++; perfstat::verts += count;
     glBindBuffer(GL_ARRAY_BUFFER, id);
     glVertexPointer(3, GL_FLOAT, sizeof(WorldVertex), (void*)offsetof(WorldVertex, x));
     glColorPointer(4, GL_UNSIGNED_BYTE, sizeof(WorldVertex), (void*)offsetof(WorldVertex, color));
@@ -408,6 +411,7 @@ void drawVbo(GLuint id, int count, GLenum mode) {
 }
 
 void drawArrays(const WorldVertex* v, int count, GLenum mode) {
+    perfstat::calls++; perfstat::verts += count;
     glVertexPointer(3, GL_FLOAT, sizeof(WorldVertex), &v->x);
     glColorPointer(4, GL_UNSIGNED_BYTE, sizeof(WorldVertex), &v->color);
     if (texOn) glTexCoordPointer(2, GL_FLOAT, sizeof(WorldVertex), &v->u);
@@ -766,6 +770,7 @@ GLuint litVboFor(const ModelVertex* v, int count, const int8_t* n) {
     return id;
 }
 void drawLitVbo(GLuint id, int count) {
+    perfstat::calls++; perfstat::verts += count;
     glBindBuffer(GL_ARRAY_BUFFER, id);
     glEnableClientState(GL_NORMAL_ARRAY);
     glVertexPointer(3, GL_FLOAT, sizeof(LitVertex), (void*)offsetof(LitVertex, x));
@@ -788,7 +793,7 @@ void setSync(bool vsync, int every) {
     applySync();
 }
 void beginFrame(u32 clear) {
-    arenaUsed = 0;
+    arenaUsed = 0; perfstat::calls = 0; perfstat::verts = 0;
     // the window's edges outside the game's 480:272 picture stay black
     glDisable(GL_SCISSOR_TEST);
     glViewport(0, 0, winW, winH);
@@ -1131,6 +1136,7 @@ void drawMesh(int mesh, int tex, int first, int count, const M4& model) {
     glColorPointer(4, GL_UNSIGNED_BYTE, sizeof(MeshVertex), (void*)offsetof(MeshVertex, color));
     if (lit) { glEnableClientState(GL_NORMAL_ARRAY); glNormalPointer(GL_BYTE, sizeof(MeshVertex), (void*)offsetof(MeshVertex, nx)); }
     if (texOn) glTexCoordPointer(2, GL_FLOAT, sizeof(MeshVertex), (void*)offsetof(MeshVertex, u));
+    perfstat::calls++; perfstat::verts += count;
     glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_INT, (void*)(sizeof(uint32_t) * (size_t)first));
     if (lit) glDisableClientState(GL_NORMAL_ARRAY);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);

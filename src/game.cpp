@@ -200,7 +200,8 @@ void Game::frame(float dt, const Pad& pad) {
     prev = pad;
     draw();
     double tu2 = sys::timeSec();
-    perfFrame(dt, (tu1 - tu0) * 1000, (tu2 - tu1) * 1000);
+    lastUpdMs = (tu1 - tu0) * 1000; lastDrawMs = (tu2 - tu1) * 1000;
+    perfFrame(dt, lastUpdMs, lastDrawMs);
     autoQualityStep(dt);
 }
 

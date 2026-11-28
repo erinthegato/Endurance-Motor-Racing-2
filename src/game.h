@@ -139,6 +139,7 @@ struct Game {
     void shutdown();
     void frame(float dt, const Pad& pad);
     void step(float dt, const Pad& pad) { update(dt, pad); prev = pad; }   // update without drawing
+    double lastUpdMs = 0, lastDrawMs = 0;        // the last frame's CPU time: update, draw (the perf test)
     void startRace();
     void startSession(Session ses);
     void startReel();

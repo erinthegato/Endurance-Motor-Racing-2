@@ -18,6 +18,11 @@
 #include <string>
 
 namespace pc { extern float fakeWait; }
+#ifdef EMR_HEADLESS
+namespace perfstat { extern long calls, verts; }
+#else
+namespace perfstat { static long calls = 0, verts = 0; }
+#endif
 namespace pc { extern Pad pad; extern audio::MixFn mixFn; extern long trisDrawn, drawCalls, vertsSent; void saveShot(const char*); }
 
 extern long statVerts[6];
@@ -1723,6 +1728,38 @@ int main(int argc, char** argv) {
         printf("chase distance above 72 km/h: %.2f .. %.2f m (top speed %.0f km/h), largest apex angle %.1f deg, frames with the car behind the camera %d\n",
                dmin, dmax, vmax * 3.6f, amax * 57.3f, bad);
         return (dmax - dmin > 0.6f || bad) ? 1 : 0;
+    }
+    if (mode == "perf") {       // perf <track> <seconds> [opponents]: the full grid, the AI driving us, frames drawn at 1/60 s:
+                                // CPU ms per frame for the update and the draw, draw calls, vertices, heap
+        std::string tid = argv[2];
+        for (int i = 0; i < TRACK_COUNT; i++) if (tid == TRACKS[i].id) g.set.track = i;
+        float secs = argc > 3 ? (float)atof(argv[3]) : 20;
+        g.set.opponents = argc > 4 ? atoi(argv[4]) : 39;
+        g.set.laps = 3; g.set.car = 0; g.aiDrivesPlayer = true;
+        double tl = sys::timeSec();
+        g.startRace();
+        fprintf(stderr, "perf: load %.2f s, heap %.1f MB, cars %d\n", sys::timeSec() - tl, sys::memUsedKB() / 1024.0, (int)g.race.cars.size());
+        if (g.screen != SCR_RACE) { fprintf(stderr, "race did not start\n"); return 1; }
+        for (int i = 0; i < 30 * 12; i++) { Pad p{}; g.screen = SCR_RACE; g.step(1.0f / 30, p); }   // the start and the first corners
+        const char* cn[3] = {"chase", "far", "cockpit"};
+        for (int cm = 0; cm < 3; cm++) {
+            g.cam = cm; g.R.camInit = false;
+            double up = 0, dr = 0, upMax = 0, drMax = 0, calls = 0, verts = 0; int n = 0;
+            int frames = (int)(secs * 60 / 3);
+            for (int f = 0; f < frames; f++) {
+                Pad p{}; g.screen = SCR_RACE; g.frame(1.0f / 60, p);
+                if (f < 10) continue;
+                up += g.lastUpdMs; dr += g.lastDrawMs; upMax = std::max(upMax, g.lastUpdMs); drMax = std::max(drMax, g.lastDrawMs);
+                calls += perfstat::calls; verts += perfstat::verts; n++;
+            }
+            fprintf(stderr, "perf %-8s %-7s update %6.2f ms (max %6.2f)  draw %6.2f ms (max %6.2f)  calls %6.0f  verts %8.0f  heap %.1f MB\n",
+                    tid.c_str(), cn[cm], up / n, upMax, dr / n, drMax, calls / n, verts / n, sys::memUsedKB() / 1024.0);
+        }
+        // the update alone (what the Vita's CPU pays for every car, every frame)
+        double t0 = sys::timeSec(); int un = 600;
+        for (int i = 0; i < un; i++) { Pad p{}; g.screen = SCR_RACE; g.step(1.0f / 60, p); }
+        fprintf(stderr, "perf %-8s sim     %6.3f ms per 1/60 s step (%d cars)\n", tid.c_str(), (sys::timeSec() - t0) * 1000 / un, (int)g.race.cars.size());
+        return 0;
     }
     if (mode == "race") {
         std::string tid = argv[2];

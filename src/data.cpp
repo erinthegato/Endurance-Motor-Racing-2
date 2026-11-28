@@ -1,4 +1,5 @@
 #include "data.h"
+#include <unordered_map>
 #include "endian.h"
 #include "png.h"
 #include <cmath>
@@ -160,6 +161,17 @@ struct Reader {
     const uint8_t* take(size_t n) { if ((size_t)(end - p) < n) { ok = false; return nullptr; } const uint8_t* q = p; p += n; return q; }
 };
 }
+namespace {
+struct SharedTex { int id; int refs; };
+// the car pictures already made, by their file's bytes (and the size they were made at): shared, counted
+std::unordered_map<uint64_t, SharedTex>& texCache() { static std::unordered_map<uint64_t, SharedTex> m; return m; }
+uint64_t texKey(const void* p, int n, bool hd) {
+    uint64_t h = 1469598103934665603ull ^ (uint64_t)n ^ (hd ? 0x9e3779b97f4a7c15ull : 0);
+    const uint8_t* b = (const uint8_t*)p;
+    for (int i = 0; i < n; i++) { h ^= b[i]; h *= 1099511628211ull; }
+    return h;
+}
+}
 bool CarMesh::load(const char* id, bool hd) {
     unload();
     if (!gfx::meshesSupported()) return false;
@@ -185,6 +197,9 @@ bool CarMesh::load(const char* id, bool hd) {
             if (!r.ok || n > 120) { good = false; break; }
             char tp[300]; snprintf(tp, sizeof tp, "DATA/cars/%s/%.*s", id, (int)n, (const char*)name);
             int ts = 0; void* tb = sys::loadFile(tp, &ts);
+            // the same picture twice (the liveries' per-level copies, a class's tyres on every car): one texture
+            uint64_t key = tb ? texKey(tb, ts, hd) : 0;
+            if (tb) { auto it = texCache().find(key); if (it != texCache().end()) { it->second.refs++; t.id = it->second.id; sys::freeFile(tb); continue; } }
             std::vector<uint8_t> px; int w = 0, h = 0;
             if (tb && png::decode(tb, (size_t)ts, px, w, h)) {
                 // the AI cars' pictures at half size (mipmaps would never reach the top level anyway). The PC's
@@ -197,6 +212,7 @@ bool CarMesh::load(const char* id, bool hd) {
                 if (!hd && w >= HALVE_FROM && h >= HALVE_FROM) png::halve(px, w, h);
                 t.id = gfx::createTextureRGBA(px.data(), w, h);
                 t.kb = gfx::textureKB(t.id); textureKB += t.kb;
+                if (t.id) texCache()[key] = SharedTex{t.id, 1};
             } else sys::log("car %s: texture %s missing or not a PNG this reader takes\n", id, tp);
             if (tb) sys::freeFile(tb);
         }
@@ -256,7 +272,10 @@ bool CarMesh::load(const char* id, bool hd) {
 }
 void CarMesh::unload() {
     for (Lod& l : lod) { for (Part& p : l.part) { if (p.mesh) gfx::freeMesh(p.mesh); p = Part(); } l.tris = 0; }
-    for (Tex& t : texs) if (t.id) gfx::freeTextureRGBA(t.id);
+    for (Tex& t : texs) if (t.id) {
+        for (auto it = texCache().begin(); it != texCache().end(); ++it)
+            if (it->second.id == t.id) { if (--it->second.refs <= 0) { gfx::freeTextureRGBA(t.id); texCache().erase(it); } break; }
+    }
     texs.clear(); mats.clear(); draws.clear();
     lodCount = 0; textureKB = 0; doorCount = 0;
 }

@@ -108,7 +108,7 @@ void Game::drawLoading() {
         R.font.draw(12, 24, b, fade(L_DIM), 0.6f);
     }
     gfx::drawFill2D(0, SCREEN_H - 52, SCREEN_W, 52, RGBA(0, 0, 0, (int)(170 * a)));
-    const char* tip = TIPS[(ld.slide / 2 + (int)(ld.t0 * 7)) % TIP_N];
+    const char* tip = TIPS[(unsigned)(ld.slide / 2 + (unsigned)(long long)(ld.t0 * 7)) % (unsigned)TIP_N];   // (unsigned: a big clock must not make the index negative)
     R.font.drawCentre(SCREEN_W / 2, SCREEN_H - 46, tip, fade(L_WHITE), R.font.width(tip, 0.62f) > SCREEN_W - 24 ? 0.5f : 0.62f);
     float bw = SCREEN_W - 80, bx = 40, by = SCREEN_H - 22;
     gfx::drawFill2D(bx, by, bw, 5, RGBA(40, 44, 54, (int)(255 * a)));

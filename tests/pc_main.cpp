@@ -597,6 +597,27 @@ int main(int argc, char** argv) {
         printf("practiceruns: %s\n", bad ? "FAIL" : "ok");
         return bad ? 1 : 0;
     }
+    if (mode == "doors") {     // doors x: which cars have doors that open (Blender ECM with DOR1 hinges)
+        int with = 0, bad = 0;
+        for (int i = 0; i < CAR_PICK; i++) {
+            g.R.hdAll = true; g.R.loadCar(i);
+            bool mesh = g.R.carMesh[i].loaded(); int dc = g.R.carMesh[i].doorCount;
+            char p[160]; snprintf(p, sizeof p, "DATA/cars/%s/%s.ecm", CARS[i].id, CARS[i].id);
+            int sz = 0; void* b = sys::loadFile(p, &sz); bool dor = false;
+            if (b) { for (int k = 0; k + 4 <= sz; k++) if (!memcmp((char*)b + k, "DOR1", 4)) { dor = true; break; } sys::freeFile(b); }
+            printf("doors %-18s %-8s %s, %d door%s%s\n", CARS[i].id, CARS[i].era == ERA_GT3 ? "LMGT3" : "Hypercar", mesh ? "Blender model" : "plain model", dc, dc == 1 ? "" : "s",
+                   dc ? "" : " (get-in: the short step)");
+            if (dc) with++;
+            if (dor && dc == 0) { bad++; printf("doors: FAIL %s has DOR1 but no doors loaded\n", CARS[i].id); }
+            for (const CarMesh::Door& d : g.R.carMesh[i].doors) if (&d - g.R.carMesh[i].doors < dc) {
+                float al = sqrtf(d.axis[0] * d.axis[0] + d.axis[1] * d.axis[1] + d.axis[2] * d.axis[2]);
+                if (fabsf(al - 1) > 0.02f || d.maxAngle <= 0.1f) { bad++; printf("doors: FAIL %s hinge axis |%.2f| angle %.2f\n", CARS[i].id, al, d.maxAngle); }
+            }
+            g.R.freeCars();
+        }
+        printf("doors: %d of %d cars open their doors; %s\n", with, CAR_PICK, bad ? "FAIL" : "ok");
+        return bad ? 1 : 0;
+    }
     if (mode == "memcycle") {
         // memcycle [rounds]: menu -> attract -> menu -> race -> menu, many times. The heap must come
         // back to where it was (nothing that only grows), and the menu garage holds and draws one car

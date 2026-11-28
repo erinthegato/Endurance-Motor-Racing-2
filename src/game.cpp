@@ -91,7 +91,7 @@ void Game::startSession(Session ses) {
     if (asyncLoad) {
         // in steps behind the loading slideshow (loading.cpp)
         ld = LoadState(); ld.active = true; ld.ses = ses; ld.t0 = sys::timeSec();
-        ld.slide = (int)(ld.t0 * 3) % 7;
+        ld.slide = (int)((unsigned long long)(ld.t0 * 3) % 7);
         screen = SCR_LOADING;
         return;
     }

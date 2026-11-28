@@ -101,15 +101,43 @@ PROTO = {
 
 # per make, the plan view: the nose's half width at the tip and the waist's (between the axles), metres
 PROTO_PLAN = {
-    'ardenza499': (0.55, 0.86), 'kaizen10': (0.62, 0.90), 'lionne9x9': (0.48, 0.82), 'ashcombevalkyr': (0.44, 0.80),
-    'regalvr8': (0.64, 0.92), 'isarmh8': (0.58, 0.88), 'montagne27': (0.50, 0.84), 'origingx01': (0.60, 0.90),
-    'wokingw1': (0.52, 0.83), 'dearbornlmdh': (0.66, 0.91), 'careerhyper': (0.56, 0.87),
+    'ardenza499': (0.55, 0.85), 'kaizen10': (0.62, 0.90), 'lionne9x9': (0.48, 0.79), 'ashcombevalkyr': (0.44, 0.74),
+    'regalvr8': (0.64, 0.93), 'isarmh8': (0.58, 0.87), 'montagne27': (0.50, 0.84), 'origingx01': (0.60, 0.90),
+    'wokingw1': (0.52, 0.80), 'dearbornlmdh': (0.66, 0.92), 'careerhyper': (0.56, 0.87),
+}
+
+
+# per make, the body's own shape (so the cars differ in more than the livery), after each one's real car:
+#   can_k   canopy height (x the rule set's canopy height; <= 1: the rule's cap)
+#   can_w   canopy width (x the base teardrop)
+#   crown   the canopy's top in side view (an exponent): < 1 flatter and fuller, > 1 a rounder bubble that falls away sooner
+#   peak    the crown's x shift (m, + forward)          tail  the canopy's tail (> 1 longer, higher fastback)
+#   sect    the canopy's section: 2 an ellipse, > 2 fuller shoulders (a bubble), < 2 a narrower, peaked top
+#   intake  sidepod intake ahead of the rear wheels: 'none', 'scoop' (on the pod top), 'slot' (in its flank)
+#   rbulge  the plan width just ahead of the rear wheels (x the full width; lower: a pinched waist, bulging haunch)
+#   rfx     the rear fender crest's peak, m behind the rear axle      wing2  two-tier rear wing with fences
+#   airbox  a tall roof airbox over the driver's head (in place of the small roof scoop)
+HYPER_SHAPE = {
+    #                   can_k  can_w crown peak   tail  sect  intake    rbulge rfx   wing2  airbox
+    'ardenza499':     (1.00, 0.93, 0.70, 0.10,  1.20, 2.2, 'slot',   0.88,  0.15, False, False),  # 499P: low, long, flat canopy
+    'kaizen10':       (1.00, 1.00, 1.15, 0.02,  0.95, 2.0, 'scoop',  0.95,  0.00, False, True),   # GR010: tall, peaked, roof airbox
+    'lionne9x9':      (1.00, 1.06, 1.45, -0.10, 0.85, 2.6, 'none',   0.84,  0.20, False, False),  # 9X8: smooth bubble, big haunches
+    'ashcombevalkyr': (1.00, 1.10, 1.40, 0.03,  0.85, 3.0, 'slot',   0.80,  0.05, True,  False),  # Valkyrie: teardrop, pinched waist
+    'regalvr8':       (1.00, 0.96, 0.60, 0.04,  1.25, 2.0, 'slot',   0.97,  -0.05, False, False), # V-Series.R: upright, flat top
+    'isarmh8':        (1.00, 1.00, 1.00, -0.06, 1.00, 2.2, 'scoop',  0.90,  0.10, False, False),  # M Hybrid V8
+    'montagne27':     (1.00, 1.03, 1.20, 0.00,  0.95, 2.4, 'scoop',  0.92,  0.00, False, False),  # A424
+    'origingx01':     (1.00, 0.97, 0.80, 0.02,  1.10, 2.0, 'slot',   0.95,  -0.03, False, False),
+    'wokingw1':       (1.00, 0.98, 1.50, -0.12, 0.85, 2.6, 'scoop',  0.86,  0.15, False, False),
+    'dearbornlmdh':   (1.00, 1.02, 0.65, 0.06,  1.15, 2.0, 'slot',   0.96,  0.00, False, False),
+    'careerhyper':    (1.00, 1.00, 1.00, 0.00,  1.00, 2.0, 'none',   0.94,  0.00, False, False),
 }
 
 
 def proto_spec(cid, spec, rule):
     nose, fend, rfend, pod, can, scoop, fin, wing, lights = PROTO.get(cid, PROTO['careerhyper'])
     spec['nose_w'], spec['waist'] = PROTO_PLAN.get(cid, PROTO_PLAN['careerhyper'])
+    (spec['can_k'], spec['can_w'], spec['crown'], spec['peak'], spec['tail'], spec['sect'], spec['intake'],
+     spec['rbulge'], spec['rfx'], spec['wing2'], spec['airbox']) = HYPER_SHAPE.get(cid, HYPER_SHAPE['careerhyper'])
     r = dict(rule=rule, nose_h=nose, fend_h=fend, rfend_h=rfend, pod=pod, canopy_k=can, scoop=scoop, fin=fin,
              wing_mount=wing, lights=lights)
     if rule == 'LMDh':
@@ -125,16 +153,17 @@ def proto_fns(spec):
     L = spec['L']; xf = L / 2; xr = -L / 2
     fa, ra = spec['axles']
     nh, fh, rh, pod = spec['nose_h'], spec['fend_h'], spec['rfend_h'], spec['pod']
+    rfx = spec.get('rfx', 0.0)
     # plan view: the full width at the axles, the nose pinched, the waist (above the sidepods) pulled in
     nw, wa = spec.get('nose_w', 0.55), spec.get('waist', 0.86)      # (per make: the nose's width, the waist pinch)
     W = curve([(xf, nw), (xf - 0.10, min(0.80 + (nw - 0.55) * 0.6, 0.92)), (fa + 0.42, 0.97), (fa + 0.2, 1.0), (fa - 0.45, 1.0), (fa - 0.95, wa + 0.04),
-               (0.0, wa), (ra + 0.85, 0.94), (ra + 0.40, 1.0), (ra - 0.35, 1.0), (xr + 0.06, 0.96), (xr, 0.92)])
+               (0.0, wa), (ra + 0.85, spec.get('rbulge', 0.94)), (ra + 0.40, 1.0), (ra - 0.35, 1.0), (xr + 0.06, 0.96), (xr, 0.92)])
     # the middle: the nose rising to the cockpit, the engine deck behind it
     deck = curve([(xf, nh - 0.08), (xf - 0.20, nh), (fa + 0.25, nh + 0.12), (fa - 0.20, 0.44), (1.05, 0.50), (0.0, 0.56),
                   (ra + 0.40, 0.62), (ra - 0.20, 0.62), (xr, 0.56)])
     # the fender pods' crest: up over the front wheels, down along the sidepods, up again over the rears
     fend = curve([(xf, nh), (xf - 0.30, nh + 0.22), (fa + 0.42, fh - 0.10), (fa + 0.05, fh), (fa - 0.40, fh - 0.05),
-                  (fa - 0.95, 0.68), (0.20, 0.66), (ra + 0.95, 0.68), (ra + 0.40, rh - 0.04), (ra - 0.05, rh), (xr + 0.10, rh - 0.06), (xr, rh - 0.14)])
+                  (fa - 0.95, 0.68), (0.20, 0.66), (ra + 0.95, 0.68), (ra + 0.40 - rfx * 0.5, rh - 0.04), (ra - 0.05 - rfx, rh), (xr + 0.10, rh - 0.06), (xr, rh - 0.14)])
     # the sidepod undercut (the lower side drawn in between the axles)
     under = curve([(xf, 1.0), (fa - 0.45, 1.0), (fa - 0.90, pod), (ra + 0.90, pod), (ra + 0.45, 1.0), (xr, 1.0)])
     return W, deck, fend, under
@@ -169,10 +198,29 @@ def proto_ring(x, spec, fns, lod):
 
 
 def canopy_fns(spec):
-    k = spec.get('canopy', 1.03) / 1.03
-    cw = curve([(1.05, 0.06), (0.80, 0.34), (0.30, 0.47), (-0.40, 0.45), (-1.05, 0.33), (-1.75, 0.12)])
-    ct = curve([(1.05, 0.50), (0.72, 0.78), (0.28, 0.98), (-0.15, 1.03), (-0.70, 0.98), (-1.25, 0.84), (-1.75, 0.66)])
+    k = spec.get('canopy', 1.03) / 1.03 * spec.get('can_k', 1.0)
+    cwk = spec.get('can_w', 1.0); c = spec.get('crown', 1.0); p = spec.get('peak', 0.0); t = spec.get('tail', 1.0)
+    cw = curve([(1.05, 0.06), (0.80, 0.34 * cwk), (0.30, 0.47 * cwk), (-0.40, 0.45 * cwk), (-1.05, 0.33 * cwk), (-1.75, 0.12)])
+    ct0 = curve([(1.05, 0.50), (0.72, 0.78), (0.28, 0.98), (-0.15, 1.03), (-0.70, 0.98), (-1.25, 0.84), (-1.75, 0.66)])
+    def ct(x):
+        # the base profile, its crown moved forward by p (the ends stay put), then reshaped: g ** c, g the height
+        # over the deck as a fraction of the crown's -- c < 1 fuller and flatter on top, c > 1 a rounder bubble
+        # that falls away from its crown sooner. Monotonic either side of the crown: no new bumps
+        wgt = min(max((1.05 - x) / 0.6, 0.0), 1.0) * min(max((x + 1.75) / 0.6, 0.0), 1.0)
+        g = max((ct0(x - p * wgt) - 0.50) / 0.53, 0.0)
+        ce = 1.0 + (c - 1.0) * wgt                # (the screen's foot and the tail's end keep their heights)
+        z = 0.50 + 0.53 * g ** ce
+        if x < -0.15 + p:                         # the fastback: a longer, higher tail (t > 1) or a shorter one
+            z += 0.10 * (t - 1) * float(sstep(-0.15 + p, -1.0, x)) * (1 - g ** ce) * 1.6 * wgt
+        return z
     return cw, (lambda x: 0.50 + (ct(x) - 0.50) * k)
+
+
+def _sect(a, n):
+    """the canopy section's point at angle a (deg): a superellipse, n 2 an ellipse, > 2 fuller, < 2 peaked"""
+    e = 2.0 / n
+    ca, sa = np.cos(np.radians(a)), np.sin(np.radians(a))
+    return float(np.sign(ca) * abs(ca) ** e), float(abs(sa) ** e)
 
 
 def build_proto(spec, lod):
@@ -194,17 +242,30 @@ def build_proto(spec, lod):
     rings = []
     for x in cxs:
         w = cw(x); zt = ct(x); zb = deck(x) - 0.03
-        half = [(w * np.cos(np.radians(a)), zb + (zt - zb) * np.sin(np.radians(a))) for a in angs]
+        n_ = spec.get('sect', 2.0)
+        half = [(w * _sect(a, n_)[0], zb + (zt - zb) * _sect(a, n_)[1]) for a in angs]
         rings.append(np.array([(x, y, z) for y, z in half] + [(x, -y, z) for y, z in half[-2::-1]]))
     nglass = sum(1 for x in cxs if x > -0.35)
     m.loft(rings, cap_front=False, cap_back=False, glass=lambda i, k: i < nglass - 1)
     if lod >= 2:
         _proto_wing(m, spec, lod)
         return m
+    hmax = 1.15 if spec.get('rule') == 'LMH' else 1.06          # (the height limit: nothing but the antenna above it)
+    if spec.get('airbox'):
+        # a tall roof airbox from over the driver's head back along the spine, its mouth facing forward (GR010-like)
+        x0, x1 = -0.12, -1.10
+        zt0 = min(ct(x0) + 0.075, hmax - 0.01)
+        zb0 = ct(x0) - 0.01
+        z1 = ct(x1) - 0.02
+        V = np.array([[x0, 0.085, zt0], [x0, -0.085, zt0], [x1, -0.13, z1], [x1, 0.13, z1],
+                      [x0, 0.105, zb0], [x0, -0.105, zb0], [x0 - 0.30, 0.0, min(ct(x0 - 0.30) + 0.08, hmax - 0.005)]])
+        m.part(V, [[0, 6, 1], [6, 2, 1], [0, 3, 6], [6, 3, 2], [4, 0, 3], [5, 2, 1], [4, 5, 1], [4, 1, 0]], uv='proj', flat=True)
+        m.quad((x0 + 0.003, 0.08, zt0 - 0.008), (x0 + 0.003, -0.08, zt0 - 0.008), (x0 + 0.003, -0.10, zb0 + 0.008),
+               (x0 + 0.003, 0.10, zb0 + 0.008), uv='carbon', shade=0.3)
     # roof scoop behind the driver
-    if spec['scoop']:
+    elif spec['scoop']:
         x0, x1 = -0.40, -1.00
-        z0 = ct(-0.40) - 0.02
+        z0 = min(ct(-0.40) - 0.02, hmax - 0.075)
         m.part(np.array([[x0, 0.10, z0 + 0.07], [x0, -0.10, z0 + 0.07], [x1, -0.13, ct(x1) - 0.02], [x1, 0.13, ct(x1) - 0.02],
                          [x0, 0.10, z0 - 0.01], [x0, -0.10, z0 - 0.01]]),
                [[0, 1, 2], [0, 2, 3], [4, 5, 1], [4, 1, 0], [0, 3, 4], [1, 5, 2]], uv='proj', flat=True)
@@ -243,6 +304,7 @@ def build_proto(spec, lod):
         m.quad((x0 + 0.12, s * 0.78, 0.30), (x0 - 0.12, s * 0.93, 0.36), (x0 - 0.12, s * 0.93, 0.375), (x0 + 0.12, s * 0.78, 0.315), uv='carbon')
         # headlights on the pod fronts (>= 400 mm)
         _proto_lights(m, spec, fns, s)
+        _proto_intake(m, spec, fns, s)
         # the cut-outs over the front wheels (louvres) -- compulsory on the LMDh
         n_l = 6 if lod < 0 else 4
         for k in range(n_l):
@@ -303,6 +365,12 @@ def _proto_wing(m, spec, lod):
     m.box((x0 + 0.06, -ws, wz), (x0 + 0.36, ws, wz + 0.03), uv='carbon')
     if lod < 2:
         m.box((x0, -ws, wz + 0.035), (x0 + 0.16, ws, wz + 0.06), uv='second')
+        if spec.get('wing2'):
+            # two-tier: an upper element over the main plane, between the end plates' tops, with two fences
+            # standing between the tiers (Valkyrie-like); all of it under the end plates' tops
+            m.box((x0 + 0.12, -ws, wz + 0.068), (x0 + 0.40, ws, wz + 0.088), uv='carbon')
+            for yf in (-ws * 0.45, ws * 0.45):
+                m.box((x0 + 0.02, yf - 0.006, wz - 0.06), (x0 + 0.42, yf + 0.006, wz + 0.09), uv='carbon')
         for s in (-1, 1):
             # end plates
             m.box((x0 - 0.04, s * ws - 0.012, wz - 0.32), (x0 + 0.46, s * ws + 0.012, wz + 0.095), uv='carbon')
@@ -315,6 +383,36 @@ def _proto_wing(m, spec, lod):
         else:
             for s in (-0.42, 0.42):
                 m.box((x0 + 0.10, s - 0.010, 0.58), (x0 + 0.28, s + 0.010, wz), uv='carbon')
+
+
+def _proto_intake(m, spec, fns, s):
+    """the sidepod's cooling intake ahead of the rear wheel: 'scoop' a raised mouth on the pod top, 'slot' a dark
+    slot let into the pod's flank under its crest"""
+    W, deck, fend, under = fns
+    ra = spec['axles'][1]
+    kind = spec.get('intake', 'none')
+    if kind == 'scoop':
+        xa, xb = ra + 1.25, ra + 0.78                     # mouth (front) .. tail
+        ya = s * W(xa) * 0.80; yb = s * W(xb) * 0.80
+        za, zb = fend(xa), fend(xb)
+        hw = 0.11
+        V = np.array([[xa, ya - hw, za - 0.005], [xa, ya + hw, za - 0.005], [xa, ya + hw, za + 0.065], [xa, ya - hw, za + 0.065],
+                      [xb, yb - hw * 0.8, zb - 0.005], [xb, yb + hw * 0.8, zb - 0.005]])
+        m.part(V, [[3, 2, 5], [3, 5, 4], [0, 3, 4], [1, 5, 2]], uv='proj', flat=True)          # the hood over the mouth
+        m.quad((xa + 0.003, ya - hw * 0.92, za), (xa + 0.003, ya + hw * 0.92, za), (xa + 0.003, ya + hw * 0.92, za + 0.058),
+               (xa + 0.003, ya - hw * 0.92, za + 0.058), uv='carbon', shade=0.25)
+    elif kind == 'slot':
+        xa, xb = ra + 1.30, ra + 0.80
+        pts = []
+        for x in (xa, xb):
+            w = W(x); f = fend(x)
+            z0, z1 = 0.46, max(0.50, f - 0.13)
+            pts.append((x, s * (w + 0.004), z0, z1))
+        (xa_, ya_, za0, za1), (xb_, yb_, zb0, zb1) = pts
+        # (the slot's leading edge stands proud like a lip, the opening itself dark)
+        m.quad((xa_, ya_, za0), (xb_, yb_, zb0 + 0.02), (xb_, yb_, zb1 - 0.01), (xa_, ya_, za1), uv='carbon', shade=0.22)
+        m.quad((xa_ + 0.03, ya_ + s * 0.002, za0 - 0.01), (xa_, ya_ + s * 0.002, za0 - 0.01), (xa_, ya_ + s * 0.002, za1 + 0.01),
+               (xa_ + 0.03, ya_ + s * 0.002, za1 + 0.01), uv='carbon', shade=0.6)
 
 
 def _proto_lights(m, spec, fns, s):
@@ -538,6 +636,49 @@ def _bubble_glass(spec, cxs):
     return glass
 
 
+def _gt_pillars(m, spec, rings, glass):
+    """painted pillars over the glass house's joints (the livery's own paint, 'proj'), so the glass reads as
+    separate windows in a painted frame: the A-pillar where the windscreen meets the side window, the B-pillar
+    between the door window and the quarter window (near cab - 0.25), the C-pillar where the side window meets
+    the rear glass"""
+    S = len(rings)
+    if S < 3:
+        return
+    xs = [float(r[0][0]) for r in rings]
+    def kind(i):                                    # segment i (ring i -> i + 1)
+        if glass(i, 2) or glass(i, 3):
+            return 'screen'                         # (windscreen / rear glass: glass over the roof's line)
+        if glass(i, 0):
+            return 'side'
+        return 'paint'
+    ks = [kind(i) for i in range(S - 1)]
+    joints = []                                     # (ring, strip half width)
+    for r in range(1, S - 1):
+        a, b = ks[r - 1], ks[r]
+        if {a, b} == {'screen', 'side'}:
+            joints.append((r, 0.040))               # A / C pillar
+    side_idx = [i for i in range(S - 1) if ks[i] == 'side']
+    inner = [r for r in range(1, S - 1) if ks[r - 1] == 'side' and ks[r] == 'side']
+    if len(side_idx) >= 3 and inner:
+        bx = spec['cab'] - 0.25
+        r = min(inner, key=lambda r: abs(xs[r] - bx))
+        joints.append((r, 0.030))                   # B pillar
+    n = len(rings[0])
+    for r, hw in joints:
+        for chain in ((0, 1, 2), (n - 1, n - 2, n - 3)):
+            pts = []
+            for j in chain:
+                c = np.array(rings[r][j], float)
+                f = np.array(rings[r + 1][j], float); b = np.array(rings[r - 1][j], float)
+                pf = c + (f - c) * min(hw / max(np.linalg.norm(f - c), 1e-6), 0.45)
+                pb = c + (b - c) * min(hw / max(np.linalg.norm(b - c), 1e-6), 0.45)
+                out = np.array([0.0, c[1], c[2] - (rings[r][0][2] - 0.35)])
+                out /= max(np.linalg.norm(out), 1e-6)
+                pts.append((pf + out * 0.005, pb + out * 0.005))
+            for (f0, b0), (f1, b1) in zip(pts[:-1], pts[1:]):
+                m.quad(tuple(f0), tuple(b0), tuple(b1), tuple(f1), uv='proj')
+
+
 def build_gt(spec, lod):
     L = spec['L']; xf = L / 2; xr = -L / 2
     fa, ra = spec['axles']
@@ -570,10 +711,14 @@ def build_gt(spec, lod):
         sg = spec.get('side_glass')
         if sg and not (sg[0] <= i <= sg[1]):
             return False                            # (painted rear quarters)
+        if not sg and 0.5 * (cxs[i] + cxs[i + 1]) < spec['cab'] - (0.45 if spec['layout'] == 'mid' else 0.80):
+            return False                            # (painted rear quarters / engine-cover flank behind the windows)
         return k in (0, 1, 6, 7)                    # the side windows
     if spec.get('bubble') and spec['layout'] == 'rear':
         glass = _bubble_glass(spec, cxs)
     m.loft(rings, cap_front=False, cap_back=spec['layout'] == 'mid', glass=glass)
+    if lod < 2:
+        _gt_pillars(m, spec, rings, glass)
     # the headliner: a dark lining just under the roof, so from the seat the roof is black, not the livery
     if lod < 2:
         lining = []

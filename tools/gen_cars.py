@@ -40,6 +40,7 @@ SW = dict(glass=0, white=1, red=2, carbon=3, cage=4, second=5, panel=6, paint=7,
 HD_SWATCH = dict(orange=(1.0, 0.42, 0.05), green=(0.15, 0.85, 0.30), blue=(0.15, 0.40, 0.95), yellow=(0.98, 0.80, 0.10),
                  screen=(0.03, 0.05, 0.09), grey=(0.30, 0.31, 0.33), rubber=(0.07, 0.07, 0.075), caliper=(0.85, 0.08, 0.06))
 SW_DIV = 8          # swatch cells across the texture (HD: 16, the right half holds the decal slots)
+                    # (new Blender cars, export_designs: 32 -- 16 cells in the left half, stickers on the right)
 
 
 def sstep(a, b, x):
@@ -389,6 +390,12 @@ STYLES = ['stripe', 'twotone', 'slash', 'band', 'split', 'arrow', 'sweep', 'pixe
 
 
 def livery(p, cdef, spec, hyper):
+    global SW_DIV
+    if spec.get('no_panel'):
+        # the new Blender cars: all 16 swatch cells across the left half of the row (u = (k + 0.5) / 32),
+        # so the right half is free for the big sponsor stickers (BIG_SLOTS) and no part samples sticker art.
+        # Set before the swatches are painted and before the meshes are built, so cells and UVs agree.
+        SW_DIV = 32
     L = spec['L']; xf = L / 2; xr = -L / 2
     A = cdef['colour']; B = spec['second']; C = spec['accent']
     p.base(A)

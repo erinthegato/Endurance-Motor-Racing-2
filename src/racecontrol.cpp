@@ -466,6 +466,8 @@ void Race::garageCar(Car& c, int phase, float delay) {
     c.total = cand;
     c.pit = PIT_STOP; c.pitPhase = phase; c.pitTimer = -delay; c.wantPit = false; c.outLap = true;
     c.lift = 0.12f; c.engineOn = false; c.rpm = 0;
+    c.body = CarBody();                                  // sat on its jacks: no spring state carried over
+    if (c.player) { handover = -1; handBlend = 0; handGo = 0; }
     pose(c);
 }
 
@@ -489,22 +491,49 @@ void Race::leaveGarage(const CarSetup& su) {
     if (c.pit != PIT_STOP || c.pitPhase != -2) return;
     applySetup(*this, c, su);
     c.pitPhase = -3; c.pitTimer = 0;
+    handover = HANDOVER_S; handBlend = 0;                // the AI takes it out; the player gets it in 10 s
 }
 
 void Race::flyingLap(const CarSetup& su) {
     Car& c = player();
     if (c.pit != PIT_STOP || c.pitPhase != -2) return;
     applySetup(*this, c, su);
-    // 900 m before the line at racing speed: the next crossing starts a timed lap
+    // 900 m before the line at racing speed: the next crossing starts a timed lap.
+    // A safe spot: clear of the other cars (none within 60 m along the lap, nor 40 m ahead of us
+    // after a second at speed), so the collision push-out never fires on the first step
     float L = track.length;
-    float back = fminf(900.0f, L * 0.25f);
+    float back0 = fminf(900.0f, L * 0.25f), back = back0;
+    for (int tries = 0; tries < 24; tries++) {
+        float s = track.wrap(-back);
+        bool clear = true;
+        for (const Car& o : cars) {
+            if (&o == &c || o.pit == PIT_STOP || o.rel.retired) continue;
+            float ds = track.wrap(o.s - s); if (ds > L * 0.5f) ds -= L;
+            if (ds > -60 && ds < 100) { clear = false; break; }
+        }
+        if (clear) break;
+        spawnHits++;
+        back += 45;
+        if (back > L * 0.45f) back = back0 * 0.5f + tries * 13.0f;
+    }
     c.s = track.wrap(-back);
     c.total = (floorf(c.total / L) + 1) * L - back;
     int i = track.index(c.s);
-    c.d = line[i]; c.yaw = 0; c.drift = 0; c.lift = 0;
-    c.v = vmax[c.def->cls][i] * 0.85f; c.gear = 6;
+    float hw = track.pts[i].hw;
+    c.d = clampf(line[i], -hw + 1.6f, hw - 1.6f);        // on the tarmac: never on a kerb or the grass
+    c.yaw = 0; c.drift = 0; c.lift = 0; c.yawRate = 0; c.yawCmd = 0; c.steer = 0;
+    c.spinning = false; c.offTrack = false; c.stuck = 0;
+    c.v = vmax[c.def->cls][i] * 0.85f;
+    c.gear = 6;
     c.pit = PIT_NONE; c.pitPhase = 0; c.outLap = true; c.engineOn = true;
+    // the root of the launches: the body kept its spring state from the garage spot, so the first
+    // step saw the road jump by the height difference in one frame (a huge vertical speed) and the
+    // springs fired the car into the air. Start the body afresh, sat on the road here
+    c.body = CarBody();
+    for (float& d : c.dmg) d = 0;
+    c.noseOff = c.wingOff = false;
     pose(c);
+    handover = HANDOVER_S; handBlend = 0;
 }
 
 // garage moves: in from the box, and out: off the jacks, engine on, pushed to the box

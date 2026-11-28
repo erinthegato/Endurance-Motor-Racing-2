@@ -1684,6 +1684,19 @@ void Renderer::drawHUD(const Race& r, int mode) {
         }
         if (r.countdown <= 0) font.drawCentre(SCREEN_W / 2, 48, "GO!", RGBA(60, 255, 90), 1.6f);
     }
+    if (r.handing() || r.handGo > 0) {
+        // leaving the garage: the AI drives the first 10 s, then hands over
+        char hb[40];
+        u32 col = RGBA(255, 255, 255);
+        float sc = 1.6f;
+        if (!r.handing()) { snprintf(hb, sizeof hb, "GO"); col = RGBA(60, 255, 90); sc = 2.0f; }
+        else if (r.handover <= 0) { snprintf(hb, sizeof hb, "AT PIT EXIT"); col = RGBA(255, 215, 40); sc = 1.2f; }
+        else if (r.handover <= 3) { snprintf(hb, sizeof hb, "%d", (int)ceilf(r.handover)); col = RGBA(255, 215, 40); sc = 2.4f; }
+        else snprintf(hb, sizeof hb, "YOUR CAR IN %d", (int)ceilf(r.handover));
+        gfx::drawFill2D(SCREEN_W / 2 - 100, 58, 200, 44, RGBA(0, 0, 0, 150));
+        font.drawCentre(SCREEN_W / 2, 64, r.handing() ? "THE TEAM IS DRIVING" : "YOU HAVE THE CAR", RGBA(170, 200, 230), 0.6f);
+        font.drawCentre(SCREEN_W / 2, sc > 2 ? 72 : 78, hb, col, sc);
+    }
     if (c.finished) {
         gfx::drawFill2D(SCREEN_W / 2 - 110, 100, 220, 50, RGBA(0, 0, 0, 170));
         font.drawCentre(SCREEN_W / 2, 104, r.session == SES_RACE ? "FINISH" : "SESSION OVER", RGBA(255, 255, 255), 1.6f);

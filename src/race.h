@@ -275,6 +275,13 @@ struct Race {
     float startHour = 12;
     float timeAccel = 1;
     bool autoPlayer = false;      // the AI drives the player's car (tests, highlights)          // 1..16x speed-up while the AI drives (manage mode)
+    // leaving the garage: the AI drives the first 10 s, then hands the car over (on track, past the pit exit)
+    float handover = -1;          // seconds left of the countdown (-1 none; 0 = waiting for the pit exit)
+    float handBlend = 0;          // seconds left of the smooth handover (the AI's inputs fade into the player's)
+    float handGo = 0;             // seconds left of the "GO" after the handover
+    bool handing() const { return handover >= 0; }
+    static constexpr float HANDOVER_S = 10.0f;
+    int spawnHits = 0;            // (tests) flying-lap spawns that had to be moved clear of another car
     // weather
     float rain = 0, wet = 0, rainTarget = 0, rainTimer = 0;
     // track rubber 0 (green) .. 1 (fully rubbered in): the cars lay rubber on the racing line, which

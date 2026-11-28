@@ -198,6 +198,7 @@ jobs:
         run: |
           ./emr_test_asan nospin spa 3 2
           ./emr_test_asan nospin spa 11 2
+          ./emr_test_asan difflap imola 0
       - name: Pit stop hand-over to a team-mate, career race lengths
         env:
           ASAN_OPTIONS: detect_leaks=0

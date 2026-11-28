@@ -1543,6 +1543,38 @@ int main(int argc, char** argv) {
         printf("help %d: from %.0f km/h  spun %s  max slide %.2f rad  now %.0f km/h\n", help, v0, spun ? "YES" : "no", maxDrift, me.v * 3.6f);
         return 0;
     }
+    if (mode == "difflap") {
+        // difflap <track> <car>: 5 AI opponents, 4 laps, at every AI level; the AI's best lap per level
+        // and the spread. Each level up to Normal must be faster than the one below it.
+        std::string tid = argv[2]; int car = atoi(argv[3]);
+        static const int ORD[DIFF_COUNT] = {DIFF_LUDICROUS, DIFF_VERYEASY, DIFF_EASY, DIFF_NORMAL, DIFF_HARD};
+        float prev = 0; bool ok = true;
+        for (int k = 0; k < DIFF_COUNT; k++) {
+            int d = ORD[k];
+            for (int i = 0; i < TRACK_COUNT; i++) if (tid == TRACKS[i].id) g.set.track = i;
+            g.set.car = car; g.set.laps = 4; g.set.opponents = 5; g.set.weather = WX_DRY; g.set.raceMin = 0;
+            g.set.weekend = false; g.set.difficulty = d; g.aiDrivesPlayer = true;
+            g.startRace();
+            for (float t = 0; t < 900; t += 1.0f / 60) {
+                Pad z{}; g.step(1.0f / 60, z); g.race.sfxEvents.clear();
+                bool done = true;
+                for (auto& c : g.race.cars) if (!c.player && c.lap < 4) done = false;
+                if (done) break;
+            }
+            float best = 1e9f, worst = 0;
+            for (auto& c : g.race.cars) if (!c.player && c.bestLap > 0) { best = fminf(best, c.bestLap); worst = fmaxf(worst, c.bestLap); }
+            printf("difflap %-17s best %7.2f s  slowest %7.2f s\n", diffName(d), best, worst);
+            if (k > 0 && d != DIFF_HARD && !(best < prev)) ok = false;   // (Normal vs Hard is within the cars' spread)
+            prev = best;
+        }
+        printf("difflap %s\n", ok ? "OK: each level faster than the one below" : "FAIL: order");
+        if (getenv("DIFF_SHOT")) {   // the race-settings tablet at the easiest level (text width check)
+            g.set.difficulty = DIFF_LUDICROUS; g.screen = SCR_SETTINGS; g.sel = 3;
+            for (int i = 0; i < 40; i++) { Pad q{}; g.frame(1.0f / 30, q); }
+            shot(g, getenv("DIFF_SHOT"));
+        }
+        return ok ? 0 : 1;
+    }
     if (mode == "nospin") {
         // nospin <track> <car> <help 0-2>: AI drives 30 s, then 25 s of abuse -- full lock flung side to
         // side, the throttle stabbed, the brakes slammed mid-corner, held lock into the barriers.

@@ -908,7 +908,7 @@ void Game::update(float dt, const Pad& p) {
             if (sel == 0) { int v = LENGTHS[cyc(li, LENGTH_N)]; if (v > 0) { set.laps = v; set.raceMin = 0; } else set.raceMin = -v; }
             if (sel == 1) set.car = eraFirstCar(CARS[set.car].era) + cyc(set.car % TEAMS_PER_ERA, TEAMS_PER_ERA);   // team (the era is set at headquarters)
             if (sel == 2) set.opponents = OPP[cyc(oi, 4)];
-            if (sel == 3) set.difficulty = cyc(set.difficulty, 3);
+            if (sel == 3) set.difficulty = diffStep(set.difficulty, dx);
             if (sel == 4) set.startPos = cyc(set.startPos, 3);
             if (sel == 5) set.startType = (set.startType + (dx < 0 ? 3 : 1)) % 4;   // rolling (the norm), standing, the classic Le Mans start
             if (sel == 6) set.weather = cyc(set.weather, 4);
@@ -1595,7 +1595,7 @@ void Game::updateCareer(int dx, int dy, bool ok, bool back, bool square) {
         if (sel == 1) sel = dy < 0 ? 0 : 2;              // (the era row is only shown)
         if (dx) {
             if (sel == 0) newName = cyc(newName, TEAM_NAME_COUNT);
-            if (sel == 2) newDiff = cyc(newDiff, 3);
+            if (sel == 2) newDiff = diffStep(newDiff, dx);
             if (sel == 3) newMin = nextCareerLen(newMin, dx);
         }
         if (back || (ok && sel == 5)) { screen = SCR_TITLE; sel = 2; t = 0; return; }

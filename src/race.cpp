@@ -159,13 +159,17 @@ bool Race::start(const RaceSettings& s0, Session ses, const std::vector<int>* gr
         if (o2.size() == entries.size()) order = o2;
     }
     seed = seed * 31 + (uint32_t)ses * 7919u + (uint32_t)(sys::timeSec() * 1000);   // drivers' form differs per session
-    static const float SKILL[3] = {0.88f, 0.94f, 0.985f};
+    // corner/straight speed as a share of the limit, and the most throttle the AI uses
+    static const float SKILL[DIFF_COUNT] = {0.85f, 0.94f, 0.985f, 0.76f, 0.62f};
+    static const float POWER[DIFF_COUNT] = {1.0f, 1.0f, 1.0f, 0.85f, 0.6f};
+    int dl = s.difficulty < 0 || s.difficulty >= DIFF_COUNT ? DIFF_NORMAL : s.difficulty;
     for (int k = 0; k < (int)order.size(); k++) {
         Car c;
         c.def = entries[order[k]].first;
         c.number = entries[order[k]].second;
         c.player = order[k] == 0;
-        c.skill = SKILL[s.difficulty] * (0.985f + frand() * 0.03f);
+        c.skill = SKILL[dl] * (0.985f + frand() * 0.03f);
+        c.throttleCap = POWER[dl];
         c.lineBias = (frand() - 0.5f) * 0.6f;
         c.gear = 1; c.rpm = c.def->idleRpm;
         crewDrivers(c);
@@ -924,6 +928,7 @@ void Race::drive(Car& c, float dt) {
         if (c.brake > 0 && H.latUse > 0.55f) c.brake *= clampf(1.0f - (H.latUse - 0.55f) * 1.3f, 0.35f, 1.0f);
         if (c.throttle > 0.6f && H.latUse > 0.85f) c.throttle = fmaxf(0.6f, 1 - (H.latUse - 0.85f) * 2.5f);
     }
+    if (!c.player) c.throttle = fminf(c.throttle, c.throttleCap);
     if (countdown > 0) { c.throttle = 0; c.brake = 1; }
 
     float wantYaw = atan2f(target - c.d, la);
@@ -1355,4 +1360,15 @@ void Race::updateDrs(float dt) {
         c.drsFlap = clampf(c.drsFlap + (open ? dt * 5 : -dt * 7), 0, 1);
     }
     drsPress = false;
+}
+
+const char* diffName(int d) {
+    static const char* N[DIFF_COUNT] = {"Easy", "Normal", "Hard", "Very easy", "Ludicrously easy"};
+    return d >= 0 && d < DIFF_COUNT ? N[d] : N[DIFF_NORMAL];
+}
+int diffStep(int d, int dir) {
+    static const int ORDER[DIFF_COUNT] = {DIFF_LUDICROUS, DIFF_VERYEASY, DIFF_EASY, DIFF_NORMAL, DIFF_HARD};
+    int k = 3;
+    for (int i = 0; i < DIFF_COUNT; i++) if (ORDER[i] == d) k = i;
+    return ORDER[((k + (dir < 0 ? -1 : 1)) % DIFF_COUNT + DIFF_COUNT) % DIFF_COUNT];
 }

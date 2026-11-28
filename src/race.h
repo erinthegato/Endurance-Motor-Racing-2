@@ -163,6 +163,7 @@ struct Car {
     float giveBack = 0; int giveBackPos = 0;
     // AI
     float skill = 1, lineBias = 0, avoid = 0;
+    float throttleCap = 1;     // the easiest AI levels never use full power
     float slip = 0;               // 0..1 how much the tyres are sliding (sound/smoke)
     bool offTrack = false;
     float stuck = 0;              // seconds stopped on track (safety car trigger)
@@ -191,13 +192,19 @@ static const int RACE_FULL = 99999;
 enum StartType { START_EVENT = 0, START_ROLLING, START_STANDING, START_LEMANS };
 enum WeatherMode { WX_SIMULATED = 0, WX_DRY, WX_WET, WX_STORM };
 
+// AI difficulty. The stored values stay 0..2 for Easy/Normal/Hard so older saves keep their level;
+// the two easier levels were added after, so the menus walk them in DIFF_ORDER (easiest first).
+enum { DIFF_EASY = 0, DIFF_NORMAL, DIFF_HARD, DIFF_VERYEASY, DIFF_LUDICROUS, DIFF_COUNT };
+const char* diffName(int d);
+int diffStep(int d, int dir);     // the next level in the menu order (wraps)
+
 struct RaceSettings {
     int track = 0;
     int car = 0;
     int laps = 3;
     int raceMin = 0;        // > 0: timed race of this many real minutes (overrides laps)
     int opponents = 19;
-    int difficulty = 1;     // 0 easy 1 normal 2 hard
+    int difficulty = 1;     // DIFF_*: 0 easy 1 normal 2 hard 3 very easy 4 ludicrously easy (values kept for old saves)
     int startPos = 1;       // 0 pole, 1 middle, 2 back
     bool manualGears = false;
     bool weekend = false;   // practice + qualifying before the race

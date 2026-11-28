@@ -11,7 +11,6 @@
 #include <algorithm>
 
 static const u32 WHITE = RGBA(255, 255, 255), DIM = RGBA(175, 185, 200), ACC = RGBA(255, 150, 40), GOLD = RGBA(255, 215, 70), INK = RGBA(20, 20, 20);
-static const char* DIFF[3] = {"Easy", "Normal", "Hard"};
 static const char* STARTP[3] = {"Pole", "Middle", "Back"};
 static const char* STARTT[4] = {"Rolling (WEC)", "Rolling", "Standing", "Le Mans style"};
 static const char* WXN[4] = {"Changeable", "Dry", "Wet", "Thunderstorm"};
@@ -552,7 +551,7 @@ void Game::screenSetupTablet(Panel& P) {
     snprintf(v[0], 48, "Length:  < %s >", len_);
     snprintf(v[1], 48, "Team:  < %s >", CARS[set.car].team);
     snprintf(v[2], 48, "Opponents:  < %d >", set.opponents);
-    snprintf(v[3], 48, "AI:  < %s >", DIFF[set.difficulty]);
+    snprintf(v[3], 48, "AI:  < %s >", diffName(set.difficulty));
     snprintf(v[4], 48, "Grid:  < %s >", STARTP[set.startPos]);
     snprintf(v[5], 48, "Start:  < %s >", STARTT[set.startType]);
     snprintf(v[6], 48, "Weather:  < %s >", WXN[set.weather]);
@@ -1596,11 +1595,10 @@ static const char* fmtLenShort(int m) { static char b[16]; if (m >= 60) snprintf
 void Game::screenCareerNew(Panel& P) {
     header(P, "NEW CAREER");
     char b[96];
-    static const char* DIFFN[3] = {"Easy", "Normal", "Hard"};
     char v[6][64];
     snprintf(v[0], 64, "Team:  < %s >", TEAM_NAMES[newName]);
     snprintf(v[1], 64, "Class:  %s", ERA_NAME[era]);
-    snprintf(v[2], 64, "Opponents:  < %s >", DIFFN[newDiff]);
+    snprintf(v[2], 64, "Opponents:  < %s >", diffName(newDiff));
     if (newMin > 0) snprintf(v[3], 64, "Race length:  < %d laps >", newMin);
     else if (newMin <= -RACE_FULL) snprintf(v[3], 64, "Race length:  < Full length >");
     else if (newMin <= -60) snprintf(v[3], 64, "Race length:  < %d h%s a 6 h >", -newMin / 60, (-newMin) % 60 ? " 30" : "");

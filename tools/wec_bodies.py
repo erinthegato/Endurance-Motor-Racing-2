@@ -459,7 +459,7 @@ GT = {
     'isarm4':        ('front', 0.60, 0.82, 0.92, 'slim',  1.34, 0.03),
     'kentuckyz6':    ('mid',   0.52, 0.68, 0.90, 'slim',  1.30, 0.00),
     'ashcombevanguard':('front',0.58, 0.80, 0.90, 'slim', 1.32, 0.03),
-    'woking720':     ('mid',   0.48, 0.64, 0.86, 'eye',   1.29, 0.00),
+    'woking720':     ('mid',   0.50, 0.66, 0.85, 'eye',   1.20, 0.00),
     'sterneamg':     ('front', 0.62, 0.84, 0.94, 'slim',  1.34, 0.05),
     'kotobukigr':    ('front', 0.58, 0.80, 0.90, 'eye',   1.31, 0.02),
     'dearbornstallion':('front',0.70, 0.82, 0.95, 'bar',  1.22, 0.00),
@@ -487,6 +487,11 @@ GT_X = {
     'dearbornstallion': dict(wheelbase=2.72, axle_shift=0.145, cab_shift=0.21, gt_nose_w=0.80, fender_rise=0.04,
                              side_glass=(1, 4), twin_hood_vents=True, side_exhaust=True, exhaust=False, wing_back=0.13,
                              endplate_drop=0.30),
+    # (the 720S-like car: a 2.67 m wheelbase set back, a low teardrop canopy far forward on the same wedge cabin,
+    #  a roof scoop, twin exhausts high in the middle of an open tail, the wing hung out behind on swan necks)
+    'woking720': dict(wheelbase=2.67, axle_shift=-0.135, cab_shift=-0.18, wedge=True, fender_rise=0.08, gt_nose_w=0.62,
+                      wing_back=0.26, endplate_drop=0.22, exhaust=(0.12, 0.45, 0.05), roof_scoop=True, mesh_tail=True,
+                      deck_vents=True),
     'torotgt': dict(wheelbase=2.62, axle_shift=-0.16, cab_shift=-0.30, wedge=True, fender_rise=0.07, gt_nose_w=0.66,
                     wing_back=0.30, exhaust=(0.26, 0.44, 0.058), hex_intake=True, roof_scoop=True, mesh_tail=True, deck_vents=True),
 }

@@ -707,7 +707,7 @@ int main(int argc, char** argv) {
         auto stn = [&](int id) { for (auto& s2 : g.walker.stations) if (s2.id == id) return s2; return g.walker.stations[0]; };
         { WalkStation q = stn(0); walkTo(q.x, q.y, 12, false, "walk_hub_go", 1.5f); }
         settle(4); shot(g, out + "/walk_hub_quickrace.ppm");
-        fprintf(stderr, "hub: at %.2f %.2f near %s\n", g.walker.x, g.walker.y, g.walker.near >= 0 ? g.walker.stations[g.walker.near].label : "-");
+        fprintf(stderr, "hub: at %.2f %.2f near %s\n", g.walker.x, g.walker.y, g.walker.nearSt >= 0 ? g.walker.stations[g.walker.nearSt].label : "-");
         { Pad q{}; q.rstickX = 1; for (int i = 0; i < 25; i++) g.frame(1.0f / 30, q); } settle(2); shot(g, out + "/walk_hub_turned.ppm");
         press(g, &Pad::cross); settle(30);
         fprintf(stderr, "hub: X opened screen %d (SCR_TRACK %d)\n", (int)g.screen, (int)SCR_TRACK);
@@ -721,7 +721,7 @@ int main(int argc, char** argv) {
         fprintf(stderr, "hq: screen %d (SCR_HQ %d)\n", (int)g.screen, (int)SCR_HQ);
         shot(g, out + "/walk_hq_start.ppm");
         walkTo(0.6f, 0.15f, 8, false, nullptr, 9); settle(6); shot(g, out + "/walk_hq_car.ppm");
-        fprintf(stderr, "hq: near %s\n", g.walker.near >= 0 ? g.walker.stations[g.walker.near].label : "-");
+        fprintf(stderr, "hq: near %s\n", g.walker.nearSt >= 0 ? g.walker.stations[g.walker.nearSt].label : "-");
         press(g, &Pad::cross); settle(10);
         fprintf(stderr, "hq: X -> screen %d era %d\n", (int)g.screen, g.era);
         // 3. practice: out of the garage on foot to the engineer's place, a pit plan made there

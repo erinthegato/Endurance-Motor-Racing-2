@@ -16,7 +16,7 @@ static float clampW(float v, float a, float b) { return v < a ? a : (v > b ? b :
 // ------------------------------------------------------------------ the walker
 void Walker::clear() {
     boxes.clear(); roofs.clear(); obbs.clear(); posts.clear(); stations.clear();
-    near = -1; ceiling = 99; boundsAreWalls = true;
+    nearSt = -1; ceiling = 99; boundsAreWalls = true;
 }
 
 void Walker::place(float px, float py, float facing) {
@@ -162,13 +162,13 @@ bool Walker::update(float dt, const Pad& p, const Pad& prev) {
         camNow = allowed < camNow ? allowed : camNow + (allowed - camNow) * fminf(1, dt * 2.5f);
     }
     // the station in reach: the nearest
-    near = -1; float bd = 1e9f;
+    nearSt = -1; float bd = 1e9f;
     for (int i = 0; i < (int)stations.size(); i++) {
         const WalkStation& s = stations[i];
         float d2 = (s.x - x) * (s.x - x) + (s.y - y) * (s.y - y);
-        if (d2 < s.r * s.r && d2 < bd) { bd = d2; near = i; }
+        if (d2 < s.r * s.r && d2 < bd) { bd = d2; nearSt = i; }
     }
-    return near >= 0 && p.cross && !prev.cross;
+    return nearSt >= 0 && p.cross && !prev.cross;
 }
 
 void Walker::camera(V3& eye, V3& target) const {
@@ -352,9 +352,9 @@ int Game::updateWalkHub(float dt, const Pad& p) {
     }
     bool use = walker.update(dt, p, prev);
     if (walker.moving || fabsf(p.rstickX) > 0.15f || fabsf(p.rstickY) > 0.15f) idle = 0;
-    if (walker.near >= 0) { int id = walker.stations[walker.near].id; if (id >= 0 && id < TITLE_N) sel = id; }
+    if (walker.nearSt >= 0) { int id = walker.stations[walker.nearSt].id; if (id >= 0 && id < TITLE_N) sel = id; }
     if (use) {
-        int id = walker.stations[walker.near].id;
+        int id = walker.stations[walker.nearSt].id;
         if (id == WST_LIST) { walkList = true; return -1; }
         return id;
     }
@@ -401,7 +401,7 @@ void Game::drawWalkHub(const V3& eye, const V3& fwd) {
     for (const HubSpot& h : HUB) {
         int si = -1;
         for (int i = 0; i < (int)walker.stations.size(); i++) if (walker.stations[i].id == h.id) si = i;
-        bool on = si >= 0 && si == walker.near;
+        bool on = si >= 0 && si == walker.nearSt;
         V3 n(cosf(h.face), sinf(h.face), 0), r = cross(n, V3(0, 0, 1)) * -1.0f;      // (r: the screen's right, seen from the front)
         M4 face = rel * M4::basis(r, V3(0, 0, 1), n, V3(h.x, h.y, h.z));
         if (h.id != 3) {           // (load race: the big wall screen is already there)
@@ -415,12 +415,12 @@ void Game::drawWalkHub(const V3& eye, const V3& fwd) {
     // the old list's monitor
     for (int i = 0; i < (int)walker.stations.size(); i++) if (walker.stations[i].id == WST_LIST) {
         const WalkStation& s = walker.stations[i];
-        bool on = i == walker.near;
+        bool on = i == walker.nearSt;
         Walker::marker(R, M4::translate(V3(s.x, s.y, s.labelZ) - eye), walker.t, on);
         if (on) { gfx::setBlend(true); gfx::setDepthWrite(false); label3D(R, V3(s.x, s.y, s.labelZ + 0.22f), eye, fwd, s.label, true); gfx::setBlend(false); gfx::setDepthWrite(true); }
     }
     char info[48]; snprintf(info, sizeof info, "MAIN MENU  %s", ERA_SHORT[era]);
-    walkHud(R, walker.near >= 0 ? walker.stations[walker.near].label : nullptr,
+    walkHud(R, walker.nearSt >= 0 ? walker.stations[walker.nearSt].label : nullptr,
             walker.run ? "Move: d-pad / left stick   L: walk   Right stick: camera   X: open"
                        : "Move: d-pad / left stick   L: run   Right stick: camera   X: open", info);
 }
@@ -443,9 +443,9 @@ void Game::updateWalkHQ(float dt, const Pad& p) {
     if (walker.scene != WALK_HQ) walkHQLayout();
     bool use = walker.update(dt, p, prev);
     if (walker.moving || fabsf(p.rstickX) > 0.15f || fabsf(p.rstickY) > 0.15f) idle = 0;
-    if (walker.near >= 0 && walker.stations[walker.near].id < ERA_COUNT) hqSel = walker.stations[walker.near].id;
+    if (walker.nearSt >= 0 && walker.stations[walker.nearSt].id < ERA_COUNT) hqSel = walker.stations[walker.nearSt].id;
     if (use && t > 0.3f) {
-        int id = walker.stations[walker.near].id;
+        int id = walker.stations[walker.nearSt].id;
         if (id < ERA_COUNT) chooseEra(id);
         screen = SCR_TITLE; sel = 0; t = 0; walkList = false; walker.scene = -1;   // (the garage: in at the door)
         return;
@@ -459,7 +459,7 @@ void Game::drawWalkHQ(const V3& eye, const V3& fwd) {
     walkFigure(V3(walker.x, walker.y, walker.z), V3(cosf(walker.yaw), sinf(walker.yaw), 0), eye);
     for (int i = 0; i < (int)walker.stations.size(); i++) {
         const WalkStation& s = walker.stations[i];
-        bool on = i == walker.near;
+        bool on = i == walker.nearSt;
         V3 at = s.id < ERA_COUNT ? V3(s.x, 0.95f, s.labelZ) : V3(s.x, s.y, s.labelZ);
         Walker::marker(R, M4::translate(at - eye) * M4::scale(0.6f, 0.6f, 0.6f), walker.t + i, on);
         gfx::setBlend(true); gfx::setDepthWrite(false);
@@ -676,7 +676,7 @@ void Game::updateWalkPit(float dt, const Pad& p, bool onFoot) {
         walker.obbs.push_back({rx, c.d, a, c.def->lengthM * 0.5f, 1.0f});
     }
     bool use = walker.update(dt, p, prev);
-    int id = walker.near >= 0 ? walker.stations[walker.near].id : -1;
+    int id = walker.nearSt >= 0 ? walker.stations[walker.nearSt].id : -1;
     if (!use) return;
     if (id == WST_CAR) driveOut();
     else if (id == WST_SETUPENG) askSetupEngineer();
@@ -949,7 +949,7 @@ void Game::drawWalkPit() {
     char lab[48] = "";
     if (walkFocus < 0) for (int i = 0; i < (int)walker.stations.size(); i++) {
         const WalkStation& s = walker.stations[i];
-        bool on = i == walker.near;
+        bool on = i == walker.nearSt;
         V3 m = walkPitWorld(s.x, s.y, s.labelZ);
         float dist = sqrtf((s.x - walker.x) * (s.x - walker.x) + (s.y - walker.y) * (s.y - walker.y));
         if (!on && dist > 20) continue;
@@ -984,7 +984,7 @@ void Game::drawWalkPit() {
                                                      : "UP / DOWN  row     LEFT / RIGHT  change     X  select     O  back", nullptr);
     } else {
         char info[64]; snprintf(info, sizeof info, "%s  #%d", race.session == SES_QUALI ? "QUALIFYING  GARAGE" : "PRACTICE  GARAGE", race.player().number);
-        const char* prompt = walker.near >= 0 ? walker.stations[walker.near].label : nullptr;
+        const char* prompt = walker.nearSt >= 0 ? walker.stations[walker.nearSt].label : nullptr;
         walkHud(R, prompt, walker.run ? "Move: d-pad / left stick   L: walk   Right stick: camera   X: use   START: pause"
                                       : "Move: d-pad / left stick   L: run   Right stick: camera   X: use   START: pause", info);
     }

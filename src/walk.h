@@ -42,7 +42,7 @@ struct Walker {
     std::vector<WalkObb> obbs;               // turned boxes (cars), refreshed by the game when they move
     std::vector<WalkPost> posts;
     std::vector<WalkStation> stations;
-    int near = -1;                           // index of the station in reach (-1 none)
+    int nearSt = -1;                         // index of the station in reach (-1 none)
     bool moving = false;                     // the pad asked to move this frame
     bool helmet = true;                      // drawn in a helmet (a driver), else a head and a cap (the engineers)
 

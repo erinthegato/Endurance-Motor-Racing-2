@@ -584,6 +584,9 @@ def hd_details(p, c, spec, hyper):
     line_side(xr + 0.03, 0.55 if hyper else spec['tail'] - 0.12, xr + 0.30, 0.56 if hyper else spec['tail'] - 0.10, (1.0, 0.10, 0.08), 4)
     if c['id'].startswith('career'):
         return
+    if spec.get('no_panel'):          # the new Blender cars: big sponsors (hd_sponsors / big_decal_quads)
+        hd_sponsors(p, c, spec, hyper)
+        return
     # sponsor stickers: two slots in the right half of the swatch row (white / dark), stuck on as
     # separate quads by decal_quads() so the lettering reads the right way on both sides
     rng = np.random.RandomState(zlib.crc32(c['id'].encode()) & 0xffff)
@@ -603,6 +606,8 @@ def decal_quads(m, c, spec, W):
     """Stick the two sponsor decals on both sides: one on the rear fender, one on the door / front fender."""
     if c['id'].startswith('career'):
         return
+    if spec.get('no_panel'):
+        return big_decal_quads(m, c, spec, W)
     hyper = c['hyper']; fa, ra = spec['axles']
     v0 = TOP_V[1] + 3 / 512; vh = (1 - TOP_V[1] - 4 / 512) / 2
     slots = [(0.5 + 2 / 512, 1 - 2 / 512, v0, v0 + vh - 2 / 512), (0.5 + 2 / 512, 1 - 2 / 512, v0 + vh, v0 + 2 * vh - 2 / 512)]
@@ -631,6 +636,182 @@ def decal_quads(m, c, spec, W):
                 ua, ub = u0 + (u1 - u0) * ta, u0 + (u1 - u0) * tb
                 m.decal([(xa, ya, z0), (xb, yb, z0), (xb, yb, z1), (xa, ya, z1)],
                         [(ua, vb), (ub, vb), (ub, va), (ua, va)], shade=1.0)
+
+
+# ------------------------------------------------------------------ big sponsors (the new Blender cars)
+# WEC-size stickers: a long one along the flank / sill, two shorter ones (hypercar: lower flank; GT3: rear
+# quarter and front fender), and a big one across the nose top (GT3: and the rear deck), painted into the
+# top view. All names are made up.
+BIG_SPONSORS = SPONSORS + ['KORVEX', 'HALCYON OIL', 'ZEPHYRA', 'TALVIK', 'QUANTRA', 'LUMENTA', 'BRAKKEN',
+                           'SOLVANE', 'IRONLEAF', 'NORVA DATA', 'PYRALIS', 'OKTANA']
+# decal slots (u0, u1, v0, v1) in the right half of the swatch row: A long, B medium, C short
+BIG_SLOTS = dict(A=(0.5 + 2 / 2048, 1 - 2 / 2048, 0.882, 0.936),
+                 B=(0.5 + 2 / 2048, 0.793, 0.940, 0.998),
+                 C=(0.797, 1 - 2 / 2048, 0.940, 0.998))
+
+
+def _slot_aspect(k):
+    u0, u1, v0, v1 = BIG_SLOTS[k]
+    return (u1 - u0) / (v1 - v0)
+
+
+def _lum(c):
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+
+
+def _sponsor_set(c):
+    rng = np.random.RandomState(zlib.crc32(('big' + c['id']).encode()) & 0xffff)
+    return [BIG_SPONSORS[i] for i in rng.permutation(len(BIG_SPONSORS))[:5]]
+
+
+def _styles(c, spec):
+    """plate / ink / outline per sticker, picked to stand out against this car's colours"""
+    A = c['colour']; B = spec.get('second', (0.1, 0.1, 0.1)); C = spec.get('accent', (1, 1, 1))
+    white = (0.97, 0.97, 0.95); ink = (0.05, 0.05, 0.07)
+    dark_body = _lum(A) < 0.45
+    st = {}
+    st['A'] = (white, ink, None) if dark_body else (ink, white, None)          # the long one: max contrast
+    pb = C if abs(_lum(C) - _lum(A)) > 0.18 else B                             # medium: an accent plate
+    st['B'] = (pb, ink if _lum(pb) > 0.5 else white, white if _lum(pb) > 0.5 else ink)
+    st['C'] = (ink, white, None) if dark_body else (white, ink, None)
+    st['T'] = (white, ink, None) if dark_body else (ink, white, None)          # top stickers
+    return st
+
+
+def _text_img(name, w, h, plate, fg, stroke, pad=0.08):
+    """the sticker artwork, reading left to right, at w x h px, the lettering fitted inside"""
+    from PIL import ImageDraw as _D
+    im = Image.new('RGB', (int(w), int(h)), rgb(plate))
+    d = _D.Draw(im)
+    # a thin border in the ink colour so the plate reads as a sticker
+    bw = max(2, int(h * 0.045))
+    d.rectangle([bw, bw, w - 1 - bw, h - 1 - bw], outline=rgb(fg), width=bw)
+    sw = max(1, int(h * 0.05)) if stroke else 0
+    fs = h * 0.70
+    while fs > 6:
+        f = _font(fs)
+        x0, y0, x1, y1 = d.textbbox((0, 0), name, font=f, stroke_width=sw)
+        if x1 - x0 <= w * (1 - 2 * pad) and y1 - y0 <= h * 0.74:
+            break
+        fs *= 0.94
+    x0, y0, x1, y1 = d.textbbox((0, 0), name, font=f, stroke_width=sw)
+    d.text(((w - (x1 - x0)) / 2 - x0, (h - (y1 - y0)) / 2 - y0), name, font=f, fill=rgb(fg),
+           stroke_width=sw, stroke_fill=rgb(stroke) if stroke else None)
+    return im
+
+
+def _top_places(spec, hyper):
+    """(x_front, x_rear, half_width, reads_from) for the stickers painted on the top view"""
+    L = spec['L']; xf, xr = L / 2, -L / 2
+    fa, ra = spec['axles']
+    if hyper:   # nose top, ahead of the number roundel (x 1.6, r 0.17) and behind the nose lip
+        return [(xf - 0.33, xf - 0.65, 0.40, 'front')]
+    return [(fa + 0.30, fa - 0.10, 0.45, 'front'),          # across the bonnet, over the front axle
+            (xr + 0.36, xr + 0.06, 0.42, 'rear')]           # across the rear deck, reading from behind
+
+
+def hd_sponsors(p, c, spec, hyper):
+    """paint the sticker artwork into the decal slots and the top-view stickers straight into the top view"""
+    S = p.S; names = _sponsor_set(c); st = _styles(c, spec)
+    for k, nm in zip('ABC', names[:3]):
+        u0, u1, v0, v1 = BIG_SLOTS[k]
+        x0, x1, y0, y1 = int(u0 * S), int(u1 * S), int(v0 * S), int(v1 * S)
+        plate, fg, stroke = st[k]
+        p.img.paste(_text_img(nm, x1 - x0, y1 - y0, plate, fg, stroke), (x0, y0))
+    plate, fg, stroke = st['T']
+    for (xa, xb, hw, frm), nm in zip(_top_places(spec, hyper), names[3:]):
+        u0, u1 = int(p.sx(xa)), int(p.sx(xb))           # front edge is the left
+        v0, v1 = int(p.ty(hw)), int(p.ty(-hw))          # the car's left (+y) is the top
+        # artwork reading across the car (along y), lettering height along x
+        art = _text_img(nm, v1 - v0, u1 - u0, plate, fg, stroke, pad=0.06)
+        art = art.transpose(Image.ROTATE_270)           # reading downward, letter tops to the right (rear)
+        if frm == 'front':
+            # seen from in front of the car: reads from its right to its left, tops toward the rear
+            art = art.transpose(Image.FLIP_TOP_BOTTOM)
+        else:
+            # seen from behind: reads from its left to its right, tops toward the front
+            art = art.transpose(Image.FLIP_LEFT_RIGHT)
+        p.img.paste(art, (u0, v0))
+
+
+def _ring_halfwidth(m):
+    """the body's half width at (x, z), read off the main body loft's rings (falls back to None)"""
+    lofts = getattr(m, 'lofts', None)
+    if not lofts:
+        return None
+    R = np.asarray(lofts[0]['rings'], float)
+    xs = R[:, 0, 0]
+    n = R.shape[1]
+    half = R[:, 1:n // 2 + 1, 1:]                         # the +y side, bottom up: (y, z)
+    order = np.argsort(xs); xs_s = xs[order]
+
+    def at_ring(k, z):
+        pts = half[k]; best = None
+        for i in range(len(pts) - 1):
+            (ya, za), (yb, zb) = pts[i], pts[i + 1]
+            if min(za, zb) - 1e-6 <= z <= max(za, zb) + 1e-6 and abs(zb - za) > 1e-6:
+                y = ya + (yb - ya) * (z - za) / (zb - za)
+                best = y if best is None else max(best, y)
+        return best
+
+    def f(x, z):
+        j = int(np.clip(np.searchsorted(xs_s, x), 1, len(xs_s) - 1))
+        ka, kb = order[j - 1], order[j]
+        a, b = at_ring(ka, z), at_ring(kb, z)
+        if a is None or b is None:
+            return a if b is None else b
+        t = 0.0 if xs[kb] == xs[ka] else (x - xs[ka]) / (xs[kb] - xs[ka])
+        return a + (b - a) * float(np.clip(t, 0, 1))
+    return f
+
+
+def _side_places(spec, hyper):
+    """(slot, x_front, x_rear, z_centre) for the side stickers; the height follows the slot's proportions"""
+    fa, ra = spec['axles']; L = spec['L']; xr = -L / 2
+    if hyper:   # number board: x ~0.42..0.78, z 0.245..0.425 (the lower, sloped flank)
+        return [('A', 0.25, -1.05, 0.53),                 # upper flank, door to the rear haunch
+                ('B', 0.30, -0.37, 0.335),                # lower flank behind the number
+                ('C', -0.55, -1.01, 0.335)]               # lower flank, ahead of the rear wheel
+    px = spec['panel'][0]                                 # number board: px +- 0.23, z 0.41..0.71
+    mid = (fa + ra) / 2
+    la = 1.30
+    out = [('A', mid + la / 2, mid - la / 2, 0.31)]       # along the sill, under the number
+    xb0, xb1 = ra - 0.40, xr + 0.12                       # rear quarter, behind the rear wheel
+    if xb0 - xb1 > 0.25:
+        out.append(('B', xb0, xb1, 0.50))
+    xc0 = fa - 0.42; xc1 = max(px + 0.28, xc0 - 0.55)     # front fender, behind the front wheel
+    if xc0 - xc1 > 0.25:
+        out.append(('C', xc0, xc1, 0.53))
+    return out
+
+
+def big_decal_quads(m, c, spec, W):
+    hyper = c['hyper']
+    hw = _ring_halfwidth(m)
+    for k, x0, x1, zc in _side_places(spec, hyper):
+        u0, u1, va, vb = BIG_SLOTS[k]
+        h = (x0 - x1) / _slot_aspect(k)
+        z0, z1 = zc - h / 2, zc + h / 2
+        NX = max(4, int((x0 - x1) / 0.08)); NZ = 3
+        def Y(x, z):
+            y = hw(x, z) if hw else None
+            return (W(x) if y is None else y) + 0.006
+        for side in (1, -1):
+            for i in range(NX):
+                xa, xb = x0 + (x1 - x0) * i / NX, x0 + (x1 - x0) * (i + 1) / NX
+                ta, tb = i / NX, (i + 1) / NX
+                if side < 0:                               # the right side reads from the back
+                    ta, tb = 1 - ta, 1 - tb
+                ua, ub = u0 + (u1 - u0) * ta, u0 + (u1 - u0) * tb
+                for j in range(NZ):
+                    za, zb = z0 + (z1 - z0) * j / NZ, z0 + (z1 - z0) * (j + 1) / NZ
+                    wa, wb = vb - (vb - va) * j / NZ, vb - (vb - va) * (j + 1) / NZ
+                    P = [(xa, side * Y(xa, za), za), (xb, side * Y(xb, za), za),
+                         (xb, side * Y(xb, zb), zb), (xa, side * Y(xa, zb), zb)]
+                    U = [(ua, wa), (ub, wa), (ub, wb), (ua, wb)]
+                    if side < 0:                           # wound to face outwards on both sides
+                        P = P[::-1]; U = U[::-1]
+                    m.decal(P, U, shade=1.0)
 
 
 # ------------------------------------------------------------------ hypercar

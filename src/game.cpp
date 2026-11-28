@@ -186,9 +186,16 @@ void Game::frame(float dt, const Pad& pad) {
         const char* want = "";
         static char f[32];
         if (screen == SCR_HQ) {
-            snprintf(f, sizeof f, "hq_%s.emu", ERA_ID[(hqSel % ERA_COUNT + ERA_COUNT) % ERA_COUNT]);
-            FILE* t = fopen((std::string("DATA/music/") + f).c_str(), "rb");
-            if (t) fclose(t); else snprintf(f, sizeof f, "hq_hyper.emu");     // (a theme not made yet)
+            // (looked for once per class, not every frame: a file system call is slow on the Vita)
+            static int lastEra = -1; static char found[32];
+            int era = (hqSel % ERA_COUNT + ERA_COUNT) % ERA_COUNT;
+            if (era != lastEra) {
+                lastEra = era;
+                snprintf(found, sizeof found, "hq_%s.emu", ERA_ID[era]);
+                FILE* t = fopen((std::string("DATA/music/") + found).c_str(), "rb");
+                if (t) fclose(t); else snprintf(found, sizeof found, "hq_hyper.emu");     // (a theme not made yet)
+            }
+            snprintf(f, sizeof f, "%s", found);
             want = f;
         }
         if (hqTheme != want) {

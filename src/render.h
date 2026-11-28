@@ -55,6 +55,8 @@ struct Renderer {
     enum { ANIM_IDLE = 0, ANIM_WHEELGUN, ANIM_PUSH, ANIM_CELEBRATE, ANIM_COUNT };
     static const int POSE_FRAMES = 4;
     Model pose[ANIM_COUNT][POSE_FRAMES]; int poseCount[ANIM_COUNT] = {};
+    // (PC) the Vita's lighter crew (BASE/: DATA/ itself, not PC/), drawn beyond ~15 m
+    Model poseFar[ANIM_COUNT][POSE_FRAMES]; int poseFarCount[ANIM_COUNT] = {};
     // a person (crew member / driver) at `place` (metres, feet on z 0, facing +X), playing `anim` at time t,
     // in a team's colours (suit and helmet: `main`, flashes and helmet stripe: `second`; 0 0 = the default)
     void drawPerson(const M4& place, int anim, float t, bool clipped = false, u32 main = 0, u32 second = 0);

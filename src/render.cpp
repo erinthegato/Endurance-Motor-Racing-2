@@ -73,6 +73,21 @@ bool Renderer::loadCommon() {
     for (int a = 0; a < ANIM_COUNT; a++)
         for (int f = 0; f < poseCount[a]; f++)
             if (!pose[a][f].lod[0].tex.w && pose[0][0].lodCount) pose[a][f].lod[0].tex = pose[0][0].lod[0].tex;
+#ifdef PLATFORM_DESKTOP
+    // the PC crew has ~33k vertices a person: past 15 m the Vita's (~2k) look the same at 1080p
+    for (int a = 0; a < ANIM_COUNT; a++) {
+        if (poseCount[a] < 1) continue;
+        for (int f = 0; f < poseCount[a]; f++) {
+            snprintf(p, sizeof p, "BASE/models/crew_%s_%d.emm", AN[a], f);
+            if (!poseFar[a][f].load(p)) break;
+            poseFarCount[a] = f + 1;
+        }
+        if (poseFarCount[a] != poseCount[a]) { for (int f = 0; f < poseFarCount[a]; f++) poseFar[a][f].unload(); poseFarCount[a] = 0; }
+    }
+    for (int a = 0; a < ANIM_COUNT; a++)
+        for (int f = 0; f < poseFarCount[a]; f++)
+            if (!poseFar[a][f].lod[0].tex.w && poseFar[0][0].lodCount) poseFar[a][f].lod[0].tex = poseFar[0][0].lod[0].tex;
+#endif
     fuelRig.load("DATA/models/fuel_rig.emm");
     driver.load("DATA/models/driver.emm");
     gridGirl.load("DATA/models/grid_girl.emm");
@@ -561,10 +576,12 @@ void Renderer::drawShadows(const Race& r, const Camera& cam) {
         V3 rel = car.pos - cam.eye;
         if (carMesh[idx].loaded()) {          // (the PC's Blender cars: a lighter level is plenty for a shadow)
             const CarMesh& cm = carMesh[idx];
-            int sl = cm.lodCount > 2 ? (len(rel) < 30 ? 1 : 2) : cm.lodCount - 1;
+            // (the shadow map's texels are ~9 cm: the second-lightest level near, the lightest further out)
+            float dl = len(rel);
+            int sl = cm.lodCount > 3 ? (dl < 30 ? 2 : 3) : cm.lodCount - 1;
             M4 place = M4::basis(car.fwd, car.left, car.up, rel);
-            drawMeshBody(cm, sl, place, car.number, false, true, len(rel), car.door);
-            if (len(rel) < 60) drawMeshWheels(cm, sl, place, car.steer, car.wheelSpin, car.tyre, car.number, nullptr, nullptr, false);
+            drawMeshBody(cm, sl, place, car.number, false, true, dl, car.door);
+            if (dl < 40) drawMeshWheels(cm, sl, place, car.steer, car.wheelSpin, car.tyre, car.number, nullptr, nullptr, false);
             continue;
         }
         int lod = len(rel) < 30 ? 0 : 1;
@@ -611,7 +628,13 @@ void Renderer::drawSideMirrors(const Race& r, const Car& me, const Camera& view,
     if (!m.mirrorCount) return;
     V3 head = cockpit ? view.eye : me.pos + me.up * 1.0f + me.fwd * m.cabX;
     bool any = false;
+    // one mirror's picture a frame, in turn (each is redrawn 30 times a second at 60 fps; the other keeps
+    // its last one): both again after a jump of the view or the car
+    static int turn = 0; static const Car* lastCar = nullptr; static V3 lastHead;
+    bool fresh = lastCar != &me || len(head - lastHead) > 2.0f;
+    lastCar = &me; lastHead = head; turn ^= 1;
     for (int i = 0; i < m.mirrorCount; i++) {
+        if (!fresh && m.mirrorCount > 1 && (i & 1) != turn) { any = true; continue; }
         const float* q = m.mirror[i];
         V3 centre = me.pos + me.fwd * q[0] + me.left * q[1] + me.up * q[2];
         V3 n = me.fwd * -1.0f;
@@ -865,7 +888,12 @@ void Renderer::drawCar(const Car& c, const V3& eye, const V3& fwd, float tanH, f
         statVerts[3] += cm.lod[ml].tris * 3;
         drawMeshBody(cm, ml, place, c.number, inside, false, d, c.door);
         if (inside) { drawMeshWheels(cm, 0, place, c.steer, c.wheelSpin, c.tyre, c.number, &c, &eye, true); return; }
-        if (d < (sceneLite ? 40 : 200)) drawMeshWheels(cm, ml, place, c.steer, c.wheelSpin, c.tyre, c.number, &c, &eye, false);
+#ifndef PLATFORM_DESKTOP
+        const float WHEELS_TO = 110;           // (960 x 544: a wheel is 3-4 px there)
+#else
+        const float WHEELS_TO = 200;
+#endif
+        if (d < (sceneLite ? 40 : WHEELS_TO)) drawMeshWheels(cm, ml, place, c.steer, c.wheelSpin, c.tyre, c.number, &c, &eye, false);
         return;
     }
     int lod = d < 28 * perf.lodBias ? 0 : (d < 75 * perf.lodBias ? 1 : 2);   // a 5 m car is ~95 px wide at 28 m, ~35 px at 75 m
@@ -1840,6 +1868,9 @@ void Renderer::teamColours(const CarDef* d, u32& main, u32& second) const {
     for (const TeamSecond& s : TEAM_SECOND) if (!strcmp(s.id, d->id)) { second = s.abgr; break; }
 }
 
+// The crew made in Blender (tools/blender/pit_crew.py) faces +X in every motion, the way every
+// caller places a person. (Kept as a table in case a motion is ever authored turned round.)
+static const float FACE_TURN[Renderer::ANIM_COUNT] = {0.0f, 0.0f, 0.0f, 0.0f};   // idle, wheel gun, push, celebrate
 void Renderer::drawPerson(const M4& place, int anim, float t, bool clipped, u32 main, u32 second) {
     const Model* m = &pitCrew;
     const ModelVertex* verts = nullptr;
@@ -1849,7 +1880,10 @@ void Renderer::drawPerson(const M4& place, int anim, float t, bool clipped, u32 
         // mix two neighbouring poses point by point.
         static const float RATE[ANIM_COUNT] = {2.5f, 6.0f, 5.0f, 5.0f};   // poses per second
         int n = poseCount[anim];
-        m = &pose[anim][0];
+        Model (*set)[POSE_FRAMES] = pose;
+        float pd2 = place.m[12] * place.m[12] + place.m[13] * place.m[13] + place.m[14] * place.m[14];
+        if (pd2 > 15.0f * 15.0f && poseFarCount[anim] == n) set = poseFar;   // (PC) the lighter crew far off
+        m = &set[anim][0];
         if (n > 1) {
             float ph = fmodf(fmaxf(t, 0.0f) * RATE[anim], (float)(2 * n - 2));
             int k = (int)ph; float f = ph - k;
@@ -1857,12 +1891,33 @@ void Renderer::drawPerson(const M4& place, int anim, float t, bool clipped, u32 
             int a = k < n ? k : 2 * n - 2 - k;
             int b = k + 1 < n ? k + 1 : 2 * n - 3 - k;
             if (b < 0) b = 0;
-            const Model& A = pose[anim][a]; const Model& B = pose[anim][b];
+            const Model& A = set[anim][a]; const Model& B = set[anim][b];
             m = &A;
             int c = A.lod[0].count;
             // far from the camera (place is camera-relative) the blend can't be seen: just the nearer pose
-            float d2 = place.m[12] * place.m[12] + place.m[13] * place.m[13] + place.m[14] * place.m[14];
-            if (d2 > 30.0f * 30.0f) { if (f > 0.5f) m = &B; c = 0; }
+            if (pd2 > 30.0f * 30.0f) { if (f > 0.5f) m = &B; c = 0; }
+#ifdef PLATFORM_DESKTOP
+            // (PC) blended straight into the floats the GPU takes: one copy a frame, not two
+            if (c && !clipped && B.lodCount && B.lod[0].count == c) {
+                WorldVertex* o = (WorldVertex*)gfx::frameAlloc(c * (int)sizeof(WorldVertex));
+                if (o) {
+                    const ModelVertex* va = A.lod[0].verts; const ModelVertex* vb = B.lod[0].verts;
+                    int w = (int)(f * 256);
+                    const float k = 1.0f / 32768.0f;
+                    for (int i = 0; i < c; i++) {
+                        o[i] = WorldVertex{va[i].u * k, va[i].v * k, va[i].color,
+                                           (va[i].x + (((vb[i].x - va[i].x) * w) >> 8)) * k,
+                                           (va[i].y + (((vb[i].y - va[i].y) * w) >> 8)) * k,
+                                           (va[i].z + (((vb[i].z - va[i].z) * w) >> 8)) * k};
+                    }
+                    M4 at = place;
+                    if (FACE_TURN[anim] != 0) at = place * M4::rotZ(FACE_TURN[anim]);
+                    gfx::bindTexture(teamTexture(&A.lod[0].tex, main, second));
+                    gfx::drawWorld(o, c, PRIM_TRIANGLES, A.matrix(at));
+                    return;
+                }
+            }
+#endif
             if (c && B.lodCount && B.lod[0].count == c) {
                 ModelVertex* o = (ModelVertex*)gfx::frameAlloc(c * (int)sizeof(ModelVertex));
                 if (o) {
@@ -1882,11 +1937,8 @@ void Renderer::drawPerson(const M4& place, int anim, float t, bool clipped, u32 
     }
     if (!m->lodCount) return;
     if (!verts) verts = m->lod[0].verts;
-    // The crew made in Blender (tools/blender/pit_crew.py) faces +X in every motion, the way every
-    // caller places a person. (Kept as a table in case a motion is ever authored turned round.)
-    static const float FACE[ANIM_COUNT] = {0.0f, 0.0f, 0.0f, 0.0f};   // idle, wheel gun, push, celebrate
     M4 at = place;
-    if (m != &pitCrew && anim >= 0 && anim < ANIM_COUNT && FACE[anim] != 0) at = place * M4::rotZ(FACE[anim]);
+    if (m != &pitCrew && anim >= 0 && anim < ANIM_COUNT && FACE_TURN[anim] != 0) at = place * M4::rotZ(FACE_TURN[anim]);
     // team colours: the same pixels with the team's own palette (tools/gen_crew.py: entries 1-4)
     const Texture* tex = teamTexture(&m->lod[0].tex, main, second);
     gfx::bindTexture(tex);

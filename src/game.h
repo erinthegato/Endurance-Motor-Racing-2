@@ -181,6 +181,7 @@ struct Game {
     static const int PLANS = 4;
     PitPlan pitPlans[PLANS]; bool pitPlanSet[PLANS] = {}; int pitPlansEra = -1;
     int pitPlanSel = -1;         // the plan called in this race (-1 none: the team screen at the stop)
+    bool pitPlanArm = false;     // called behind the pace car: the box call goes in at the green
     int planEdit = 0, planRow = 0; bool planDone = false;   // the plan editor: which plan, which row, finished
     std::vector<std::string> radioQ;               // engineer clips waiting their turn ("16_plan_1" ...)
     void pitPlansLoad(int e);

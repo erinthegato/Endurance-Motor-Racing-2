@@ -759,7 +759,7 @@ bool Game::pitPlanTouch(const Pad& p, bool manage) {
     radioQ.clear();
     char b[64];
     if (c == pitPlanSel) {                      // the chosen plan's corner again: called off
-        pitPlanSel = -1;
+        pitPlanSel = -1; pitPlanArm = false;
         if (me.pit == PIT_NONE) me.wantPit = false;
         radioQ.push_back("16_cancel");
         race.message("Copy, stop cancelled", RGBA(255, 220, 60));
@@ -772,7 +772,9 @@ bool Game::pitPlanTouch(const Pad& p, bool manage) {
         return true;
     }
     pitPlanSel = c;
-    if (me.pit == PIT_NONE) me.wantPit = true;
+    // (behind the pace car the box call waits for the green: no pit entry on the formation lap)
+    if (race.formation || race.countdown > 0) pitPlanArm = true;
+    else if (me.pit == PIT_NONE) me.wantPit = true;
     const PitPlan& q = pitPlans[c];
     snprintf(b, sizeof b, "16_plan_%d", c + 1); radioQ.push_back(b);
     radioQ.push_back(q.tyres ? std::string("16_") + TYRE_CLIP[q.tyre] : std::string("16_tyres_none"));
@@ -811,6 +813,10 @@ void Game::pitPlanApply() {
 }
 
 void Game::radioTick() {
+    if (pitPlanArm && raceLoaded && !race.formation && race.countdown <= 0) {      // the green: now the box call
+        pitPlanArm = false;
+        if (pitPlanSel >= 0 && race.player().pit == PIT_NONE) race.player().wantPit = true;
+    }
     if (radioQ.empty() || sound::radioBusy()) return;
     std::string n = radioQ.front();
     radioQ.erase(radioQ.begin());

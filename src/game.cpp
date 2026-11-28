@@ -107,7 +107,7 @@ void Game::startSession(Session ses) {
         // practice and qualifying start in the garage, at the diagnostics computer
         race.toGarage();
         screen = SCR_GARAGE; setupPage = true; look = 1; setupSel = SR_DRIVE;
-        if (walkMenus) walkPitBegin(true);       // [walk] out of the car, on foot in the garage
+        if (walkMenus) walkPitBegin(false);      // [walk] the session starts on foot in the garage
     }
 }
 

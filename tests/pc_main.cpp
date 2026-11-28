@@ -697,6 +697,10 @@ int main(int argc, char** argv) {
                 Pad q{};
                 if (d > 0.5f) {
                     dx /= d; dy /= d;
+                    // first person: the head turns towards where we're going (as a player would look)
+                    float want = atan2f(dy, dx), dd = want - g.walker.camYaw;
+                    while (dd > 3.14159f) dd -= 6.28318f; while (dd < -3.14159f) dd += 6.28318f;
+                    g.walker.camYaw += fmaxf(-0.12f, fminf(0.12f, dd)); g.walker.camPitch = -0.08f;
                     float fx = cosf(g.walker.camYaw), fy = sinf(g.walker.camYaw);
                     q.stickY = -(dx * fx + dy * fy); q.stickX = dx * sinf(g.walker.camYaw) - dy * cosf(g.walker.camYaw);
                     float m = fmaxf(fabsf(q.stickX), fabsf(q.stickY)); q.stickX /= m; q.stickY /= m;
@@ -706,11 +710,13 @@ int main(int argc, char** argv) {
                 if (d <= 0.5f) break;
             }
         };
+        // turn the view to look at a point (a monitor, the car) before X
+        auto face = [&](float fx2, float fy2) { g.walker.camYaw = atan2f(fy2 - g.walker.y, fx2 - g.walker.x); g.walker.camPitch = -0.05f; };
         // 1. the main menu garage
         settle(40); shot(g, out + "/walk_hub_start.ppm");
         fprintf(stderr, "hub: at %.2f %.2f, %d stations, screen %d\n", g.walker.x, g.walker.y, (int)g.walker.stations.size(), (int)g.screen);
         auto stn = [&](int id) { for (auto& s2 : g.walker.stations) if (s2.id == id) return s2; return g.walker.stations[0]; };
-        { WalkStation q = stn(0); walkTo(q.x, q.y, 12, false, "walk_hub_go", 1.5f); }
+        { WalkStation q = stn(0); walkTo(q.x, q.y, 12, false, "walk_hub_go", 1.5f); face(q.x - 1, q.y); }
         settle(4); shot(g, out + "/walk_hub_quickrace.ppm");
         fprintf(stderr, "hub: at %.2f %.2f near %s\n", g.walker.x, g.walker.y, g.walker.nearSt >= 0 ? g.walker.stations[g.walker.nearSt].label : "-");
         { Pad q{}; q.rstickX = 1; for (int i = 0; i < 25; i++) g.frame(1.0f / 30, q); } settle(2); shot(g, out + "/walk_hub_turned.ppm");
@@ -718,14 +724,14 @@ int main(int argc, char** argv) {
         fprintf(stderr, "hub: X opened screen %d (SCR_TRACK %d)\n", (int)g.screen, (int)SCR_TRACK);
         press(g, &Pad::circle); settle(30);
         fprintf(stderr, "hub: O back to screen %d (title %d)\n", (int)g.screen, (int)SCR_TITLE);
-        { WalkStation q = stn(7); walkTo(q.x, q.y, 12, true, nullptr, 9); } settle(4); shot(g, out + "/walk_hub_trophies.ppm");
+        { WalkStation q = stn(7); walkTo(q.x, q.y, 12, true, nullptr, 9); face(q.x + 1, q.y); } settle(4); shot(g, out + "/walk_hub_trophies.ppm");
         // 2. headquarters (O on foot does nothing: the door's station)
         press(g, &Pad::circle); settle(3);
         fprintf(stderr, "hub: O on foot -> screen %d (still the title)\n", (int)g.screen);
-        { WalkStation q = stn(9); walkTo(q.x, q.y, 12, true, nullptr, 9); } settle(3); shot(g, out + "/walk_hub_hqdoor.ppm"); press(g, &Pad::cross); settle(30);
+        { WalkStation q = stn(9); walkTo(q.x, q.y, 12, true, nullptr, 9); face(q.x, q.y - 1); } settle(3); shot(g, out + "/walk_hub_hqdoor.ppm"); press(g, &Pad::cross); settle(30);
         fprintf(stderr, "hq: screen %d (SCR_HQ %d)\n", (int)g.screen, (int)SCR_HQ);
         shot(g, out + "/walk_hq_start.ppm");
-        walkTo(0.6f, 0.15f, 8, false, nullptr, 9); settle(6); shot(g, out + "/walk_hq_car.ppm");
+        walkTo(0.6f, 0.15f, 8, false, nullptr, 9); face(0.6f, 0.95f); settle(6); shot(g, out + "/walk_hq_car.ppm");
         fprintf(stderr, "hq: near %s\n", g.walker.nearSt >= 0 ? g.walker.stations[g.walker.nearSt].label : "-");
         press(g, &Pad::cross); settle(10);
         fprintf(stderr, "hq: X -> screen %d era %d\n", (int)g.screen, g.era);
@@ -741,15 +747,15 @@ int main(int argc, char** argv) {
         shot(g, out + "/walk_garage_start.ppm");
         auto st = [&](int id) { for (auto& s2 : g.walker.stations) if (s2.id == id) return s2; return g.walker.stations[0]; };
         WalkStation su = st(WST_SETUP), pl = st(WST_PLANS), car = st(WST_CAR), se = st(WST_SETUPENG);
-        walkTo(su.x, su.y, 15, false, "walk_garage_go", 1.5f); settle(3); shot(g, out + "/walk_garage_setupdesk.ppm");
+        walkTo(su.x, su.y, 15, false, "walk_garage_go", 1.5f); face(su.x, su.y + 1); settle(3); shot(g, out + "/walk_garage_setupdesk.ppm");
         press(g, &Pad::cross); settle(25); shot(g, out + "/walk_garage_setup_focus.ppm");
         fprintf(stderr, "setup desk: focus %d (WST_SETUP %d)\n", g.walkFocus, (int)WST_SETUP);
         press(g, &Pad::right); press(g, &Pad::circle); settle(20);
         fprintf(stderr, "setup desk: wing now %d, O -> focus %d\n", g.set.setup.wing, g.walkFocus);
         WalkStation ss = st(WST_SESSION);
-        walkTo(ss.x, ss.y, 10, false, nullptr, 9); press(g, &Pad::cross); press(g, &Pad::right); settle(25); shot(g, out + "/walk_garage_session.ppm");
+        walkTo(ss.x, ss.y, 10, false, nullptr, 9); face(ss.x, ss.y + 1); press(g, &Pad::cross); press(g, &Pad::right); settle(25); shot(g, out + "/walk_garage_session.ppm");
         press(g, &Pad::circle); settle(10);
-        walkTo(pl.x, pl.y, 10, false, nullptr, 9); press(g, &Pad::cross); settle(25);
+        walkTo(pl.x, pl.y, 10, false, nullptr, 9); face(pl.x, pl.y + 1); press(g, &Pad::cross); settle(25);
         fprintf(stderr, "plans desk: focus %d (WST_PLANS %d)\n", g.walkFocus, (int)WST_PLANS);
         // plan 2: softs, half fuel, driver stays in
         press(g, &Pad::right); press(g, &Pad::down); press(g, &Pad::left); press(g, &Pad::left);
@@ -758,7 +764,7 @@ int main(int argc, char** argv) {
         fprintf(stderr, "plan 2: tyres %d (%s) fuel %.1f swap %d\n", g.pitPlans[1].tyres, TYRE_NAME[g.pitPlans[1].tyre], g.pitPlans[1].fuel, g.pitPlans[1].swapDriver);
         press(g, &Pad::circle); settle(10);
         fprintf(stderr, "plans: O -> focus %d screen %d\n", g.walkFocus, (int)g.screen);
-        walkTo(se.x, se.y, 10, false, nullptr, 9); settle(3); shot(g, out + "/walk_garage_engineer.ppm");
+        walkTo(se.x, se.y, 10, false, nullptr, 9); face(se.x + 1, se.y); settle(3); shot(g, out + "/walk_garage_engineer.ppm");
         press(g, &Pad::cross); settle(20); shot(g, out + "/walk_garage_engineer_talk.ppm");
         fprintf(stderr, "setup engineer: focus %d open %d sub \"%s\" pending %d\n", g.walkFocus, g.engUi.open, g.engUi.sub, g.engUi.pending());
         for (int i = 0; i < 400 && g.walkFocus >= 0; i++) { if (g.engUi.pending()) press(g, &Pad::circle); else { Pad z{}; g.step(1.0f / 30, z); } }
@@ -766,9 +772,19 @@ int main(int argc, char** argv) {
         // out to the pit lane and back, then in the car
         { const WalkStation& w2 = st(WST_PLANS); (void)w2; }
         walkTo(g.walker.x, g.walker.minY + 3.0f, 12, true, "walk_pit_go", 1.5f); settle(3); shot(g, out + "/walk_pit_lane.ppm");
-        walkTo(car.x, car.y, 15, true, nullptr, 9); settle(3); shot(g, out + "/walk_garage_getin.ppm");
-        press(g, &Pad::cross); settle(5);
-        fprintf(stderr, "get in: screen %d (race view %d), car pit %d\n", (int)g.screen, (int)SCR_RACE, g.race.player().pit);
+        walkTo(car.x, car.y, 15, true, nullptr, 9);
+        { float cxp = g.race.pitRel(g.race.player().s), cyp = g.race.player().d; face(cxp, cyp); }
+        settle(3); shot(g, out + "/walk_garage_getin.ppm");
+        press(g, &Pad::cross);
+        fprintf(stderr, "get in: door sequence %d\n", g.walkDoor);
+        for (int i = 0; i < 60 && g.walkDoor; i++) {
+            Pad z{}; g.step(1.0f / 30, z);
+            if (i == 14) { shot(g, out + "/walk_door_open.ppm"); fprintf(stderr, "  door at %.2f s: %.2f (screen %d)\n", g.walkDoorT, g.race.player().door, (int)g.screen); }
+            if (i == 28) { shot(g, out + "/walk_door_inside.ppm"); fprintf(stderr, "  door at %.2f s: %.2f\n", g.walkDoorT, g.race.player().door); }
+            if (i == 46) { shot(g, out + "/walk_door_closing.ppm"); fprintf(stderr, "  door at %.2f s: %.2f\n", g.walkDoorT, g.race.player().door); }
+        }
+        settle(5);
+        fprintf(stderr, "get in: screen %d (race view %d), car pit %d, door %.2f hold %.1f\n", (int)g.screen, (int)SCR_RACE, g.race.player().pit, g.race.player().door, g.race.player().doorHold);
         // 4. the race: touch the top-right corner (plan 2); the AI drives in, the stop runs the plan
         g.set.weekend = false;
         g.aiDrivesPlayer = true;

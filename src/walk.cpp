@@ -1,4 +1,4 @@
-// On foot: the walker (movement, collisions, the third-person camera, the person drawn in team kit) and
+// On foot: the walker (movement, collisions, the first-person view, a person drawn in team kit) and
 // the three places walked round -- the main menu garage, the headquarters office and the pits at the
 // track. See walk.h.
 #include "game.h"
@@ -12,6 +12,7 @@ static const u32 W_WHITE = RGBA(255, 255, 255), W_DIM = RGBA(175, 185, 200), W_A
 static const float PI_ = 3.14159265f;
 static float wrapA(float a) { while (a > PI_) a -= 2 * PI_; while (a < -PI_) a += 2 * PI_; return a; }
 static float clampW(float v, float a, float b) { return v < a ? a : (v > b ? b : v); }
+static const float DOOR_SEQ = 1.8f;          // getting in / out of the car: the door, the step, the door
 
 // ------------------------------------------------------------------ the walker
 void Walker::clear() {
@@ -21,7 +22,7 @@ void Walker::clear() {
 
 void Walker::place(float px, float py, float facing) {
     x = px; y = py; z = floorAt(px, py); yaw = facing; vx = vy = 0; run = false; stillT = 0;
-    camYaw = facing; camPitch = 0.30f; camNow = camDist; camIdle = 0; camInit = true; phase = 0;
+    camYaw = facing; camPitch = -0.08f; lookVX = lookVY = 0; camInit = true; phase = 0; bob = 0;
 }
 
 float Walker::floorAt(float px, float py) const {
@@ -70,36 +71,6 @@ void Walker::collide() {
     }
 }
 
-// how far (0..1) from the target to the eye before a wall: tall boxes, and indoors the room's walls
-float Walker::camRay(float tx, float ty, float ex, float ey) const {
-    float best = 1, dx = ex - tx, dy = ey - ty;
-    const float M = 0.18f;
-    for (const WalkBox& b : boxes) {
-        if (b.h < CAM_H) continue;
-        float x0 = b.x0 - M, x1 = b.x1 + M, y0 = b.y0 - M, y1 = b.y1 + M;
-        if (tx > x0 && tx < x1 && ty > y0 && ty < y1) continue;      // (the person is inside it: ignore)
-        float t0 = 0, t1 = 1;
-        auto slab = [&](float o, float d, float lo, float hi) {
-            if (fabsf(d) < 1e-6f) return o >= lo && o <= hi;
-            float a = (lo - o) / d, c = (hi - o) / d;
-            if (a > c) { float s = a; a = c; c = s; }
-            if (a > t0) t0 = a;
-            if (c < t1) t1 = c;
-            return t0 <= t1;
-        };
-        if (slab(tx, dx, x0, x1) && slab(ty, dy, y0, y1) && t0 < best) best = t0;
-    }
-    if (boundsAreWalls) {
-        auto edge = [&](float o, float d, float lo, float hi) {
-            if (d > 1e-6f && o + d > hi) best = fminf(best, (hi - o) / d);
-            if (d < -1e-6f && o + d < lo) best = fminf(best, (lo - o) / d);
-        };
-        edge(tx, dx, minX + M, maxX - M);
-        edge(ty, dy, minY + M, maxY - M);
-    }
-    return best < 0 ? 0 : best;
-}
-
 bool Walker::update(float dt, const Pad& p, const Pad& prev) {
     t += dt;
     if (!camInit) { camYaw = yaw; camInit = true; }
@@ -118,12 +89,14 @@ bool Walker::update(float dt, const Pad& p, const Pad& prev) {
     moving = sx * sx + sy * sy > 0.0025f;
     if (p.l && !prev.l) run = !run;                       // L: run / walk
     if (moving) stillT = 0; else if ((stillT += dt) > 0.8f) run = false;   // (stopping drops back to a walk)
-    // the right stick turns the camera round the person and up / down
+    // the right stick looks round (the turn eases in and out: a head, not a snap); pitch to about +-70 deg
     float rx = fabsf(p.rstickX) > 0.15f ? p.rstickX : 0, ry = fabsf(p.rstickY) > 0.15f ? p.rstickY : 0;
-    camYaw = wrapA(camYaw - rx * 2.6f * dt);
-    camPitch = clampW(camPitch + ry * 1.5f * dt, -0.10f, 1.05f);
-    if (rx != 0 || ry != 0) camIdle = 0; else camIdle += dt;
-    // where the pad points, seen from the camera
+    float kl = 1 - expf(-dt * 12.0f);
+    lookVX += (-rx * 2.4f - lookVX) * kl;
+    lookVY += (-ry * 1.6f - lookVY) * kl;
+    camYaw = wrapA(camYaw + lookVX * dt);
+    camPitch = clampW(camPitch + lookVY * dt, -1.22f, 1.22f);
+    // where the pad points, from the way you look
     float fx = cosf(camYaw), fy = sinf(camYaw), rgx = sinf(camYaw), rgy = -cosf(camYaw);
     float wx = fx * -sy + rgx * sx, wy = fy * -sy + rgy * sx;
     float top = run ? RUN : WALK;
@@ -140,7 +113,7 @@ bool Walker::update(float dt, const Pad& p, const Pad& prev) {
         if (ax * ax + ay * ay < vx * vx + vy * vy) { vx = ax; vy = ay; }
     }
     float sp = sqrtf(vx * vx + vy * vy);
-    if (sp > 0.15f) yaw = wrapA(yaw + clampW(wrapA(atan2f(vy, vx) - yaw), -10 * dt, 10 * dt));
+    yaw = camYaw;                                          // (the body turns with the head)
     // the stride: a walk ~0.9 cycles a second, a run ~1.4 (longer steps)
     float cycle = sp <= WALK ? 1.55f : 1.55f + (sp - WALK) * 0.57f;
     if (sp > 0.05f) phase += sp / cycle * 2 * PI_ * dt;
@@ -148,38 +121,29 @@ bool Walker::update(float dt, const Pad& p, const Pad& prev) {
     float w = clampW(sp / WALK, 0, 1), r = clampW((sp - WALK) / (RUN - WALK), 0, 1);
     bob = (0.022f * w + 0.045f * r) * (0.5f - fabsf(sinf(phase)));
     z += (floorAt(x, y) - z) * fminf(1, dt * 12);
-    // the camera swings in behind when walking on without turning it (not when coming towards it)
-    if (camIdle > 1.2f && sp > 0.6f) {
-        float d = wrapA(yaw - camYaw);
-        if (fabsf(d) < 2.2f) camYaw = wrapA(camYaw + d * fminf(1, dt * 0.9f * fminf(sp / WALK, 2.0f)));
-    }
-    // the camera's distance after the walls: pulled in at once, let out gently
-    {
-        float cp = cosf(camPitch);
-        float ex = x - cosf(camYaw) * cp * camDist, ey = y - sinf(camYaw) * cp * camDist;
-        float f = camRay(x, y, ex, ey);
-        float allowed = fmaxf(0.5f, camDist * f - 0.15f);
-        camNow = allowed < camNow ? allowed : camNow + (allowed - camNow) * fminf(1, dt * 2.5f);
-    }
-    // the station in reach: the nearest
-    nearSt = -1; float bd = 1e9f;
+    // the station looked at: in reach and within ~25 deg of the view (the one most straight ahead), else
+    // the nearest in reach
+    nearSt = -1; float bd = 1e9f, ba = 0.44f; int looked = -1;
     for (int i = 0; i < (int)stations.size(); i++) {
         const WalkStation& s = stations[i];
-        float d2 = (s.x - x) * (s.x - x) + (s.y - y) * (s.y - y);
-        if (d2 < s.r * s.r && d2 < bd) { bd = d2; nearSt = i; }
+        float dx = s.x - x, dy = s.y - y, d2 = dx * dx + dy * dy;
+        if (d2 >= s.r * s.r) continue;
+        if (d2 < bd) { bd = d2; nearSt = i; }
+        float a = d2 > 0.04f ? fabsf(wrapA(atan2f(dy, dx) - camYaw)) : 0;
+        if (a < ba) { ba = a; looked = i; }
     }
+    if (looked >= 0) nearSt = looked;
     return nearSt >= 0 && p.cross && !prev.cross;
 }
 
 void Walker::camera(V3& eye, V3& target) const {
-    target = V3(x, y, z + 1.45f + bob * 0.3f);
-    float cp = cosf(camPitch), spch = sinf(camPitch);
-    eye = target - V3(cosf(camYaw) * cp, sinf(camYaw) * cp, -spch) * camNow;
-    // under the ceiling (indoors, the garages and the pit wall's canopy), above the floor
-    float top = ceiling;
-    for (const WalkBox& r : roofs) if (eye.x >= r.x0 && eye.x <= r.x1 && eye.y >= r.y0 && eye.y <= r.y1 && r.h < top) top = r.h;
-    eye.z = clampW(eye.z, z + 0.35f, top - 0.22f);
-    target.z = fminf(target.z, top - 0.15f);
+    // the eyes: a gentle bob up and down with the stride (more running) and a little sway side to side
+    float sp = sqrtf(vx * vx + vy * vy);
+    float w = clampW(sp / WALK, 0, 1), r = clampW((sp - WALK) / (RUN - WALK), 0, 1);
+    float sway = sinf(phase) * (0.008f * w + 0.014f * r);
+    eye = V3(x + sinf(camYaw) * sway, y - cosf(camYaw) * sway, z + (helmet ? EYE_HELMET : EYE_H) + bob * 0.7f);
+    float cp = cosf(camPitch);
+    target = eye + V3(cosf(camYaw) * cp, sinf(camYaw) * cp, sinf(camPitch));
 }
 
 // the person: boxes for boots, legs, hips, body, arms and gloves, the helmet with its visor; the legs
@@ -277,20 +241,6 @@ static void label3D(Renderer& R, const V3& at, const V3& eye, const V3& fwd, con
     R.text3D(face, s, h, active ? W_GOLD : W_WHITE, true);
 }
 
-// ------------------------------------------------------------------ the person in the game's places
-void Game::walkFigure(const V3& at, const V3& fwdW, const V3& eye) {
-    V3 f = norm(V3(fwdW.x, fwdW.y, 0));
-    V3 l = norm(cross(V3(0, 0, 1), f));
-    const CarDef* d = &CARS[set.car >= 0 && set.car < CAR_COUNT ? set.car : 0];
-    if (race.cars.size() && raceLoaded && walker.scene == WALK_PIT) d = race.player().def;
-    u32 m, s; R.teamColours(d, m, s);
-    if (!m) m = d->colour;
-    if (!s) s = RGBA(240, 240, 240);
-    M4 place = M4::translate(at - eye) * M4::basis(f, l, V3(0, 0, 1), V3(0, 0, 0));
-    gfx::bindTexture(nullptr);
-    walker.draw(R, place, m | 0xFF000000u, s | 0xFF000000u);
-}
-
 // ------------------------------------------------------------------ the main menu: the garage on foot
 // the monitors on stands in the menu garage (menu.cpp): screen centres and the way they face
 int menuStands(V3* pos, V3* facing, int max);
@@ -318,7 +268,7 @@ void Game::walkHubLayout() {
     Walker& w = walker;
     w.clear(); w.scene = WALK_HUB;
     // the garage (its front open: the door out to the pit lane, where the camera can stand back)
-    w.minX = -7; w.maxX = 7; w.minY = -9.0f; w.maxY = 5; w.camDist = 3.3f;
+    w.minX = -7; w.maxX = 7; w.minY = -9.0f; w.maxY = 5;
     w.roofs.push_back({-7, -5, 7, 5, 4.6f});
     w.boxes.push_back({-7.5f, -5.15f, -4.2f, -4.95f, 4.6f});  // the front wall either side of the door
     w.boxes.push_back({4.2f, -5.15f, 7.5f, -4.95f, 4.6f});
@@ -365,7 +315,7 @@ void Game::walkMenuCamera(V3& eye, V3& fwd, float& fov) const {
     V3 target;
     walker.camera(eye, target);
     fwd = norm(target - eye);
-    fov = walker.scene == WALK_HQ ? 56.0f : 58.0f;
+    fov = 70.0f;                 // (first person)
 }
 
 void Game::drawWalkHub(const V3& eye, const V3& fwd) {
@@ -396,7 +346,6 @@ void Game::drawWalkHub(const V3& eye, const V3& fwd) {
         R.box3D(rel, V3(-6.6f, -3.6f, k * 0.3f), V3(-6.0f, -3.0f, k * 0.3f + 0.28f), RGBA(28, 28, 30));
         R.box3D(rel, V3(-6.48f, -3.48f, k * 0.3f + 0.28f), V3(-6.12f, -3.12f, k * 0.3f + 0.3f), RGBA(150, 152, 158));
     }
-    walkFigure(V3(walker.x, walker.y, walker.z), V3(cosf(walker.yaw), sinf(walker.yaw), 0), eye);
     // the menu monitors on the walls: the item on its screen, lit orange when you're at it
     for (const HubSpot& h : HUB) {
         int si = -1;
@@ -421,15 +370,15 @@ void Game::drawWalkHub(const V3& eye, const V3& fwd) {
     }
     char info[48]; snprintf(info, sizeof info, "MAIN MENU  %s", ERA_SHORT[era]);
     walkHud(R, walker.nearSt >= 0 ? walker.stations[walker.nearSt].label : nullptr,
-            walker.run ? "Move: d-pad / left stick   L: walk   Right stick: camera   X: open"
-                       : "Move: d-pad / left stick   L: run   Right stick: camera   X: open", info);
+            walker.run ? "Move: d-pad / left stick   L: walk   Right stick: look   X: open"
+                       : "Move: d-pad / left stick   L: run   Right stick: look   X: open", info);
 }
 
 // ------------------------------------------------------------------ headquarters on foot
 void Game::walkHQLayout() {
     Walker& w = walker;
     w.clear(); w.scene = WALK_HQ;
-    w.minX = -5; w.maxX = 5; w.minY = -4; w.maxY = 4; w.ceiling = 3.2f; w.camDist = 2.7f;
+    w.minX = -5; w.maxX = 5; w.minY = -4; w.maxY = 4; w.ceiling = 3.2f;
     w.boxes.push_back({-1.98f, 0.5f, 1.98f, 1.4f, 0.76f});    // the desk (low: the camera looks over it)
     w.boxes.push_back({4.45f, -2.6f, 5.0f, 1.2f, 2.4f});      // the trophy cabinet
     w.boxes.push_back({-0.3f, 2.5f, 0.3f, 3.1f, 1.05f});      // the principal's chair
@@ -456,7 +405,6 @@ void Game::updateWalkHQ(float dt, const Pad& p) {
 
 void Game::drawWalkHQ(const V3& eye, const V3& fwd) {
     gfx::setDepthTest(true); gfx::setDepthWrite(true); gfx::setBlend(false); gfx::bindTexture(nullptr);
-    walkFigure(V3(walker.x, walker.y, walker.z), V3(cosf(walker.yaw), sinf(walker.yaw), 0), eye);
     for (int i = 0; i < (int)walker.stations.size(); i++) {
         const WalkStation& s = walker.stations[i];
         bool on = i == walker.nearSt;
@@ -489,7 +437,7 @@ u32 shadeW(u32 c, float k) { return RGBA((int)((c & 255) * k), (int)(((c >> 8) &
 void Game::walkPitLayout() {
     Walker& w = walker;
     w.clear(); w.scene = WALK_PIT;
-    w.boundsAreWalls = false; w.camDist = 3.4f;
+    w.boundsAreWalls = false;
     float hw = race.track.pts[0].hw;
     float wallD = hw + 2.3f, garage = race.boxD + 3.6f;
     int slots = TEAMS_PER_ERA + 1;
@@ -584,8 +532,9 @@ void Game::walkPitLayout() {
     w.stations.push_back({(a + b) * 0.5f, (d0 + 0.75f + d1) * 0.5f, 2.1f, WST_PLANS, "PIT PLANS", 3.7f});
 }
 
-void Game::walkPitBegin(bool garage) {
-    (void)garage;      // (only from the practice / qualifying garage: race stops run the called plan)
+void Game::walkPitBegin(bool climbOut) {
+    // (only from the practice / qualifying garage: race stops run the called plan); climbOut: back in from
+    // the track, so out of the car through its door -- a new session starts on foot already
     Car& me = race.player();
     walkGarage = true; walkFocus = -1; walkFocusK = 0;
     pitPlansLoad(race.era);
@@ -593,11 +542,13 @@ void Game::walkPitBegin(bool garage) {
     float cx = race.pitRel(me.s), cy = me.d;
     walker.place(cx + 2.6f, cy + 1.2f, PI_);                 // out of the car, standing beside it
     walker.camYaw = PI_ - 0.6f;
+    walkDoor = climbOut ? 2 : 0; walkDoorT = 0; me.doorHold = climbOut ? 1.0f : -1.0f;   // climbing out: the door opens, out, it shuts
     race.timeAccel = 1;
     screen = SCR_WALK; t = 0;
 }
 
 void Game::driveOut() {
+    walkDoor = 0; race.player().doorHold = -1;
     if (!ttMode) setups.put(set.track, CARS[set.car].era, set.setup, race.playerChassis);
     walkFocus = -1;
     race.leaveGarage(set.setup); race.timeAccel = 1; screen = SCR_RACE; R.camInit = false;
@@ -626,6 +577,19 @@ void Game::updateWalkPit(float dt, const Pad& p, bool onFoot) {
     engUi.update(dt);
     walkFocusK += ((walkFocus >= 0 && walkFocus != WST_SETUPENG ? 1.0f : 0.0f) - walkFocusK) * fminf(1, dt * 5);
     if (pressed(p, &Pad::start)) { screen = SCR_PAUSE; sel = 0; return; }
+    // getting in / out: the door opens (0.6 s), we step in / out (0.6 s), it shuts (0.6 s); X skips it
+    if (walkDoor) {
+        Car& me = race.player();
+        walkDoorT += dt;
+        bool skip = pressed(p, &Pad::cross);
+        me.doorHold = walkDoorT < 1.2f ? 1.0f : 0.0f;
+        if (skip || walkDoorT >= DOOR_SEQ) {
+            if (skip) me.door = 0;
+            me.doorHold = -1;
+            if (walkDoor == 1) driveOut(); else walkDoor = 0;
+        }
+        return;
+    }
     int dy = (pressed(p, &Pad::down) ? 1 : 0) - (pressed(p, &Pad::up) ? 1 : 0);
     int dx = (pressed(p, &Pad::right) ? 1 : 0) - (pressed(p, &Pad::left) ? 1 : 0);
     bool ok = pressed(p, &Pad::cross), back = pressed(p, &Pad::circle);
@@ -678,7 +642,7 @@ void Game::updateWalkPit(float dt, const Pad& p, bool onFoot) {
     bool use = walker.update(dt, p, prev);
     int id = walker.nearSt >= 0 ? walker.stations[walker.nearSt].id : -1;
     if (!use) return;
-    if (id == WST_CAR) driveOut();
+    if (id == WST_CAR) { walkDoor = 1; walkDoorT = 0; race.player().doorHold = 1; }   // the door opens, in we get
     else if (id == WST_SETUPENG) askSetupEngineer();
     else if (id == WST_SETUP || id == WST_SESSION || id == WST_PLANS) {
         walkFocus = id; planRow = 0; planDone = false; setupSel = 0;
@@ -899,7 +863,25 @@ Camera Game::walkPitCamera() const {
     Camera c;
     c.eye = walkPitWorld(e.x, e.y, e.z);
     c.fwd = norm(walkPitWorld(tg.x, tg.y, tg.z) - c.eye);
-    c.up = V3(0, 0, 1); c.fov = 60;
+    c.up = V3(0, 0, 1); c.fov = 70;
+    // getting in (out: the same backwards): look at the seat while the door opens, into the cockpit, the
+    // door shuts behind us
+    if (walkDoor) {
+        const Car& me = race.player();
+        int idx = (int)(me.def - CARS);
+        M4 place = M4::basis(me.fwd, me.left, me.up, me.pos);
+        V3 eyeC = place.point(R.carLoaded[idx] ? R.cockpitEye(idx) : V3(0, 0, 0.95f));
+        V3 fwdC = norm(me.fwd - me.up * 0.10f);
+        float u = walkDoor == 1 ? walkDoorT : DOOR_SEQ - walkDoorT;
+        auto ease = [](float k) { k = clampW(k, 0, 1); return k * k * (3 - 2 * k); };
+        V3 seat = norm(eyeC - c.eye);
+        if (u < 0.6f) c.fwd = norm(c.fwd + (seat - c.fwd) * ease(u / 0.6f));
+        else {
+            float k = ease((u - 0.6f) / 0.6f);
+            c.eye = c.eye + (eyeC - c.eye) * k;
+            c.fwd = norm(seat + (fwdC - seat) * k);
+        }
+    }
     return c;
 }
 
@@ -907,8 +889,10 @@ void Game::drawWalkPit() {
     gfx::beginFrame(R.skyColour(race));
     Camera c = walkPitCamera();
     R.mirrorsLive = false;
+    R.sceneNear = 0.12f;                 // (first person: the walls and the desks come close)
     R.drawScene(race, c, false);
-    M4 proj = M4::perspective(c.fov, (float)SCREEN_W / SCREEN_H, 0.8f, 1600.0f), view = M4::lookDir(V3(0, 0, 0), c.fwd, c.up);
+    R.sceneNear = 0.8f;
+    M4 proj = M4::perspective(c.fov, (float)SCREEN_W / SCREEN_H, 0.12f, 1600.0f), view = M4::lookDir(V3(0, 0, 0), c.fwd, c.up);
     // (at a desk the monitor is close: the near plane comes in, the depth from the scene no longer matters there)
     gfx::setProjection(proj); gfx::setView(view); clip::setMatrices(proj, view);
     gfx::setFog(false, 0, 1, 0);
@@ -923,12 +907,7 @@ void Game::drawWalkPit() {
 #endif
     for (const SceneryRange& r : sceneryRanges)
         if (len(r.centre - c.eye) < farD) clip::drawWorld(scenery.data() + r.first, r.count, M4::translate(sceneryOrigin - c.eye));
-    // the person, the setup engineer, the markers over the stations
-    if (walkFocusK < 0.95f) {
-        V3 at = walkPitWorld(walker.x, walker.y, walker.z);
-        V3 ahead = walkPitWorld(walker.x + cosf(walker.yaw) * 0.5f, walker.y + sinf(walker.yaw) * 0.5f, walker.z);
-        walkFigure(at, ahead - at, c.eye);
-    }
+    // the setup engineer, the markers over the stations (first person: no body of our own)
     {
         Walker npc; npc.x = npcX; npc.y = npcY; npc.t = race.time; npc.helmet = false;
         V3 at = walkPitWorld(npcX, npcY, 0), ahead = walkPitWorld(npcX - 0.5f, npcY, 0);
@@ -947,7 +926,7 @@ void Game::drawWalkPit() {
         gfx::setDepthTest(true); gfx::setDepthWrite(true); gfx::setBlend(false); gfx::bindTexture(nullptr);
     }
     char lab[48] = "";
-    if (walkFocus < 0) for (int i = 0; i < (int)walker.stations.size(); i++) {
+    if (walkFocus < 0 && !walkDoor) for (int i = 0; i < (int)walker.stations.size(); i++) {
         const WalkStation& s = walker.stations[i];
         bool on = i == walker.nearSt;
         V3 m = walkPitWorld(s.x, s.y, s.labelZ);
@@ -979,14 +958,15 @@ void Game::drawWalkPit() {
             gfx::setBlend(false); gfx::setDepthTest(true);
         }
     }
+    else if (walkDoor) walkHud(R, nullptr, "X  skip", nullptr);
     else if (walkFocus >= 0) {
         walkHud(R, nullptr, walkFocus == WST_SESSION ? "LEFT / RIGHT  weather / timing     SQUARE  class / overall     O  back"
                                                      : "UP / DOWN  row     LEFT / RIGHT  change     X  select     O  back", nullptr);
     } else {
         char info[64]; snprintf(info, sizeof info, "%s  #%d", race.session == SES_QUALI ? "QUALIFYING  GARAGE" : "PRACTICE  GARAGE", race.player().number);
         const char* prompt = walker.nearSt >= 0 ? walker.stations[walker.nearSt].label : nullptr;
-        walkHud(R, prompt, walker.run ? "Move: d-pad / left stick   L: walk   Right stick: camera   X: use   START: pause"
-                                      : "Move: d-pad / left stick   L: run   Right stick: camera   X: use   START: pause", info);
+        walkHud(R, prompt, walker.run ? "Move: d-pad / left stick   L: walk   Right stick: look   X: use   START: pause"
+                                      : "Move: d-pad / left stick   L: run   Right stick: look   X: use   START: pause", info);
     }
     if (noteT > 0) { gfx::setDepthTest(false); gfx::setBlend(true); R.font.drawCentre(SCREEN_W / 2, 30, note, W_GOLD, 0.8f); gfx::setBlend(false); gfx::setDepthTest(true); }
     if (cfg.showFps) drawFps();

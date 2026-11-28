@@ -1039,6 +1039,7 @@ void Race::update(float dt, float steer, float throttle, float brake, int shift,
     for (auto& c : cars) {
         float target = (c.pit == PIT_STOP && c.plan.swapDriver && c.driver != c.plan.nextDriver && c.pitPhase >= 0) ? 1.0f : 0.0f;
         float step = dt / 0.9f;
+        if (c.doorHold >= 0) { target = c.doorHold; step = dt / 0.55f; }    // [walk] getting in / out in the garage
         c.door = c.door < target ? fminf(target, c.door + step) : fmaxf(target, c.door - step);
     }
     for (auto& c : cars) {

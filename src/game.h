@@ -175,6 +175,7 @@ struct Game {
     bool walkList = false;       // the main menu's list shown at its monitor (the old menu), O back to walking
     bool walkGarage = false;     // the pit walk started from the practice / qualifying garage (not a race stop)
     // the garage's desks: the one being used (a WST_* id, -1 walking), the camera's blend to its monitor
+    int walkDoor = 0; float walkDoorT = 0;   // [walk] getting in (1) / out (2) of the car in the garage, its clock
     int walkFocus = -1; float walkFocusK = 0; int sessionTab = 1;   // sessionTab: the session desk's WEATHER (1) / TIMING (2)
     // the pit plans (walk.cpp): up to four, made at the engineer's place during practice / qualifying and
     // called in the race by touching a corner of the screen (1 top left, 2 top right, 3 bottom left,
@@ -251,7 +252,7 @@ private:
     void updateWalkHQ(float dt, const Pad& p);
     void drawWalkHQ(const V3& eye, const V3& fwd);
     void walkPitLayout();
-    void walkPitBegin(bool garage);
+    void walkPitBegin(bool climbOut);
     void updateWalkPit(float dt, const Pad& p, bool onFoot = true);
     Camera walkPitCamera() const;
     V3 walkPitWorld(float x, float y, float z) const;
@@ -262,7 +263,6 @@ private:
     void drawGarageDesk(int which, const V3& pos, const V3& facing, const V3& eye, bool live);
     void askSetupEngineer();       // the setup engineer at his laptop (hook for src/setupeng.h)
     void driveOut();               // in at the driver's door and out of the garage
-    void walkFigure(const V3& at, const V3& fwdW, const V3& eye);
 
     void drawMenuBack(const char* title);
     void raceAudio();

@@ -640,7 +640,7 @@ void Renderer::drawSideMirrors(const Race& r, const Car& me, const Camera& view,
 
 void Renderer::drawScene(const Race& r, const Camera& cam, bool hidePlayer) {
     const Track& t = r.track;
-    M4 proj = M4::perspective(cam.fov, sceneAspect, 0.8f, 1600.0f), view = M4::lookDir(V3(0, 0, 0), cam.fwd, cam.up);
+    M4 proj = M4::perspective(cam.fov, sceneAspect, sceneNear, 1600.0f), view = M4::lookDir(V3(0, 0, 0), cam.fwd, cam.up);
     if (sceneMirrorX) proj.m[0] = -proj.m[0];
     gfx::setProjection(proj);
     gfx::setView(view);

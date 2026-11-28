@@ -14,6 +14,7 @@ struct Camera { V3 eye, fwd, up; float fov = 60; };
 
 struct Renderer {
     float sceneAspect = (float)SCREEN_W / SCREEN_H;   // drawScene's width / height (the mirror is wider)
+    float sceneNear = 0.8f;                           // drawScene's near plane ([walk] first person on foot brings it in)
     bool sceneMirrorX = false;                       // drawScene flipped left-right (a mirror)
     bool sceneSide = false;                          // drawScene for a side mirror (PC): the full scene, no new shadow map
     bool mirrorsLive = false;                        // (PC) the player's side mirrors have this frame's pictures

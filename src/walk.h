@@ -24,33 +24,33 @@ struct WalkPost { float x, y, r; };
 struct WalkStation { float x, y, r; int id; const char* label; float labelZ; };
 
 struct Walker {
-    static constexpr float RADIUS = 0.30f, STEP_H = 0.55f, CAM_H = 1.8f;
+    static constexpr float RADIUS = 0.30f, STEP_H = 0.55f, CAM_H = 1.8f, EYE_H = 1.70f, EYE_HELMET = 1.68f;
     static constexpr float WALK = 1.4f, RUN = 5.5f;       // m/s
     int scene = -1;                         // which area is laid out (the game's WALK_* ids)
     // the person
     float x = 0, y = 0, z = 0, yaw = 0, vx = 0, vy = 0;
     bool run = false; float stillT = 0;     // L toggles running; standing still a moment drops back to walking
     float phase = 0, t = 0, bob = 0;        // stride phase (radians), clock, the body's bounce
-    // the camera: angles round the person, distance (wanted / after the walls)
-    float camYaw = 0, camPitch = 0.30f, camDist = 3.4f, camNow = 3.4f, camIdle = 0;
+    // the view (first person): where the eyes look (camYaw also steers the walking), the look's turn rates
+    float camYaw = 0, camPitch = -0.08f, lookVX = 0, lookVY = 0;
     bool camInit = false;
     // the area
     float minX = -5, maxX = 5, minY = -5, maxY = 5;
-    bool boundsAreWalls = true;              // indoors: the edges stop the camera too
-    float ceiling = 99;                      // the camera stays under it (indoors)
-    std::vector<WalkBox> boxes, roofs;       // roofs: areas with a ceiling (h) for the camera
+    bool boundsAreWalls = true;              // (kept for the layouts; the first-person eye never leaves the body)
+    float ceiling = 99;
+    std::vector<WalkBox> boxes, roofs;
     std::vector<WalkObb> obbs;               // turned boxes (cars), refreshed by the game when they move
     std::vector<WalkPost> posts;
     std::vector<WalkStation> stations;
-    int nearSt = -1;                         // index of the station in reach (-1 none)
+    int nearSt = -1;                         // the station looked at in reach, else the nearest in reach (-1 none)
     bool moving = false;                     // the pad asked to move this frame
-    bool helmet = true;                      // drawn in a helmet (a driver), else a head and a cap (the engineers)
+    bool helmet = true;                      // a driver in a helmet (eyes a little lower), else a head and a cap (the engineers, drawn)
 
     void clear();
     void place(float px, float py, float facing);
     // one frame: the pad moves the person and turns the camera; returns true if X was pressed at a station
     bool update(float dt, const Pad& p, const Pad& prev);
-    // the camera in the local frame: eye and the point it looks at
+    // the first-person view in the local frame: the eyes and a point they look at (with the head-bob)
     void camera(V3& eye, V3& target) const;
     // the person drawn at `place` (camera-relative, feet on z 0, facing +X), suit / trim colours
     void draw(Renderer& R, const M4& place, u32 suit, u32 trim) const;
@@ -59,7 +59,6 @@ struct Walker {
 private:
     void collide();
     float floorAt(float px, float py) const;
-    float camRay(float tx, float ty, float ex, float ey) const;   // 0..1 along target -> eye before a wall
 };
 
 // the 2D bits shown while walking: the prompt for the station in reach and a line of controls

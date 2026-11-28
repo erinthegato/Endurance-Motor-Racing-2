@@ -357,7 +357,7 @@ void Game::drawMenus(float dt) {
     if (walking) boxCar.pos.z = 0.30f;      // [walk] the car up on its stands in the main menu garage
 
     gfx::beginFrame(RGBA(126, 172, 228));
-    M4 proj = M4::perspective(menuFov, (float)SCREEN_W / SCREEN_H, 0.3f, 140.0f), view = M4::lookDir(V3(0, 0, 0), fwd, Z);
+    M4 proj = M4::perspective(menuFov, (float)SCREEN_W / SCREEN_H, walking ? 0.1f : 0.3f, 140.0f), view = M4::lookDir(V3(0, 0, 0), fwd, Z);   // [walk] first person: walls close by
     gfx::setProjection(proj); gfx::setView(view);
     clip::setMatrices(proj, view);
     gfx::setFog(false, 0, 1, 0);
@@ -2006,7 +2006,7 @@ void Game::drawHQ(float dt) {
     P.textC(SCREEN_W / 2, SCREEN_H - 70, b, ACC, 1.15f);
     P.textC(SCREEN_W / 2, SCREEN_H - 46, HQ_LINE1[hqSel], WHITE, 0.72f);
     P.textC(SCREEN_W / 2, SCREEN_H - 32, HQ_LINE2[hqSel], DIM, 0.72f);
-    P.text(10, SCREEN_H - 16, walkMenus ? (walker.nearSt >= 0 ? "X  choose   L  run   right stick  camera   O  main menu" : "Walk up to a model car   L  run   right stick  camera   O  main menu")
+    P.text(10, SCREEN_H - 16, walkMenus ? (walker.nearSt >= 0 ? "X  choose   L  run   right stick  look   O  main menu" : "Walk up to a model car   L  run   right stick  look   O  main menu")
                                         : "LEFT / RIGHT  class     X  choose     O  main menu", DIM, 0.64f);   // [walk]
     for (int e = 0; e < ERA_COUNT; e++) P.fill(SCREEN_W / 2 - 30 + e * 16, SCREEN_H - 82, 12, 4, e == hqSel ? ACC : RGBA(255, 255, 255, 90));
     gfx::setBlend(false); gfx::setDepthTest(true);

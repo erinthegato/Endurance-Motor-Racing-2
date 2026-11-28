@@ -250,6 +250,18 @@ bool CarMesh::load(const char* id, bool hd) {
             std::vector<uint32_t> idx(ic); memcpy(idx.data(), ii, (size_t)ic * 4);
             for (uint32_t& i : idx) if (i >= vc) { good = false; break; }
             if (!good) break;
+            // the glass, unrolled into triangles, and whether there is a cabin to see through it
+            for (int d = pt.drawFirst; d < pt.drawFirst + pt.drawCount; d++) {
+                Draw& dr = draws[d];
+                uint32_t fl = mats[dr.mat].flags;
+                if (fl & (MAT_INTERIOR | MAT_HELMET)) lod[l].cabin = true;
+                if (!(fl & MAT_GLASS)) continue;
+                dr.gv = (int)glassVerts.size();
+                for (int i = 0; i < dr.count; i++) {
+                    const MeshVertex& q = verts[idx[dr.first + i]];
+                    glassVerts.push_back(GlassVert{q.x, q.y, q.z, q.nx, q.ny, q.nz, 0});
+                }
+            }
             pt.mesh = gfx::createMesh(verts.data(), (int)vc, idx.data(), (int)ic);
             pt.tris = (int)ic / 3; lod[l].tris += pt.tris;
             if (!pt.mesh) good = false;
@@ -283,7 +295,8 @@ void CarMesh::unload() {
         for (auto it = texCache().begin(); it != texCache().end(); ++it)
             if (it->second.id == t.id) { if (--it->second.refs <= 0) { gfx::freeTextureRGBA(t.id); texCache().erase(it); } break; }
     }
-    texs.clear(); mats.clear(); draws.clear();
+    texs.clear(); mats.clear(); draws.clear(); glassVerts.clear();
+    for (Lod& l : lod) l.cabin = false;
     lodCount = 0; textureKB = 0; doorCount = 0;
 }
 int CarMesh::texFor(const Mat& m, int number, int compound) const {

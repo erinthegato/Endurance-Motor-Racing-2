@@ -1372,6 +1372,60 @@ int main(int argc, char** argv) {
         }
         return 0;
     }
+    if (mode == "vitacars") {
+        // vitacars <outdir> [car index ...]: each car drawn the race way (what the garage, grid and
+        // race draw) close up like the walk garage's camera, then side on at the Vita's level-of-detail
+        // distances (10 m: level 0, 40 m: level 1, 100 m: level 2), the view narrowed so the car fills
+        // the picture. Run with EMR_VITASET=1 EMR_NOGLASS=1 for the Vita's files and glass.
+        std::string out = argv[2];
+        std::vector<int> cars;
+        for (int k = 3; k < argc; k++) cars.push_back(atoi(argv[k]));
+        if (cars.empty()) for (int i = 0; i < CAR_COUNT; i++) if (!CARS[i].career) cars.push_back(i);
+        const float ASPECT = (float)SCREEN_W / SCREEN_H;
+        struct View { const char* name; V3 eye; float fovy; };
+        const View views[4] = {
+            {"close", V3(2.6f, 2.4f, 1.15f), 62},
+            {"d10", V3(0.0f, 10.0f, 1.0f), 2 * atanf(1.7f / 10) * 57.2958f},
+            {"d40", V3(0.0f, 40.0f, 1.0f), 2 * atanf(1.7f / 40) * 57.2958f},
+            {"d100", V3(0.0f, 100.0f, 1.0f), 2 * atanf(1.7f / 100) * 57.2958f},
+        };
+        for (int idx : cars) {
+            g.R.loadCar(idx);
+            for (int v = 0; v < 4; v++) {
+                gfx::beginFrame(RGBA(70, 80, 95));
+                const View& vw = views[v];
+                V3 at(0, 0, 0.6f), fwd = norm(at - vw.eye);
+                gfx::setProjection(M4::perspective(vw.fovy, ASPECT, 0.3f, 400));
+                gfx::setView(M4::lookDir(V3(0, 0, 0), fwd, V3(0, 0, 1)));   // (camera-relative, as the game draws)
+                gfx::setFog(false, 0, 1, 0);
+                gfx::setDepthTest(true); gfx::setDepthWrite(true); gfx::setBlend(false);
+                gfx::Lighting L;
+                L.sun = norm(V3(-0.55f, -0.75f, 0.9f));
+                L.sunCol[0] = 0.95f; L.sunCol[1] = 0.93f; L.sunCol[2] = 0.90f;
+                L.sky[0] = 0.50f; L.sky[1] = 0.51f; L.sky[2] = 0.55f;
+                L.ground[0] = L.ground[1] = L.ground[2] = 0.18f;
+                L.zenith[0] = 0.92f; L.zenith[1] = 0.93f; L.zenith[2] = 0.96f;
+                L.shadows = false;
+                gfx::setEye(V3(0, 0, 0)); gfx::setLighting(L); gfx::setLit(true);
+                g.R.camRight = norm(cross(fwd, V3(0, 0, 1))); g.R.camUp = cross(g.R.camRight, fwd);
+                Car c; c.def = &CARS[idx]; c.number = CARS[idx].numbers[0];
+                c.fwd = V3(1, 0, 0); c.left = V3(0, 1, 0); c.up = V3(0, 0, 1); c.pos = V3(0, 0, 0);
+                float tv = tanf(vw.fovy * 3.14159f / 360.0f);
+                g.R.drawCarAt(c, vw.eye, fwd, tv * ASPECT, tv);
+                gfx::setLit(false);
+                gfx::endFrame();
+                char b[96]; snprintf(b, sizeof b, "/vc_%02d_%s.ppm", idx, vw.name);
+                pc::saveShot((out + b).c_str());
+#ifdef EMR_HEADLESS
+                long calls = perfstat::calls, verts = perfstat::verts;
+#else
+                long calls = pc::drawCalls, verts = pc::vertsSent;
+#endif
+                fprintf(stderr, "vitacars %02d %-5s %s: %ld draw calls, %ld vertices\n", idx, vw.name, CARS[idx].id, calls, verts);
+            }
+        }
+        return 0;
+    }
     if (mode == "screens") {
         // walks through the new screens: championship, manage mode, team screen + save, podium,
         // championship standings, load menu, highlights reel

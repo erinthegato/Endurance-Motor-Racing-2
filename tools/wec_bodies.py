@@ -486,7 +486,7 @@ GT_X = {
     #  exhausts ahead of the rear wheels, a tall wing with big end plates just behind the tail)
     'dearbornstallion': dict(wheelbase=2.72, axle_shift=0.145, cab_shift=0.21, gt_nose_w=0.80, fender_rise=0.04,
                              side_glass=(1, 4), twin_hood_vents=True, side_exhaust=True, exhaust=False, wing_back=0.13,
-                             endplate_drop=0.30),
+                             endplate_drop=0.16, bubble=True, cab_wb=0.95, cab_wr=0.70),
     # (the 720S-like car: a 2.67 m wheelbase set back, a low teardrop canopy far forward on the same wedge cabin,
     #  a roof scoop, twin exhausts high in the middle of an open tail, the wing hung out behind on swan necks)
     # (the Vantage-like car: a 2.70 m wheelbase, a long bonnet with two big vents, outlined exits behind the front
@@ -496,15 +496,15 @@ GT_X = {
     # (the 296-like car: a 2.66 m wheelbase set back, a very low nose with a central bonnet duct, a short screen and
     #  a small cabin far forward, sculpted intakes behind the doors, a flat louvred deck, the wing hung out behind)
     'ardenza296': dict(wheelbase=2.66, axle_shift=-0.14, cab_shift=-0.47, gt_nose_w=0.64, fender_rise=0.09,
-                       bonnet_duct=True, hex_intake=True, deck_vents=True, wing_back=0.30, endplate_drop=0.25,
+                       bonnet_duct=True, hex_intake=True, deck_vents=True, wing_back=0.30, endplate_drop=0.14,
                        exhaust=(0.14, 0.42, 0.05), mesh_tail=True,
                        cabin=((0.62, 1.12), (0.25, 1.19), (-0.15, 1.18), (-0.55, 1.13), (-0.95, None))),
     'isarm4': dict(wheelbase=2.86, axle_shift=0.1375, cab_shift=0.30, gt_nose_w=0.78, twin_hood_vents=True,
-                   fender_exit=True, rear_vent=True, side_glass=(1, 4), wing_back=0.10, endplate_drop=0.28,
+                   fender_exit=True, rear_vent=True, side_glass=(1, 4), wing_back=0.10, endplate_drop=0.16,
                    cabin=((0.62, 1.16), (0.20, 1.26), (-0.30, 1.27), (-0.80, 1.24), (-1.30, 1.12), (-1.80, None))),
     'ashcombevanguard': dict(wheelbase=2.70, axle_shift=0.0, twin_hood_vents=True, fender_exit=True, corner_vents=True,
-                             side_exhaust=True, exhaust=False, wing_back=0.08, endplate_drop=0.25, gt_nose_w=0.76),
-    'woking720': dict(wheelbase=2.67, axle_shift=-0.135, cab_shift=-0.18, gt_nose_w=0.42, round_nose=True, rear_flare=1.30, gt_waist=0.86,
+                             side_exhaust=True, exhaust=False, wing_back=0.08, endplate_drop=0.15, gt_nose_w=0.76),
+    'woking720': dict(wheelbase=2.67, axle_shift=-0.135, cab_shift=-0.18, gt_nose_w=0.42, round_nose=True, no_canards=True, rear_flare=1.30, gt_waist=0.86,
                       bubble=True, wing_back=0.20, endplate_drop=0.10, exhaust=(0.12, 0.45, 0.05), roof_scoop=True,
                       mesh_tail=True, deck_vents=True,
                       scallop=[(-0.15, 0.62), (-0.65, 0.60), (-1.05, 0.58), (-1.12, 0.40), (-0.98, 0.24), (-0.50, 0.24), (-0.15, 0.40)],
@@ -794,7 +794,7 @@ def build_gt(spec, lod):
     rings = []
     for x, rz in zip(cxs, roof):
         belt = top(x) - 0.01
-        wb = W(x) * 0.86; wr = W(x) * 0.62
+        wb = W(x) * spec.get('cab_wb', 0.86); wr = W(x) * spec.get('cab_wr', 0.62)   # (wider: the glass house blends into the flanks)
         if spec.get('bubble'):                      # (a dome from the front: one elliptic arc from the belt to the crown)
             half = _dome_half(wb, belt, rz)
         else:

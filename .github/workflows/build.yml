@@ -199,11 +199,11 @@ jobs:
           ./emr_test_asan nospin spa 3 2
           ./emr_test_asan nospin spa 11 2
           ./emr_test_asan difflap imola 0
-          ./emr_test_asan garagesight x > /dev/null 2>&1 || { echo "garagesight failed"; exit 1; }
-          ./emr_test_asan flyspawn x > /dev/null 2>&1 || { echo "flyspawn failed"; exit 1; }
-          ./emr_test_asan memcycle x > /dev/null 2>&1 || { echo "memcycle failed"; exit 1; }
-          ./emr_test_asan careereng x > /dev/null 2>&1 || { echo "careereng failed"; exit 1; }
-          ./emr_test_asan practiceruns x > /dev/null 2>&1 || { echo "practiceruns failed"; exit 1; }
+          ./emr_test_asan garagesight x > garagesight.log 2>&1 || { echo "garagesight failed"; grep -v "^car \|^track " garagesight.log | tail -40; exit 1; }
+          ./emr_test_asan flyspawn x > flyspawn.log 2>&1 || { echo "flyspawn failed"; grep -v "^car \|^track " flyspawn.log | tail -40; exit 1; }
+          ./emr_test_asan memcycle x > memcycle.log 2>&1 || { echo "memcycle failed"; grep -v "^car \|^track " memcycle.log | tail -40; exit 1; }
+          ./emr_test_asan careereng x > careereng.log 2>&1 || { echo "careereng failed"; grep -v "^car \|^track " careereng.log | tail -40; exit 1; }
+          ./emr_test_asan practiceruns x > practiceruns.log 2>&1 || { echo "practiceruns failed"; grep -v "^car \|^track " practiceruns.log | tail -40; exit 1; }
       - name: Pit stop hand-over to a team-mate, career race lengths
         env:
           ASAN_OPTIONS: detect_leaks=0

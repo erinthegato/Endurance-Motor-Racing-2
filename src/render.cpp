@@ -152,8 +152,15 @@ void Renderer::loadCar(int idx) {
     // (std::bad_alloc from the mesh's or a texture's buffers used to abort the game)
     bool mesh = false;
     if (carLoaded[idx] && !CARS[idx].career) {
+#if defined(__cpp_exceptions)
         try { mesh = carMesh[idx].load(CARS[idx].id, hd); }
         catch (const std::bad_alloc&) { carMesh[idx].unload(); mesh = false; sys::log("car %s: out of memory for its Blender model, the plain one is used\n", CARS[idx].id); }
+#else
+        // (the Vita is built without exceptions, so a failed allocation can't be caught: check the room
+        // first -- a Blender car with its textures needs well under 12 MB of the 80 MB heap)
+        if (sys::memUsedKB() > 80 * 1024 - 12 * 1024) sys::log("car %s: heap nearly full (%d KB used), the plain model is used\n", CARS[idx].id, sys::memUsedKB());
+        else mesh = carMesh[idx].load(CARS[idx].id, hd);
+#endif
     }
     if (mesh) {
         // the cockpit camera and cabin go where this model's driver sits

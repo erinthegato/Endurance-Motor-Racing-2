@@ -34,13 +34,13 @@ void play(const char* name, float vol, float pan);
 bool radio(const char* name);  // e.g. "16_box" plays radio_16_box.raw (a new call cuts the last one off); false: no such clip
 bool radioBusy();
 void loop(int slot, const char* name, float vol);
+void testNextSong();           // tests only: the next song in the playlist (the game has no skip)
 void stopEffects();
 int freeEffects();             // unload every cached effect (they load again when next played); returns KB freed
 void musicDirect(bool on);     // true: plain stereo (menus); false: through the PA speakers (trackside)
 // skipping time (the garage clock at x4 / x16, the race on fast-forward): the music fades in fully,
 // as plain mono (no PA speakers, no distance or direction). 0 = off, 1 = full
 void musicFull(float target);
-void musicSkip(int dir);       // +1 next song, -1 the one before
 void musicEra(int era);        // the era picked in the menus: its own songs join the shuffle (playlist.txt 3rd column)
 void musicPodium(bool on);
 bool musicPackMissing();

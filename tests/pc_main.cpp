@@ -399,7 +399,7 @@ int main(int argc, char** argv) {
         fprintf(stderr, "bench done %d after %.0f s\n", (int)g.benchDone, simT);
         return 0;
     }
-    if (mode == "touchskip") {   // main menu: top corners skip songs; headquarters plays only its own theme
+    if (mode == "touchskip") {   // the songs can't be skipped: main-menu corner taps, L / R change nothing; headquarters plays only its own theme
         int bad = 0;
         auto settle = [&](int n) { for (int i = 0; i < n; i++) { Pad q{}; g.frame(1.0f / 30, q); } };
         auto tap = [&](float x, float y) { Pad q{}; q.touches = 1; q.tx[0] = x; q.ty[0] = y; g.frame(1.0f / 30, q); settle(3); };
@@ -409,12 +409,12 @@ int main(int argc, char** argv) {
             printf("headquarters, %s looked at: playing '%s'\n", ERA_SHORT[e], sound::musicForced());
             if (strncmp(sound::musicForced(), "hq_", 3)) bad++;
         }
-        // no skipping the era themes at headquarters: corner taps and musicSkip change nothing
+        // no skipping the era themes at headquarters: corner taps change nothing
         {
             std::string before = sound::musicForced(); float t0 = sound::trackTime();
             Pad q{}; q.touches = 1; q.tx[0] = 470; q.ty[0] = 10; g.frame(1.0f / 30, q); settle(3);
             q.tx[0] = 10; g.frame(1.0f / 30, q); settle(3);
-            sound::musicSkip(1); sound::musicSkip(-1); settle(3);
+            settle(3);
             bool same = before == sound::musicForced() && sound::trackTime() >= t0;
             printf("headquarters, after taps and skips: '%s' %s\n", sound::musicForced(), same ? "(still playing)" : "(CHANGED)");
             if (!same) bad++;
@@ -425,10 +425,12 @@ int main(int argc, char** argv) {
         std::string a = sound::nowPlaying();
         tap(470, 10); std::string b = sound::nowPlaying();
         tap(10, 10);  std::string c = sound::nowPlaying();
-        tap(240, 150); std::string d = sound::nowPlaying();      // the middle of the screen: no skip
-        printf("top-right: '%s' -> '%s'\ntop-left:  -> '%s'\nmiddle:    -> '%s'\n", a.c_str(), b.c_str(), c.c_str(), d.c_str());
-        if (b == a || c != a || d != c) bad++;
-        printf("%s\n", bad ? "TOUCH SKIP FAILED" : "touch skip ok");
+        tap(240, 150); std::string d = sound::nowPlaying();
+        { Pad q{}; q.l = true; g.frame(1.0f / 30, q); settle(3); q = Pad{}; q.r = true; g.frame(1.0f / 30, q); settle(3); }
+        std::string e2 = sound::nowPlaying();
+        printf("top-right: '%s' -> '%s'\ntop-left:  -> '%s'\nmiddle:    -> '%s'\nL / R:     -> '%s'\n", a.c_str(), b.c_str(), c.c_str(), d.c_str(), e2.c_str());
+        if (b != a || c != a || d != a || e2 != a) bad++;
+        printf("%s\n", bad ? "NO-SKIP FAILED (a song changed)" : "no skipping: ok");
         return bad ? 1 : 0;
     }
     if (mode == "eralock") {   // each era from headquarters: its circuits, its teams, its own career and championship
@@ -619,7 +621,7 @@ int main(int argc, char** argv) {
             for (int i = 0; i < 5; i++) { Pad q{}; g.frame(1.0f / 30, q); }
             int salsa = 0, orig = 0, h16 = 0, n = 40;
             for (int i = 0; i < n; i++) {
-                sound::musicSkip(1); sound::update();
+                sound::testNextSong(); sound::update();
                 if (strstr(sound::nowPlaying(), "Salsa") || strstr(sound::nowPlaying(), "DISTRXCT")) salsa++;   // (2025 songs)
                 if (strstr(sound::nowPlaying(), "Formula Legends - ") || strstr(sound::nowPlaying(), "Ruzer")) orig++;      // the 1998 songs
                 if (strstr(sound::nowPlaying(), "Exekat - Big Rush") || strstr(sound::nowPlaying(), "Velveteen")) h16++;   // (2016 songs)

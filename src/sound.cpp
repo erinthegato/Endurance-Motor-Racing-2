@@ -544,14 +544,9 @@ void musicEra(int era) {
     mCurEra = era;
     mOrder.clear(); mPos = -1;          // a new shuffle with this era's songs from the next song on
 }
-void musicSkip(int dir) {
-    if (!mOn || mFiles.empty() || !mForce.empty()) return;     // never a fixed piece: intro, headquarters themes, podium
-    if (dir < 0) {
-        // back: the song played before this one (or this one from the start, if it was the first)
-        if (!mHist.empty()) mHist.pop_back();
-        if (!mHist.empty()) { mBackTo = mHist.back(); mHist.pop_back(); }
-        else mBackTo = mLast;
-    }
+// (the test build only: step the playlist to sample which songs come up; the game itself never skips)
+void testNextSong() {
+    if (!mOn || mFiles.empty() || !mForce.empty()) return;
     ringW = ringR;
     openNext();
 }

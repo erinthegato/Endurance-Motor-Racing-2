@@ -1204,10 +1204,6 @@ void poll(Pad& p) {
         p.rstickY = bigger(p.rstickY, dead(axis(c, SDL_CONTROLLER_AXIS_RIGHTY), 0.10f));
         p.trigL = fmaxf(p.trigL, dead(axis(c, SDL_CONTROLLER_AXIS_TRIGGERLEFT), 0.05f));
         p.trigR = fmaxf(p.trigR, dead(axis(c, SDL_CONTROLLER_AXIS_TRIGGERRIGHT), 0.05f));
-        // the Vita's rear touch pad skips music in the menus (left half back, right half on):
-        // here the stick clicks do it (Moonlight on the Vita can put them on its rear touch pad)
-        if (btn(SDL_CONTROLLER_BUTTON_RIGHTSTICK)) { p.backTouch = true; p.backX = 400; }
-        else if (btn(SDL_CONTROLLER_BUTTON_LEFTSTICK)) { p.backTouch = true; p.backX = 80; }
     }
     // keyboard: arrows = d-pad, Enter / Space = X, Backspace = O, Esc = START, Tab = SELECT,
     // W / S = throttle / brake, Q / E = L / R

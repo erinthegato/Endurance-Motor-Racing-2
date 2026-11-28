@@ -206,6 +206,7 @@ static void mapPath(const char* in, std::string& out, int layer) {
         out = baseDir + L[layer < 0 ? 2 : (layer > 2 ? 2 : layer)] + (in + 5);
         return;
     }
+    if (!strncmp(in, "BASE/", 5)) { out = baseDir + "DATA/" + (in + 5); return; }   // DATA/ itself, never PC/ or HD/
     out = saveDir + in;
 }
 
@@ -242,7 +243,7 @@ extern "C" int __wrap_remove(const char* path) {
     return removeReal(p);
 }
 
-namespace perfstat { long calls = 0, verts = 0; }   // (draw calls and vertices this frame: the perf test reads them)
+namespace perfstat { long calls = 0, verts = 0, arena = 0, arenaMiss = 0; }   // (arena: bytes of per-frame memory used; miss: requests refused)   // (draw calls and vertices this frame: the perf test reads them)
 
 namespace gfx { static void applySync(); }
 
@@ -251,7 +252,7 @@ namespace {
 float anisotropy = 1;
 bool haveS3TC = false;        // the card compresses textures for us (DXT1 / DXT5): the Blender cars' big ones
 u8* arena = nullptr;
-const int ARENA_SIZE = 16 << 20;
+const int ARENA_SIZE = 32 << 20;      // (a pit stop on foot, crews blended close by, reached ~16 MB)
 int arenaUsed = 0;
 
 // RGBA copies of the game's palette textures
@@ -793,7 +794,7 @@ void setSync(bool vsync, int every) {
     applySync();
 }
 void beginFrame(u32 clear) {
-    arenaUsed = 0; perfstat::calls = 0; perfstat::verts = 0;
+    arenaUsed = 0; perfstat::calls = 0; perfstat::verts = 0; perfstat::arena = 0; perfstat::arenaMiss = 0;
     // the window's edges outside the game's 480:272 picture stay black
     glDisable(GL_SCISSOR_TEST);
     glViewport(0, 0, winW, winH);
@@ -920,8 +921,8 @@ void drawFill2D(float x, float y, float w, float h, u32 color) {
 }
 void* frameAlloc(int bytes) {
     bytes = (bytes + 15) & ~15;
-    if (!arena || arenaUsed + bytes > ARENA_SIZE) return nullptr;
-    void* p = arena + arenaUsed; arenaUsed += bytes; return p;
+    if (!arena || arenaUsed + bytes > ARENA_SIZE) { perfstat::arenaMiss++; return nullptr; }
+    void* p = arena + arenaUsed; arenaUsed += bytes; perfstat::arena = arenaUsed; return p;
 }
 // The game calls this after writing pixels or palettes: the RGBA copy made from them is stale.
 void frameTrim(void* p, int keepBytes) {

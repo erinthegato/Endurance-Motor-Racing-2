@@ -19,9 +19,9 @@
 
 namespace pc { extern float fakeWait; }
 #ifdef EMR_HEADLESS
-namespace perfstat { extern long calls, verts; }
+namespace perfstat { extern long calls, verts, arena, arenaMiss; }
 #else
-namespace perfstat { static long calls = 0, verts = 0; }
+namespace perfstat { static long calls = 0, verts = 0, arena = 0, arenaMiss = 0; }
 #endif
 namespace pc { extern Pad pad; extern audio::MixFn mixFn; extern long trisDrawn, drawCalls, vertsSent; void saveShot(const char*); }
 
@@ -32,7 +32,11 @@ static void shot(Game& g, const std::string& path, float dt = 1.0f / 60) {
     g.frame(dt, p);
     pc::saveShot(path.c_str());
     fprintf(stderr, "    vertices: track %ld  terrain %ld  props %ld  cars %ld  wheels %ld\n", statVerts[0], statVerts[1], statVerts[2], statVerts[3], statVerts[4]);
+#ifdef EMR_HEADLESS
+    fprintf(stderr, "  shot %s  (%ld draw calls, %ld vertices, arena %.1f MB%s, heap %.1f MB, update %.2f ms, draw %.2f ms)\n", path.c_str(), perfstat::calls, perfstat::verts, perfstat::arena / 1048576.0, perfstat::arenaMiss ? " FULL" : "", sys::memUsedKB() / 1024.0, g.lastUpdMs, g.lastDrawMs);
+#else
     fprintf(stderr, "  shot %s  (%ld triangles, %ld vertices sent, %ld draw calls, heap %.1f MB)\n", path.c_str(), pc::trisDrawn, pc::vertsSent, pc::drawCalls, sys::memUsedKB() / 1024.0);
+#endif
 }
 
 static void press(Game& g, bool Pad::*b) {
@@ -1756,20 +1760,22 @@ int main(int argc, char** argv) {
         g.startRace();
         fprintf(stderr, "perf: load %.2f s, heap %.1f MB, cars %d\n", sys::timeSec() - tl, sys::memUsedKB() / 1024.0, (int)g.race.cars.size());
         if (g.screen != SCR_RACE) { fprintf(stderr, "race did not start\n"); return 1; }
+        if (getenv("EMR_CLOCK")) g.race.startHour = (float)atof(getenv("EMR_CLOCK"));
         for (int i = 0; i < 30 * 12; i++) { Pad p{}; g.screen = SCR_RACE; g.step(1.0f / 30, p); }   // the start and the first corners
         const char* cn[3] = {"chase", "far", "cockpit"};
         for (int cm = 0; cm < 3; cm++) {
             g.cam = cm; g.R.camInit = false;
-            double up = 0, dr = 0, upMax = 0, drMax = 0, calls = 0, verts = 0; int n = 0;
+            double up = 0, dr = 0, upMax = 0, drMax = 0, calls = 0, verts = 0, arenaMax = 0; int n = 0, misses = 0;
             int frames = (int)(secs * 60 / 3);
             for (int f = 0; f < frames; f++) {
                 Pad p{}; g.screen = SCR_RACE; g.frame(1.0f / 60, p);
                 if (f < 10) continue;
                 up += g.lastUpdMs; dr += g.lastDrawMs; upMax = std::max(upMax, g.lastUpdMs); drMax = std::max(drMax, g.lastDrawMs);
                 calls += perfstat::calls; verts += perfstat::verts; n++;
+                arenaMax = std::max(arenaMax, (double)perfstat::arena); if (perfstat::arenaMiss) misses++;
             }
-            fprintf(stderr, "perf %-8s %-7s update %6.2f ms (max %6.2f)  draw %6.2f ms (max %6.2f)  calls %6.0f  verts %8.0f  heap %.1f MB\n",
-                    tid.c_str(), cn[cm], up / n, upMax, dr / n, drMax, calls / n, verts / n, sys::memUsedKB() / 1024.0);
+            fprintf(stderr, "perf %-8s %-7s update %6.2f ms (max %6.2f)  draw %6.2f ms (max %6.2f)  calls %6.0f  verts %8.0f  arena %.1f MB (full %d)  heap %.1f MB\n",
+                    tid.c_str(), cn[cm], up / n, upMax, dr / n, drMax, calls / n, verts / n, arenaMax / 1048576.0, misses, sys::memUsedKB() / 1024.0);
         }
         // the update alone (what the Vita's CPU pays for every car, every frame)
         double t0 = sys::timeSec(); int un = 600;

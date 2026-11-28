@@ -890,7 +890,12 @@ void Game::drawWalkPit() {
     Camera c = walkPitCamera();
     R.mirrorsLive = false;
     R.sceneNear = 0.12f;                 // (first person: the walls and the desks come close)
+    // on foot the other cars are parked in their garages, seen past the walls and through the doors: the
+    // race's own levels of detail are plenty (the PC's further-out close-up models are for the track)
+    Perf keepPerf = perf;
+    if (perf.lodBias > 1.0f) perf.lodBias = 1.0f;
     R.drawScene(race, c, false);
+    perf = keepPerf;
     R.sceneNear = 0.8f;
     M4 proj = M4::perspective(c.fov, (float)SCREEN_W / SCREEN_H, 0.12f, 1600.0f), view = M4::lookDir(V3(0, 0, 0), c.fwd, c.up);
     // (at a desk the monitor is close: the near plane comes in, the depth from the scene no longer matters there)
@@ -905,8 +910,14 @@ void Game::drawWalkPit() {
 #else
     float farD = 45.0f;          // (the Vita: only the garages close by)
 #endif
-    for (const SceneryRange& r : sceneryRanges)
-        if (len(r.centre - c.eye) < farD) clip::drawWorld(scenery.data() + r.first, r.count, M4::translate(sceneryOrigin - c.eye));
+    for (const SceneryRange& r : sceneryRanges) {
+        float dr = len(r.centre - c.eye);
+        if (dr >= farD) continue;
+        // (cut against the near plane on the CPU only in the garage we stand in: the rest goes straight
+        // to the GPU, which keeps it in a buffer)
+        if (dr < 12) clip::drawWorld(scenery.data() + r.first, r.count, M4::translate(sceneryOrigin - c.eye));
+        else gfx::drawWorld(scenery.data() + r.first, r.count, PRIM_TRIANGLES, M4::translate(sceneryOrigin - c.eye));
+    }
     // the setup engineer, the markers over the stations (first person: no body of our own)
     {
         Walker npc; npc.x = npcX; npc.y = npcY; npc.t = race.time; npc.helmet = false;

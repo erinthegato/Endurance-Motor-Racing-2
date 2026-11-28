@@ -496,14 +496,13 @@ GT_X = {
     # (the 296-like car: traced -- one flat flush bonnet from the screen's foot right down to the intake at the
     #  nose, the wing tops flush with it, a small cabin, a flat louvred deck, the wing hung out behind)
     'ardenza296': dict(wheelbase=2.66, axle_shift=-0.14, cab_shift=-0.47, gt_nose_w=0.56, round_nose=True, no_canards=True,
-                       eye_dz=-0.08, arch_clr=0.01, flat_hood=True, no_tow=True, bonnet_duct=True, deck_vents=True, wing_back=0.30, endplate_drop=0.14,
+                       eye_dz=-0.08, arch_clr=0.02, flat_hood=True, no_tow=True, no_louvres=True, bonnet_duct=True, deck_vents=True, wing_back=0.30, endplate_drop=0.14,
                        exhaust=(0.14, 0.42, 0.05), mesh_tail=True,
-                       trace=dict(top=[(2.30, 0.32), (1.70, 0.495), (1.19, 0.643), (0.65, 0.80), (0.20, 0.82),
+                       trace=dict(top=[(2.30, 0.663), (1.70, 0.713), (1.19, 0.755), (0.65, 0.80), (0.20, 0.82),
                                        (-0.50, 0.86), (-0.95, 0.90), (-1.20, 0.93), (-1.50, 0.93), (-2.00, 0.91),
                                        (-2.27, 0.89), (-2.30, 0.82)],
-                                  fend=[(2.30, 0.32), (1.70, 0.495), (1.19, 0.643), (0.65, 0.80), (0.20, 0.82), (-0.50, 0.87),
+                                  fend=[(2.30, 0.663), (1.70, 0.713), (1.19, 0.755), (0.65, 0.80), (0.20, 0.82), (-0.50, 0.87),
                                         (-0.95, 0.92), (-1.47, 0.96), (-2.00, 0.92), (-2.27, 0.89), (-2.30, 0.82)],
-                                  hood_bump=(1.19, 0.55, 0.11),
                                   cabin=[(0.65, None), (0.40, 0.98), (0.20, 1.08), (-0.10, 1.15), (-0.40, 1.18), (-0.70, 1.16),
                                          (-0.95, 1.08), (-1.20, None)],
                                   header=0.30, side_end=-0.80, flush_from=0.65)),
@@ -928,7 +927,7 @@ def build_gt(spec, lod):
         # side skirt
         m.box((fa - 0.42, s * W(0.0) - 0.04 if s > 0 else -W(0.0) - 0.03, 0.08), (ra + 0.44, s * W(0.0) + 0.03 if s > 0 else -W(0.0) + 0.04, 0.16), uv='carbon')
         # fender louvres behind the front wheels' tops
-        for k in range(4 if lod < 0 else 2):
+        for k in range(0 if spec.get('no_louvres') else (4 if lod < 0 else 2)):
             xl = fa + 0.10 - k * 0.11
             yl0, yl1 = s * W(xl) * 0.70, s * W(xl) * 0.90
             zl = fend(xl) + 0.008

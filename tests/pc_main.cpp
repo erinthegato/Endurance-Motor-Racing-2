@@ -488,6 +488,152 @@ int main(int argc, char** argv) {
         printf("%s\n", bad ? "ERA LOCK FAILED" : "era lock ok");
         return bad ? 1 : 0;
     }
+    if (mode == "menuidle") {     // menuidle <seconds>: the heap while standing on the title
+        sound::musicFile(nullptr);
+        g.era = argc > 3 ? atoi(argv[3]) : ERA_GT3; g.set.car = eraFirstCar(g.era) + 5; g.hqChosen = true; g.screen = SCR_TITLE;
+        int secs = argc > 2 ? atoi(argv[2]) : 20;
+        for (int i = 0; i < 30 * secs; i++) { Pad q{}; g.frame(1.0f / 30, q); g.idle = 0;
+            if (i % 30 == 0) printf("menuidle %2d s: heap %.1f MB, cars held %d, drawn %d, screen %d, draw %.1f ms, calls %ld\n", i / 30, sys::memUsedKB() / 1024.0, g.R.carsLoadedCount(), g.R.carsDrawn, (int)g.screen, g.lastDrawMs, perfstat::calls); }
+        return 0;
+    }
+    if (mode == "attractperf") {   // attractperf [seconds]: the attract movie's cost per frame (cars, calls, vertices, sim steps, loads)
+        sound::musicFile(nullptr);
+        g.era = ERA_GT3; g.set.car = eraFirstCar(ERA_GT3) + 5; g.hqChosen = true; g.screen = SCR_TITLE;
+        if (getenv("EMR_INTRO_LITE")) g.introLite = true;
+        int script = argc > 3 ? atoi(argv[3]) : 1;       // 1 the attract movie, 0 the boot intro
+        g.idle = 0;
+        if (script == 0) g.introBegin(0);
+        else for (int i = 0; i < 60 * 40 && g.screen == SCR_TITLE; i++) { Pad q{}; g.frame(1.0f / 60, q); }   // idle until it starts
+        int secs = argc > 2 ? atoi(argv[2]) : 60;
+        int slow = 0; double loadMs = 0, loadMax = 0;
+        double up = 0, dr = 0, upMax = 0, drMax = 0, calls = 0, verts = 0, cars = 0, held = 0; int n = 0, loads = 0, lastBlock = g.introBlock, heldMax = 0;
+        for (int f = 0; f < 60 * secs && g.screen == SCR_INTRO; f++) {
+            Pad q{}; g.frame(1.0f / 60, q);
+            if (pc::mixFn) { std::vector<int16_t> b(735 * 2); pc::mixFn(b.data(), 735); }
+            if (g.introBlock != lastBlock) { loads++; lastBlock = g.introBlock; loadMs += g.lastUpdMs; loadMax = std::max(loadMax, g.lastUpdMs); continue; }
+            if (g.lastUpdMs > 16.7) slow++;
+            if (f < 10) continue;
+            up += g.lastUpdMs; dr += g.lastDrawMs; upMax = std::max(upMax, g.lastUpdMs); drMax = std::max(drMax, g.lastDrawMs);
+            calls += perfstat::calls; verts += perfstat::verts; cars += g.R.carsDrawn; held += g.R.carsLoadedCount(); heldMax = std::max(heldMax, g.R.carsLoadedCount()); n++;
+        }
+        printf("attractperf: music at %.1f s, shot %d\n", g.introPos, g.introShot);
+        printf("attractperf: %d frames: update %.2f ms (max %.2f), draw %.2f ms (max %.2f), calls %.0f, verts %.0f, cars drawn %.1f, cars loaded %.1f (max %d), circuit loads %d (%.0f ms, longest %.0f ms), updates over 16.7 ms %d, field %d cars, heap %.1f MB\n",
+               n, up / n, upMax, dr / n, drMax, calls / n, verts / n, cars / n, held / n, heldMax, loads, loadMs, loadMax, slow, (int)g.race.cars.size(), sys::memUsedKB() / 1024.0);
+        return 0;
+    }
+    if (mode == "memcycle") {
+        // memcycle [rounds]: menu -> attract -> menu -> race -> menu, many times. The heap must come
+        // back to where it was (nothing that only grows), and the menu garage holds and draws one car
+        int rounds = argc > 2 ? atoi(argv[2]) : 6; int bad = 0;
+        sound::musicFile(nullptr);
+        auto frames = [&](int n) { for (int i = 0; i < n; i++) { Pad q{}; g.frame(1.0f / 30, q); if (pc::mixFn) { std::vector<int16_t> b(1470 * 2); pc::mixFn(b.data(), 1470); } } };
+        g.era = ERA_GT3; g.set.car = eraFirstCar(ERA_GT3) + 5; g.hqChosen = true;
+        g.screen = SCR_TITLE; g.idle = 0; g.t = 0;
+        frames(30);
+        int base = 0, peak = 0;
+        for (int r = 0; r < rounds; r++) {
+            // the menu: long enough that the old title would have cycled through several cars
+            g.screen = SCR_TITLE; g.idle = 0;
+            for (int i = 0; i < 30 * 25; i++) { Pad q{}; q.up = (i % 200) == 0; g.frame(1.0f / 30, q); g.idle = 0; }
+            int menuKB = sys::memUsedKB(), held = g.R.carsLoadedCount(), drawn = g.R.carsDrawn;
+            if (held > 1 || drawn > 1) { bad++; printf("memcycle: FAIL the menu holds %d cars, draws %d\n", held, drawn); }
+            // the attract movie (straight in), a minute of it, then a button
+            g.introBegin(1);
+            frames(30 * 60);
+            int attractKB = sys::memUsedKB();
+            g.introEnd(); frames(30);
+            // a race: started, a few seconds, left
+            g.set.track = r % TRACK_COUNT; g.set.opponents = 19; g.set.weekend = false; g.aiDrivesPlayer = true;
+            g.startRace();
+            for (int i = 0; i < 30 * 5; i++) { Pad q{}; g.screen = SCR_RACE; g.frame(1.0f / 30, q); }
+            int raceKB = sys::memUsedKB();
+            g.leaveRace(); g.screen = SCR_TITLE; g.aiDrivesPlayer = false;
+            frames(60);
+            int backKB = sys::memUsedKB();
+            peak = std::max(peak, std::max(attractKB, raceKB));
+            if (r == 1) base = backKB;          // (round 0 fills the one-time caches: fonts, sounds, the garage)
+            printf("memcycle round %d: menu %.1f MB (%d car held), attract %.1f MB, race %.1f MB, back on the menu %.1f MB\n",
+                   r, menuKB / 1024.0, held, attractKB / 1024.0, raceKB / 1024.0, backKB / 1024.0);
+            if (r > 1 && backKB > base + 3 * 1024) { bad++; printf("memcycle: FAIL the heap grew %.1f MB since round 1\n", (backKB - base) / 1024.0); }
+        }
+        printf("memcycle: peak %.1f MB; %s\n", peak / 1024.0, bad ? "FAIL" : "ok");
+        return bad ? 1 : 0;
+    }
+    if (mode == "flyspawn") {
+        // flyspawn [tries]: FLYING LAP from the garage on every track and era, many times, with the field
+        // out in practice. The car must stay on the road (no launch), take no damage, and the AI must
+        // hand it over after the 10 s countdown (the player's pad input is ignored until then)
+        int tries = argc > 2 ? atoi(argv[2]) : 6; int bad = 0, total = 0, moved = 0;
+        float worstRise = 0, worstVz = 0;
+        const char* only = getenv("FS_TRACK");
+        for (int tr = 0; tr < TRACK_COUNT; tr++) for (int era = 0; era < ERA_COUNT; era++) {
+            if (only && strcmp(only, TRACKS[tr].id)) continue;
+            g.set.track = tr; g.set.car = eraFirstCar(era); g.set.weather = WX_DRY; g.set.opponents = 19;
+            g.aiDrivesPlayer = false;
+            g.startSession(SES_PRACTICE);
+            Race& r = g.race;
+            for (int k = 0; k < tries; k++) {
+                // let the field run a while (different traffic each try)
+                float run = 20 + 37.0f * k;
+                for (float t = 0; t < run; t += 1.0f / 30) { r.update(1.0f / 30, 0, 0, 0, 0, true); r.sfxEvents.clear(); }
+                r.toGarage();
+                r.update(1.0f / 60, 0, 0, 0, 0, false);
+                r.flyingLap(g.set.setup);
+                total++;
+                float rise = 0, vz = 0, dmg = 0; bool handed = false; float handAt = -1, t0 = r.time;
+                float maxSteerJump = 0, prevYaw = r.player().yawRate;
+                for (int f = 0; f < 60 * 14; f++) {
+                    // the pad: full right lock and full throttle all along: ignored until the handover
+                    r.update(1.0f / 60, 1.0f, 1.0f, 0, 0, false); r.sfxEvents.clear();
+                    const Car& me = r.player();
+                    if (getenv("FS_TRACE") && f < 120 && f % 4 == 0) printf("  f %3d s %7.1f d %5.2f v %5.1f hOff %+.3f vz %+.2f grade %+.3f air %.2f load %.2f\n", f, me.s, me.d, me.v, me.body.hOff, me.body.vz, r.track.gradeAt(me.s), me.body.air, me.body.load);
+                    if (r.time - t0 < 3.0f) { rise = fmaxf(rise, me.body.hOff); vz = fmaxf(vz, fabsf(me.body.vz - me.v * r.track.gradeAt(me.s))); dmg = fmaxf(dmg, me.damage()); }
+                    if (r.handing() && me.human) { printf("flyspawn: FAIL pad drove during the countdown\n"); bad++; }
+                    if (!handed && !r.handing()) { handed = true; handAt = r.time - t0; prevYaw = me.yawRate; }
+                    if (handed && r.time - t0 < handAt + 0.1f) maxSteerJump = fmaxf(maxSteerJump, fabsf(me.yawRate - prevYaw));
+                    prevYaw = me.yawRate;
+                }
+                worstRise = fmaxf(worstRise, rise); worstVz = fmaxf(worstVz, vz);
+                bool ok = rise < 0.35f && vz < 4.0f && dmg < 0.01f && handed && handAt > 9.9f && handAt < 10.2f;
+                if (!ok) { bad++; printf("flyspawn: FAIL %s era %d try %d: rise %.2f m vz %.1f m/s damage %.2f handover %s at %.2f s\n", TRACKS[tr].id, era, k, rise, vz, dmg, handed ? "yes" : "no", handAt); }
+                r.toGarage(); r.update(1.0f / 60, 0, 0, 0, 0, false);
+            }
+            moved += r.spawnHits;
+        }
+        printf("flyspawn: %d spawns, %d failed; worst rise %.3f m, worst vertical speed off the road %.2f m/s; spawn spot moved back for traffic %d times\n", total, bad, worstRise, worstVz, moved);
+        printf("flyspawn: %s\n", bad ? "FAIL" : "ok");
+        return bad ? 1 : 0;
+    }
+    if (mode == "careereng") {     // a new career, its first round's practice: does the setup engineer get her laps?
+        std::string out = argc > 2 ? argv[2] : "/tmp";
+        remove(eraSave("career", g.era));
+        auto settle = [&](int n = 50) { for (int i = 0; i < n; i++) { Pad q{}; g.frame(1.0f / 30, q); } };
+        settle(30);
+        g.sel = 2; press(g, &Pad::cross); settle(40);
+        g.sel = 4; press(g, &Pad::cross); settle(20);
+        g.sel = 5; press(g, &Pad::cross); settle(20);
+        g.aiDrivesPlayer = true;
+        g.sel = 0; press(g, &Pad::cross);
+        for (int i = 0; i < 400 && g.screen == SCR_LOADING; i++) { Pad q{}; g.frame(1.0f / 30, q); }
+        fprintf(stderr, "careereng: screen %d session %d career %d car %s walk %d\n", (int)g.screen, (int)g.race.session, (int)g.race.set.career, g.race.player().def->model, (int)g.walkMenus);
+        int last = -1;
+        for (int k = 0; k < 60 * 60 * 25 && setupeng::cleanLaps() < 3; k++) {
+            g.race.update(1.0f / 60, 0, 0, 0, 0, true);
+            if (setupeng::cleanLaps() != last || k % (60 * 120) == 0) { last = setupeng::cleanLaps(); fprintf(stderr, "  t %.0f lap %d pit %d outLap %d clean %d\n", g.race.time, g.race.player().lap, (int)g.race.player().pit, (int)g.race.player().outLap, last); }
+        }
+        setupeng::Report rp = setupeng::analyse(g.set.setup, g.race.player().tyre);
+        // and in person: back in the garage on foot, at her place, X
+        g.aiDrivesPlayer = false; g.walkMenus = true;
+        g.race.toGarage(); g.walkPitBegin(true); g.walkDoor = 0; g.race.player().doorHold = -1;
+        for (auto& s2 : g.walker.stations) if (s2.id == WST_SETUPENG) { g.walker.place(s2.x, s2.y, 0); g.walker.camYaw = 0; }
+        settle(5);
+        fprintf(stderr, "careereng: screen %d near %s\n", (int)g.screen, g.walker.nearSt >= 0 ? g.walker.stations[g.walker.nearSt].label : "-");
+        press(g, &Pad::cross); settle(40);
+        fprintf(stderr, "careereng: focus %d open %d sub \"%s\" pending %d\n", g.walkFocus, (int)g.engUi.open, g.engUi.sub, (int)g.engUi.pending());
+        shot(g, out + "/careereng_talk.ppm");
+        fprintf(stdout, "careereng: %s (%d clean laps, first: %s)\n", rp.laps >= 2 ? "ok" : "FAIL", rp.laps, setupeng::text(rp.sug[0]));
+        return rp.laps >= 2 ? 0 : 1;
+    }
     if (mode == "career") {     // a new team: setup, livery, the team screens, one race, the report
         std::string out = argv[2];
         remove(eraSave("career", g.era));

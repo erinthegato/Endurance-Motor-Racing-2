@@ -100,6 +100,9 @@ void Game::introBegin(int script) {
     std::string all(txt, sz); sys::freeFile(txt);
     sscanf(all.c_str(), "beat0 %f\nperiod %f\nlength %f", &introBeat0, &introPeriod, &introLength);
     screen = SCR_INTRO; t = 0; introLastPos = 0;
+    // the movie on the Vita: reduced scenery and effects, draw distance a step nearer (automatic quality
+    // level 3) -- it is a show reel, it must hold 60 fps; the player's settings come back at the end
+    if (introLite) cfg.apply(autoLevel > 3 ? autoLevel : 3);
     introShot = -1; introBlock = -1; introPendingBlock = -1; introCardFrames = 0;
     introLoadBlock(sc.shots[0].block);           // the first circuit loads before the music starts
     // the attract movie loops with its music (the file plays round again without a gap)
@@ -108,6 +111,7 @@ void Game::introBegin(int script) {
 
 void Game::introEnd() {
     sound::musicFile(nullptr);
+    cfg.apply(autoLevel);
     leaveRace();
     introBlock = -1;
     // after the intro, headquarters (pick the era); after the attract movie, back where the player was
@@ -120,9 +124,10 @@ void Game::introLoadBlock(int b) {
     RaceSettings s;
     for (int i = 0; i < TRACK_COUNT; i++) if (!strcmp(TRACKS[i].id, B.track)) s.track = i;
     s.car = eraFirstCar(B.era);
-    s.laps = 50; s.opponents = 7; s.difficulty = 2; s.startPos = 0;
+    s.laps = 50; s.opponents = introLite ? 5 : 7; s.difficulty = 2;   // (the Vita: six cars are enough for the shots, at 60 fps) s.startPos = 0;
     s.startType = START_STANDING; s.weather = B.weather; s.sessionMin = 600; s.rubber = 0.5f;
     if (raceLoaded) leaveRace();
+    R.freeCars(); menuCarShown = -1;              // the menu's car (and the last block's field) go before the next circuit loads
     // practice: no race control (no safety cars), DRS free in its zones
     raceLoaded = race.start(s, SES_PRACTICE);
     if (!raceLoaded) return;

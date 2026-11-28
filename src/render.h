@@ -79,6 +79,9 @@ struct Renderer {
     // memory: the AI cars load their 256 px liveries (car_<id>.emm); your car, the showroom and the menus
     // the 512 px ones (car_<id>_hd.emm)
     int hdCar = -1; bool hdAll = true;
+    int carsDrawn = 0;            // (perf) car bodies drawn this frame
+    int carsLoadedCount() const { int n = 0; for (int i = 0; i < 48; i++) n += carLoaded[i] ? 1 : 0; return n; }
+    void freeCarsExcept(int keep);   // the menus: one car only
     std::vector<WorldVertex> pitVerts; V3 pitOrigin;
     int scModel = -1;
     Texture puff;                    // soft round blob for smoke, spray and lights

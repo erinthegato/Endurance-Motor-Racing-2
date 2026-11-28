@@ -34,6 +34,7 @@ void Game::loadStep() {
             ld.prog = 0.05f; ld.step = 1;
             return;                                  // (a frame of the slideshow before the circuit)
         case 1: {                                    // the circuit and the field
+            R.freeCars(); menuCarShown = -1;         // (the menu's car goes first: never two scenes' cars at once)
             raceLoaded = race.start(ld.s, ld.ses, ld.grid.empty() ? nullptr : &ld.grid);
             if (!raceLoaded) { ld.active = false; screen = SCR_TRACK; return; }
             afterLoadBegin();

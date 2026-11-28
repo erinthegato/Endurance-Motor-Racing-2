@@ -56,6 +56,7 @@ struct Game {
     // benchmark: if bench.txt is in the game folder, the game plays a fixed set of scenes and quits
     bool bench = false, benchDone = false; int benchStep = -1; float benchT = 0;
     double perfUpd = 0, perfDraw = 0, perfGpu = 0, perfWait = 0; float perfWorst = 0, perfT = 0; int perfN = 0, memPeak = 0;
+    int menuCarShown = -1;              // the one car the menu garage holds (-1 none)
     void perfFrame(float dt, double updMs, double drawMs);
     // automatic quality: in a race, if the frame rate stays low the detail steps down (effects, scenery,
     // then draw distance); when there is plenty of spare time again it steps back up, slowly
@@ -206,11 +207,17 @@ struct Game {
     bool pitPlanTouch(const Pad& p, bool manage);  // a new touch in a corner (in a race): true if it was taken
     void pitPlanApply();                           // at the box: the chosen plan, the car released
     void radioTick();
+    void walkPitBegin(bool climbOut);    // [walk] on foot in our garage (public for the tests)
+    void leaveRace();                    // back to the menus: the race and its cars go (public for the tests)
+#if PLATFORM_VITA
+    bool introLite = true;               // the attract movie: six cars, reduced detail (the tests can turn it on)
+#else
+    bool introLite = false;
+#endif
 private:
     void update(float dt, const Pad& pad);
     void updateRace(float dt, const Pad& p);
     void afterLoad();
-    void leaveRace();
     void finishRace();
     void draw();
     void drawRaceView();
@@ -266,7 +273,6 @@ private:
     void updateWalkHQ(float dt, const Pad& p);
     void drawWalkHQ(const V3& eye, const V3& fwd);
     void walkPitLayout();
-    void walkPitBegin(bool climbOut);
     void updateWalkPit(float dt, const Pad& p, bool onFoot = true);
     Camera walkPitCamera() const;
     V3 walkPitWorld(float x, float y, float z) const;

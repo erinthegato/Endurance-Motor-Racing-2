@@ -352,10 +352,18 @@ void Game::drawMenus(float dt) {
     // the camera walks to the station of the current screen
     // the car in its box: the highlighted car, the chosen car, or (on the title) each car in turn
     // (the main menu shows the picked era's cars in turn; the showroom the one being looked at)
-    int showCar = screen == SCR_CAR ? sel : (screen == SCR_TITLE || screen == SCR_HELP ? eraFirstCar(era) + ((int)(t / 7) + set.car) % TEAMS_PER_ERA : set.car);
+    // One car only (the fps, and the Vita's memory: cycling the class's cars every 7 s loaded a new
+    // 512 px car each time and none were let go). The title shows your car when it is of this class,
+    // your career car in a career of this class, or else the class's first car (the Ardenza 499 for
+    // the Hypercars)
+    int classCar = set.car >= 0 && set.car < CAR_PICK && CARS[set.car].era % ERA_COUNT == era % ERA_COUNT ? set.car : eraFirstCar(era % ERA_COUNT);
+    if (career.active && (int)(career.carIndex()) >= 0 && career.carIndex() < CAR_COUNT && CARS[career.carIndex()].era % ERA_COUNT == era % ERA_COUNT) classCar = career.carIndex();
+    int showCar = screen == SCR_CAR ? sel : (screen == SCR_TITLE || screen == SCR_HELP ? classCar : set.car);
     if (screen == SCR_SHOWROOM) showCar = showroomCar;
     bool careerScreen = screen == SCR_CAREER || screen == SCR_LIVERY || (screen == SCR_CAREER_NEW && career.active);
     if (careerScreen && career.active) showCar = career.carIndex();
+    if (showCar < 0 || showCar >= CAR_COUNT) showCar = eraFirstCar(era % ERA_COUNT);
+    if (showCar != menuCarShown) { R.freeCarsExcept(showCar); menuCarShown = showCar; }
     R.loadCar(showCar);
     Car boxCar;
     {

@@ -97,6 +97,7 @@ void Game::startSession(Session ses) {
     }
     RaceSettings s; std::vector<int> grid;
     ses = sessionPrep(ses, s, grid);
+    R.freeCars(); menuCarShown = -1;              // the menu's car goes before the circuit and the field load
     raceLoaded = race.start(s, ses, grid.empty() ? nullptr : &grid);
     if (!raceLoaded) { screen = SCR_TRACK; return; }
     afterLoad();
@@ -144,7 +145,7 @@ void Game::leaveRace() {
     sound::freeEffects();         // radio calls, thunder, rain, pit sounds: loaded again when needed
     if (raceLoaded) race.end();
     raceLoaded = false;
-    R.freeCars();
+    R.freeCars(); menuCarShown = -1;
     R.hdAll = true;               // menus and the showroom: the 512 px liveries
 }
 
@@ -231,6 +232,7 @@ void Game::frame(float dt, const Pad& pad) {
     }
     sound::update();
     prev = pad;
+    R.carsDrawn = 0;
     draw();
     double tu2 = sys::timeSec();
     lastUpdMs = (tu1 - tu0) * 1000; lastDrawMs = (tu2 - tu1) * 1000;
@@ -284,7 +286,13 @@ static const char* screenName(int s) {
 
 void Game::perfFrame(float dt, double updMs, double drawMs) {
     int mem = sys::memUsedKB();
-    if (mem > memPeak) memPeak = mem;
+    if (mem > memPeak) {
+        // the heap's high-water mark, in the log each time it climbs another 2 MB (the Vita's heap is fixed:
+        // running out aborts with std::bad_alloc)
+        static int logged = 0;
+        if (mem > logged + 2048) { logged = mem; sys::log("mem: heap high water %d KB (screen %d, cars loaded %d)\n", mem, (int)screen, R.carsLoadedCount()); }
+        memPeak = mem;
+    }
     if (!cfg.showFps && !bench) return;
     perfUpd += updMs; perfDraw += drawMs; perfN++; perfT += dt;
     perfGpu += gfx::lastGpuWaitSec() * 1000; perfWait += gfx::lastWaitSec() * 1000;

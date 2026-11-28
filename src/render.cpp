@@ -1,3 +1,4 @@
+#include <new>
 #include "render.h"
 #include "endian.h"
 #include "team_colours.h"
@@ -147,7 +148,14 @@ void Renderer::loadCar(int idx) {
     }
     if (carLoaded[idx] && CARS[idx].career) applyLivery(idx);
     // (the PC) the car made in Blender, where there is one: your car's textures at full size, the others' halved
-    if (carLoaded[idx] && !CARS[idx].career && carMesh[idx].load(CARS[idx].id, hd)) {
+    // Out of memory (the Vita's heap is fixed): no Blender car, the game's own model is drawn instead
+    // (std::bad_alloc from the mesh's or a texture's buffers used to abort the game)
+    bool mesh = false;
+    if (carLoaded[idx] && !CARS[idx].career) {
+        try { mesh = carMesh[idx].load(CARS[idx].id, hd); }
+        catch (const std::bad_alloc&) { carMesh[idx].unload(); mesh = false; sys::log("car %s: out of memory for its Blender model, the plain one is used\n", CARS[idx].id); }
+    }
+    if (mesh) {
         // the cockpit camera and cabin go where this model's driver sits
         carModel[idx].cabX = carMesh[idx].head[0] - COCKPIT[CARS[idx].era % ERA_COUNT].eye.x;
     }
@@ -223,6 +231,13 @@ void Renderer::applyLivery(int idx) {
         px += sizes[l] * sizes[l];
     }
     m.reshare();       // the smaller levels share level 0's freshly painted texture
+}
+
+// the menus show one car: everything else goes (the Vita frees GPU copies only after the frames that
+// drew them are done: gpuFree's pending list)
+void Renderer::freeCarsExcept(int keep) {
+    for (int i = 0; i < CAR_COUNT; i++) if (carLoaded[i] && i != keep) { carModel[i].unload(); carMesh[i].unload(); carLoaded[i] = false; }
+    if (ghostFor >= 0 && ghostFor != keep) { ghostFor = -1; std::vector<ModelVertex>().swap(ghostVerts); }
 }
 
 void Renderer::freeCars() {
@@ -879,6 +894,7 @@ void Renderer::drawCar(const Car& c, const V3& eye, const V3& fwd, float tanH, f
     V3 rel = c.pos - eye;
     Camera cam; cam.fwd = fwd; cam.up = V3(0, 0, 1);
     if (!inside && !visible(rel, 3.0f, cam, tanH, tanV, FAR_CARS * perf.distance)) return;   // (camRight / camUp set by drawScene)
+    carsDrawn++;
     float d = len(rel);
     if (carMesh[idx].loaded()) {
         // (the PC) the car made in Blender: its own body, interior, driver's helmet, glass and wheels
@@ -1716,6 +1732,7 @@ void Renderer::drawHUD(const Race& r, int mode) {
 void Renderer::drawCarModel(int idx, const M4& place, bool withDriver) {
     loadCar(idx);
     if (!carLoaded[idx]) return;
+    carsDrawn++;
     const Model& m = carModel[idx];
     if (carMesh[idx].loaded()) {
         const CarMesh& cm = carMesh[idx];

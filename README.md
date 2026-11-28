@@ -51,6 +51,9 @@ endurance racing of the original EMR put back. Not for distribution.
 * **Race lengths**: laps, the real distance, timed races (10 min to 6 h standing for the event's real
   length), or **Full length (real time)**: the real 6 / 8 / 24 hours (Qatar's 1812 km in up to 10 h),
   in the championship too (save and resume).
+* **Session lengths**: practice, qualifying and time trial sessions run at least 30 minutes; choose 30 / 40 /
+  50 / 60 min in the race settings (Sessions). The choice is remembered and used in every mode (quick race,
+  championship, career, time trial).
 * **The garage computer** (practice and qualifying): three tabs, L / R to switch
   * SETUP: wing, springs, gearing, brakes, engine map, fuel, tyres (inters and wets as well)
   * WEATHER: the forecast strip (now and the next hour: an icon, the time, the chance of rain), the
@@ -110,8 +113,9 @@ The same game for Windows (and Linux), made to be streamed from the PC to **Moon
   cap, `--fps 0` removes it), with 4x anti-aliasing and filtered textures so the picture stays clean
   through the video stream.
 * **Controls**: the Vita arrives through Moonlight as an Xbox pad: X / O / Square / Triangle as on
-  the Vita, the left stick steers, the right stick is analogue throttle (up) and brake (down); in
-  Moonlight's settings you can put L2 / R2 (analogue brake / throttle) on the Vita's rear touch pad.
+  the Vita, the left stick steers (up / down: throttle / brake); the right stick does nothing in the
+  car (it turns the camera on foot); in Moonlight's settings you can put L2 / R2 (analogue brake /
+  throttle) on the Vita's rear touch pad.
   Keyboard: arrows, Enter, Backspace, Esc, W / S throttle / brake, Q / E = L / R. Alt + Enter: window.
   Command line: `--windowed [WxH]`, `--msaa N` (0, 2, 4, 8), `--novsync`, `--fps N`.
 * **What's higher on the PC** (the Vita's set is unchanged):

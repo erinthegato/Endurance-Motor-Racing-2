@@ -1,3 +1,4 @@
+#include "../src/setupeng.h"
 #include "../src/trophies.h"
 #include <algorithm>
 // PC test program: runs the real game code with the software renderer.
@@ -400,7 +401,7 @@ int main(int argc, char** argv) {
         fprintf(stderr, "bench done %d after %.0f s\n", (int)g.benchDone, simT);
         return 0;
     }
-    if (mode == "touchskip") {   // main menu: top corners skip songs; headquarters plays only its own theme
+    if (mode == "touchskip") {   // the songs can't be skipped: main-menu corner taps, L / R change nothing; headquarters plays only its own theme
         int bad = 0;
         auto settle = [&](int n) { for (int i = 0; i < n; i++) { Pad q{}; g.frame(1.0f / 30, q); } };
         auto tap = [&](float x, float y) { Pad q{}; q.touches = 1; q.tx[0] = x; q.ty[0] = y; g.frame(1.0f / 30, q); settle(3); };
@@ -410,12 +411,12 @@ int main(int argc, char** argv) {
             printf("headquarters, %s looked at: playing '%s'\n", ERA_SHORT[e], sound::musicForced());
             if (strncmp(sound::musicForced(), "hq_", 3)) bad++;
         }
-        // no skipping the era themes at headquarters: corner taps and musicSkip change nothing
+        // no skipping the era themes at headquarters: corner taps change nothing
         {
             std::string before = sound::musicForced(); float t0 = sound::trackTime();
             Pad q{}; q.touches = 1; q.tx[0] = 470; q.ty[0] = 10; g.frame(1.0f / 30, q); settle(3);
             q.tx[0] = 10; g.frame(1.0f / 30, q); settle(3);
-            sound::musicSkip(1); sound::musicSkip(-1); settle(3);
+            settle(3);
             bool same = before == sound::musicForced() && sound::trackTime() >= t0;
             printf("headquarters, after taps and skips: '%s' %s\n", sound::musicForced(), same ? "(still playing)" : "(CHANGED)");
             if (!same) bad++;
@@ -426,10 +427,12 @@ int main(int argc, char** argv) {
         std::string a = sound::nowPlaying();
         tap(470, 10); std::string b = sound::nowPlaying();
         tap(10, 10);  std::string c = sound::nowPlaying();
-        tap(240, 150); std::string d = sound::nowPlaying();      // the middle of the screen: no skip
-        printf("top-right: '%s' -> '%s'\ntop-left:  -> '%s'\nmiddle:    -> '%s'\n", a.c_str(), b.c_str(), c.c_str(), d.c_str());
-        if (b == a || c != a || d != c) bad++;
-        printf("%s\n", bad ? "TOUCH SKIP FAILED" : "touch skip ok");
+        tap(240, 150); std::string d = sound::nowPlaying();
+        { Pad q{}; q.l = true; g.frame(1.0f / 30, q); settle(3); q = Pad{}; q.r = true; g.frame(1.0f / 30, q); settle(3); }
+        std::string e2 = sound::nowPlaying();
+        printf("top-right: '%s' -> '%s'\ntop-left:  -> '%s'\nmiddle:    -> '%s'\nL / R:     -> '%s'\n", a.c_str(), b.c_str(), c.c_str(), d.c_str(), e2.c_str());
+        if (b != a || c != a || d != a || e2 != a) bad++;
+        printf("%s\n", bad ? "NO-SKIP FAILED (a song changed)" : "no skipping: ok");
         return bad ? 1 : 0;
     }
     if (mode == "eralock") {   // each era from headquarters: its circuits, its teams, its own career and championship
@@ -620,7 +623,7 @@ int main(int argc, char** argv) {
             for (int i = 0; i < 5; i++) { Pad q{}; g.frame(1.0f / 30, q); }
             int salsa = 0, orig = 0, h16 = 0, n = 40;
             for (int i = 0; i < n; i++) {
-                sound::musicSkip(1); sound::update();
+                sound::testNextSong(); sound::update();
                 if (strstr(sound::nowPlaying(), "Salsa") || strstr(sound::nowPlaying(), "DISTRXCT")) salsa++;   // (2025 songs)
                 if (strstr(sound::nowPlaying(), "Formula Legends - ") || strstr(sound::nowPlaying(), "Ruzer")) orig++;      // the 1998 songs
                 if (strstr(sound::nowPlaying(), "Exekat - Big Rush") || strstr(sound::nowPlaying(), "Velveteen")) h16++;   // (2016 songs)
@@ -783,7 +786,7 @@ int main(int argc, char** argv) {
     if (mode == "garage") {
         std::string out = argv[2];
         auto settle = [&](int n) { for (int i = 0; i < n; i++) { Pad q{}; g.frame(1.0f / 30, q); } };
-        g.set.track = 4; g.set.car = getenv("EMR_CAR") ? atoi(getenv("EMR_CAR")) : 9; g.set.weekend = true; g.set.sessionMin = 10; g.set.opponents = 11;
+        g.set.track = 4; g.set.car = getenv("EMR_CAR") ? atoi(getenv("EMR_CAR")) : 9; g.set.weekend = true; g.set.sessionMin = 10; g.sessionClamp = false; g.set.opponents = 11;
         g.startRace();
         settle(40); shot(g, out + "/g_1_garage.ppm");
         g.setupTab = 1; settle(2); shot(g, out + "/g_1w_weather.ppm");
@@ -1085,13 +1088,61 @@ int main(int argc, char** argv) {
         fprintf(stderr, "reel screen %d\n", (int)g.screen);
         return 0;
     }
+    if (mode == "setupeng") {
+        // setupeng <track> [wing gearing susp]: practice laps (the AI driving our car) with a deliberately bad setup,
+        // then the setup engineer's report; checks she asks for less wing / longer gearing on a fast track
+        std::string tid = argc > 2 ? argv[2] : "lemans";
+        for (int i = 0; i < TRACK_COUNT; i++) if (tid == TRACKS[i].id) g.set.track = i;
+        g.set.car = 1; g.set.opponents = 0; g.set.weather = WX_DRY; g.set.weekend = true; g.set.sessionMin = 60;
+        g.aiDrivesPlayer = true;
+        g.startRace();
+        if (g.screen != SCR_RACE) { fprintf(stderr, "session did not start\n"); return 1; }
+        CarSetup bad = g.race.player().su;
+        bad.wing = argc > 3 ? atoi(argv[3]) : 5; bad.gearing = argc > 4 ? atoi(argv[4]) : 0; if (argc > 5) bad.susp = atoi(argv[5]);
+        g.race.player().su = bad;
+        setupeng::Report rp;
+        int lastShown = -1;
+        for (int k = 0; k < 60 * 60 * 30 && setupeng::cleanLaps() < 3; k++) {
+            g.race.update(1.0f / 60, 0, 0, 0, 0, true);
+            if (setupeng::cleanLaps() != lastShown) { lastShown = setupeng::cleanLaps(); fprintf(stdout, "t %.0f s: lap %d, %d clean laps\n", g.race.time, g.race.player().lap, lastShown); }
+        }
+        rp = setupeng::analyse(bad, g.race.player().tyre);
+        const setupeng::Lap& a = rp.avg;
+        fprintf(stdout, "laps %d  lap %.1f s  limiter %.3f  flat-out %.3f  top gear %d/%d  under e/m/x %.3f %.3f %.3f  over e/x %.3f %.3f  fast slide %.3f  lock F/R %.3f %.3f  kerb %.3f  tyres %.0f C\n",
+                rp.laps, a.time, a.limiter, a.flatOut, a.topGearUsed, a.topGear, a.underEntry, a.underMid, a.underExit, a.overEntry, a.overExit, a.fastSlide, a.lockF, a.lockR, a.kerbHop, a.tyreT);
+        bool wingLess = false, gearLonger = false;
+        for (int i = 0; i < rp.n; i++) {
+            fprintf(stdout, "  %d. %-55s (score %.2f)\n", i + 1, setupeng::text(rp.sug[i]), rp.score[i]);
+            if (rp.sug[i] == setupeng::SG_WING_LESS) wingLess = true;
+            if (rp.sug[i] == setupeng::SG_GEAR_LONGER) gearLonger = true;
+        }
+        if (rp.obs) fprintf(stdout, "  observation: %s\n", setupeng::obsText(rp.obs));
+        bool okk = wingLess || gearLonger;
+        fprintf(stdout, "setupeng: %s (less wing %d, longer gearing %d)\n", okk ? "ok" : "FAIL", (int)wingLess, (int)gearLonger);
+        // the garage: ask her in person (screenshot of the subtitle and the X apply / O ignore offer)
+        if (argc > 6) {
+            std::string out = argv[6];
+            g.set.setup = bad;
+            g.race.toGarage(); g.screen = SCR_GARAGE; g.setupPage = true; g.setupTab = 0; g.setupSel = 12;
+            Pad x{}; x.cross = true; g.frame(1.0f / 30, x);
+            for (int k = 0; k < 150; k++) { Pad z{}; g.frame(1.0f / 30, z); }
+            shot(g, out + "/setupeng_offer.ppm");
+            fprintf(stdout, "offer pending %d: %s\n", (int)g.engUi.pending(), g.engUi.sub);
+            int w0 = g.set.setup.wing;
+            Pad x2{}; x2.cross = true; g.frame(1.0f / 30, x2);
+            for (int k = 0; k < 60; k++) { Pad z{}; g.frame(1.0f / 30, z); }
+            shot(g, out + "/setupeng_applied.ppm");
+            fprintf(stdout, "after X: wing %d -> %d, pending %d: %s\n", w0, g.set.setup.wing, (int)g.engUi.pending(), g.engUi.sub);
+        }
+        return okk ? 0 : 1;
+    }
     if (mode == "weekend") {
         // practice -> qualifying -> race with 1-minute sessions; checks music and the grid
         std::string tid = argv[2];
         for (int i = 0; i < TRACK_COUNT; i++) if (tid == TRACKS[i].id) g.set.track = i;
         g.set.car = atoi(argv[3]); g.set.laps = atoi(argv[4]); g.set.opponents = atoi(argv[5]);
         std::string out = argv[6];
-        g.set.weekend = true; g.set.sessionMin = getenv("EMR_SESS") ? atoi(getenv("EMR_SESS")) : 1;
+        g.set.weekend = true; g.set.sessionMin = getenv("EMR_SESS") ? atoi(getenv("EMR_SESS")) : 1; g.sessionClamp = false;
         g.aiDrivesPlayer = true;
         g.startRace();
         const char* names[3] = {"practice", "qualifying", "race"};
@@ -1573,6 +1624,52 @@ int main(int argc, char** argv) {
         g.cam = 0; shot(g, out + "/mgr_after_drive.ppm", 0);
         printf("manager: %s\n", bad ? "FAILED" : "ok");
         return bad ? 1 : 0;
+    }
+    if (mode == "cam") {
+        // cam <track id> <outdir>: the race camera follows the (AI-driven) player car at varying frame rates.
+        // Prints the chase camera's distance from the car (it must hold steady at any speed / frame time),
+        // the look-to-apex angle in the corners, then shots: chase at speed and the cockpit in a corner.
+        std::string tid = argv[2], out = argv[3];
+        for (int i = 0; i < TRACK_COUNT; i++) if (tid == TRACKS[i].id) g.set.track = i;
+        g.set.car = 0; g.set.laps = 2; g.set.opponents = 5;
+        g.aiDrivesPlayer = true;
+        g.startRace();
+        if (g.screen != SCR_RACE) { fprintf(stderr, "race did not start\n"); return 1; }
+        float simT = 0; const float dt = 1.0f / 30;
+        float dmin = 1e9f, dmax = 0, vmax = 0, amax = 0; int bad = 0, nshot = 0; float lastShot = -100;
+        const float dts[3] = {1.0f / 30, 1.0f / 60, 1.0f / 144};
+        int k = 0;
+        while (g.screen == SCR_RACE && simT < 150) {
+            Pad p{};
+            g.screen = SCR_RACE; g.step(dt, p); simT += dt;
+            if (simT < 25) continue;                       // (the start)
+            const Car& c = g.race.player();
+            // the camera stepped in sub-frames of a varying length over this 1/30 s
+            float fdt = dts[(k++ / 90) % 3]; int sub = (int)(dt / fdt + 0.5f);
+            Camera cam;
+            for (int j = 0; j < sub; j++) cam = g.R.camera(g.race, CAM_CHASE, fdt, false);
+            V3 d = cam.eye - c.pos; d.z = 0;
+            float dist = sqrtf(dot(d, d));
+            if (c.v > 20) { dmin = fminf(dmin, dist); dmax = fmaxf(dmax, dist); }
+            vmax = fmaxf(vmax, c.v); amax = fmaxf(amax, fabsf(g.R.apexYaw));
+            // the car must stay in front of the chase camera, near the middle of the picture
+            V3 rel = c.pos - cam.eye; float fz = dot(rel, cam.fwd);
+            if (fz < 2) bad++;
+            // shots: at speed, and in a corner (the apex angle well over 5 degrees)
+            const TrackPoint& tp = g.race.track.pts[(int)(g.race.track.wrap(c.s) / g.race.track.step) % g.race.track.n];
+            bool corner = fabsf(g.R.apexYaw) > 0.09f && c.v > 25, fast = c.v > 75 && fabsf(tp.curv) > 1.0f / 900;
+            if ((corner || fast) && simT - lastShot > 8 && nshot < 6) {
+                char b[96];
+                g.cam = CAM_CHASE; snprintf(b, sizeof b, "/cam_chase_%s_%d.ppm", tid.c_str(), nshot); shot(g, out + b, dt);
+                g.cam = CAM_COCKPIT; for (int j = 0; j < 20; j++) { Pad z{}; g.frame(1.0f / 60, z); }
+                snprintf(b, sizeof b, "/cam_cockpit_%s_%d.ppm", tid.c_str(), nshot); shot(g, out + b, dt);
+                printf("shot %d at %.0f s: %.0f km/h, apex %.1f deg, curvature 1/%.0f m\n", nshot, simT, c.v * 3.6f, g.R.apexYaw * 57.3f, tp.curv != 0 ? 1 / tp.curv : 0);
+                g.cam = CAM_CHASE; g.R.camInit = false; nshot++; lastShot = simT;
+            }
+        }
+        printf("chase distance above 72 km/h: %.2f .. %.2f m (top speed %.0f km/h), largest apex angle %.1f deg, frames with the car behind the camera %d\n",
+               dmin, dmax, vmax * 3.6f, amax * 57.3f, bad);
+        return (dmax - dmin > 0.6f || bad) ? 1 : 0;
     }
     if (mode == "race") {
         std::string tid = argv[2];

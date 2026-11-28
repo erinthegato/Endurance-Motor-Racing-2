@@ -4,11 +4,13 @@
 #include <string>
 #include "trophies.h"
 #include "render.h"
+#include "nav.h"
 #include "sound.h"
 #include "champ.h"
 #include "career.h"
 #include "settings.h"
 #include "walk.h"
+#include "setupeng.h"
 
 struct Panel;
 
@@ -42,6 +44,8 @@ struct Game {
     Career career;
     bool careerMode = false;
     bool ttMode = false;          // time trial (its own mode on the title menu)
+    bool sessionClamp = true;     // practice / qualifying / time trial kept to 30..60 min (tests switch it off for short sessions)
+    setupeng::Ui engUi;           // the setup engineer in the garage (practice / qualifying): her conversation
     float weekendRubber = 0.1f;   // the track rubber carried from practice to qualifying to the race
     void ghostPath(char* out, int n) const;
     int careerPage = 0;           // team screen page: 0 main, 1 sponsors, 2 drivers, 3 upgrades, 5 standings
@@ -86,6 +90,8 @@ struct Game {
     int padDir = 0; float padHeld = 0; bool padLast = false;   // the d-pad steering: which way, held how long
     float steer = 0;
     Pad prev;
+    nav::Repeat navRep;                  // menu steps from the d-pad or the left stick (nav.h)
+    int navDx = 0, navDy = 0;            // this frame's steps (-1 / 0 / +1), for every screen
     float tiltBase = 0; bool tiltCal = false;          // PS Vita tilt steering: the console's angle when driving began
     int tapRow(const Pad& p, float x0, float x1, float y0, float step, int n) const;   // a new tap on a list row, or -1
     bool tapIn(const Pad& p, float x0, float y0, float x1, float y1) const {
@@ -158,7 +164,6 @@ struct Game {
     void updateRealism(int dx, int dy, bool ok, bool back);     // the rows the Controls page shows (CR_* ids), in order
     void chooseEra(int e);
     std::string hqTheme;                 // the headquarters theme playing ("" none)
-    static constexpr float TOUCH_SKIP_W = 64, TOUCH_SKIP_H = 40;   // main menu: the top corners skip songs
     int hqSel = 3; bool hqChosen = false; float hqLook = 3;   // (headquarters: the era looked at, picked yet)
     // [walk] on foot (walk.cpp): the main menu garage, the headquarters and the pits are walked round
     Walker walker;

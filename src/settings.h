@@ -9,6 +9,9 @@ enum Action { ACT_ACCEL = 0, ACT_BRAKE, ACT_GEAR_UP, ACT_GEAR_DOWN, ACT_CAMERA, 
 extern const char* BUTTON_NAME[BTN_COUNT];
 extern const char* ACTION_NAME[ACT_COUNT];
 
+// practice / qualifying / time trial sessions: a fixed 30 min minimum, up to an hour
+static const int SESSION_MIN_MIN = 30, SESSION_MIN_MAX = 60;
+
 struct Config {
     // sound, 0..10
     int master = 8, music = 7, engine = 8, effects = 8, radio = 9;
@@ -40,6 +43,10 @@ struct Config {
     int padSteer = 1;        // (Smooth for new players)
     int help() const;   // PS Vita: holding the rear touch pad looks behind (off: fingers resting on it would)
     bool swearing = false;   // the engineer swears on a bad day (Settings > Sound)
+    // race cameras: turn the view toward the coming corner's apex; the cockpit's high-speed rumble
+    bool lookApex = true, rumble = true;
+    // practice / qualifying / time trial session length, minutes: 30 (the minimum) .. 60, in steps of 10 (race settings)
+    int sessionMin = 30;
     int pitCam = 0;          // pit stops and the garage: 0 cinematic camera, 1 your own camera        // seconds idle on the main menu before the highlights start (5..30)
     // BTN_NONE = the action has no button
     Realism real;            // car realism and mechanical problems (settings > Car realism)

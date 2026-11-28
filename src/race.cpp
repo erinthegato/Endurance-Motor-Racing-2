@@ -1,3 +1,4 @@
+#include "setupeng.h"
 #include "race.h"
 #include "settings.h"
 #include <algorithm>
@@ -94,7 +95,7 @@ bool Race::start(const RaceSettings& s0, Session ses, const std::vector<int>* gr
     set = s;
     session = ses;
     chequered = false;
-    sessionLength = s.timeTrial ? 1e8f : s.sessionMin * 60.0f;
+    sessionLength = s.sessionMin * 60.0f;   // (a time trial too: a session of its own length)
     ghost.clear(); ghostRec.clear(); ghostLap = 0; lapInvalid = false; newRecord = false; ttDeltaOn = false;
     if (!track.load(&TRACKS[s.track])) return false;
     era = CARS[s.car].era;
@@ -562,6 +563,7 @@ void Race::physics(Car& c, float dt) {
     {
         float ex = fabsf(want) > maxRate ? fabsf(want) / maxRate - 1 : 0;   // how far past the grip the steering asks
         float sgW = want > 0 ? 1.0f : -1.0f;
+        if (c.player) { tele.ex = (loadK < 0.45f) ? 0 : ex; tele.sgn = fabsf(want) > 0.02f ? sgW : 0; }
         if (ex > 0 && loadK < 0.45f) {
             // light or in the air: the wheels can't turn the car, it keeps going the way it was
             want = sgW * maxRate; ex = 0;
@@ -622,6 +624,7 @@ void Race::physics(Car& c, float dt) {
         }
         c.drift = wrapPi(c.drift + rot);
         c.yaw += rot;
+        if (c.player) tele.rot = dt > 0 ? rot / dt : 0;
         if (fabsf(c.drift) > 0.15f) {
             c.slip = fmaxf(c.slip, clampf(fabsf(c.drift) * 1.5f, 0, 1));
             c.v = fmaxf(0, c.v - fabsf(sinf(c.drift)) * 6.0f * dt);   // sideways scrubs speed
@@ -631,6 +634,11 @@ void Race::physics(Car& c, float dt) {
     if (c.brake > 0.5f && c.v > 30 && fabsf(c.yaw) > 0.05f) c.slip = fmaxf(c.slip, 0.3f);
     if (H.lock > 0.2f || H.rearLock > 0) c.slip = fmaxf(c.slip, 0.8f);    // tyre smoke and squeal
     if (H.rearLock > 0) c.v = fmaxf(0, c.v - 2.5f * dt);
+    if (c.player) {
+        tele.lock = H.lock; tele.frontLock = H.frontLock; tele.rearLock = H.rearLock;
+        tele.rpmFrac = rpmFrac; tele.topGear = c.def->era == ERA_GT3 ? 6 : 7;
+        tele.kerb = onKerb; tele.off = off; tele.load = c.body.init ? c.body.load : 1.0f; tele.vTop = vt;
+    }
 
     // ---- move along the track
     float k = track.curvAt(c.s);
@@ -1093,6 +1101,7 @@ void Race::update(float dt, float steer, float throttle, float brake, int shift,
         for (auto& c : cars) if (!c.finished && c.pit == PIT_NONE) all = false;
         if ((all && time - me.finishTime > 3) || time > sessionLength + 90) over = true;
     }
+    if (session != SES_RACE) setupeng::sample(*this, dt);   // the setup engineer's telemetry (practice / qualifying)
 }
 
 // ------------------------------------------------------------------ time trial ghost

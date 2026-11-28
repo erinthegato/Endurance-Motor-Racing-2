@@ -1,6 +1,7 @@
 // The menus live inside a 3D pit garage: the car sits in its box, and every menu is a screen or
 // board standing in the garage (a monitor on a stand, the big wall screen, a pit board). The camera
 // walks from one to the next. The same panel code draws the settings flat over a paused race.
+#include "setupeng.h"
 #include "trophies.h"
 #include "setups.h"
 #include "game.h"
@@ -439,22 +440,12 @@ void Game::drawMenus(float dt) {
     finishFrame();
 }
 
-// music: what's playing and the L / R skip (flat, in the corner)
+// music: what's playing (flat, in the corner); the songs play through, they can't be skipped
 void Game::nowPlayingBar() {
-    if (screen == SCR_TITLE && input::hasTouch()) {
-        // touch: the screen's top corners skip songs (previous on the left, next on the right)
-        gfx::setDepthTest(false); gfx::setBlend(true);
-        gfx::drawFill2D(4, 4, 40, 22, RGBA(0, 0, 0, 150));
-        gfx::drawFill2D(SCREEN_W - 44, 4, 40, 22, RGBA(0, 0, 0, 150));
-        R.font.drawCentre(24, 8, "|<<", WHITE, 0.7f);
-        R.font.drawCentre(SCREEN_W - 24, 8, ">>|", WHITE, 0.7f);
-        gfx::setBlend(false); gfx::setDepthTest(true);
-    }
     const char* np = sound::nowPlaying();
     if (!np[0] || sound::trackTime() > 6.0f) return;
     char b[96];
-    if (screen == SCR_TITLE && input::hasTouch()) snprintf(b, sizeof b, "%s   tap a top corner: skip", np);
-    else snprintf(b, sizeof b, "%s", np);
+    snprintf(b, sizeof b, "%s", np);
     float w = R.font.width(b, 0.66f) + 14;
     gfx::setDepthTest(false); gfx::setBlend(true);
     gfx::drawFill2D(SCREEN_W - w - 4, SCREEN_H - 20, w, 16, RGBA(0, 0, 0, 160));
@@ -579,11 +570,11 @@ void Game::screenSetupComputer(Panel& P, bool trackGarage) {
         P.textR(P.vw - 6, 4, "L / R", DIM, 0.56f);
         if (setupTab != 0) {
             if (setupTab == 1) screenForecast(P); else screenTiming(P);
-            P.textC(P.vw / 2, 212, setupTab == 2 ? "L / R  tabs   SQUARE  class / overall   X drive out" : "L / R  tabs     X drive out     START pause", DIM, 0.58f);
+            P.textC(P.vw / 2, 212, setupTab == 2 ? "L / R  tabs   SQUARE  class / overall   X drive out   O pause" : "L / R  tabs     X drive out     O pause", DIM, 0.58f);
             return;
         }
     } else P.text(6, 2, b, WHITE, 0.8f);
-    char v[12][40];
+    char v[13][40];
     snprintf(v[0], 40, "Rear wing  < %d >", su.wing);
     snprintf(v[1], 40, "Springs  < %s >", SOFT3[su.susp]);
     snprintf(v[2], 40, "Gearing  < %s >", GEAR3[su.gearing]);
@@ -596,15 +587,16 @@ void Game::screenSetupComputer(Panel& P, bool trackGarage) {
     snprintf(v[9], 40, "FLYING LAP");
     snprintf(v[10], 40, "Time  < x%d >", (int)(raceLoaded ? race.timeAccel : 1));
     snprintf(v[11], 40, raceLoaded && race.set.timeTrial ? "End time trial" : (raceLoaded && race.session == SES_PRACTICE ? "Skip to qualifying" : "Skip to the race"));
-    int rows = trackGarage ? 12 : 9;
+    snprintf(v[12], 40, "Ask the engineer  (%d laps)", setupeng::cleanLaps());
+    int rows = trackGarage ? 13 : 9;
     bool active = setupPage || trackGarage;
-    float rowH = trackGarage ? 13.6f : 18;
+    float rowH = trackGarage ? 12.8f : 18;
     for (int i = 0; i < rows; i++) {
         float y = 25 + i * rowH;
         bool sealed = pf && i < 3;
         bool timeOff = i == 10 && raceLoaded && race.set.sessionMin <= 5;
         if (i == setupSel && active) P.fill(3, y - 2, 170, rowH - 1, sealed || timeOff ? RGBA(120, 120, 130, 230) : RGBA(80, 180, 255, 230));
-        u32 col = i == setupSel && active ? INK : (sealed || timeOff ? DIM : (i == 8 || i == 9 ? GOLD : WHITE));
+        u32 col = i == setupSel && active ? INK : (sealed || timeOff ? DIM : (i == 8 || i == 9 ? GOLD : (i == 12 ? RGBA(140, 200, 255) : WHITE)));
         P.text(8, y, v[i], col, trackGarage ? 0.68f : 0.74f);
         if (sealed) P.textR(170, y + 1, "SEALED", i == setupSel && active ? INK : RGBA(255, 120, 60), 0.55f);
     }
@@ -648,7 +640,18 @@ void Game::screenSetupComputer(Panel& P, bool trackGarage) {
         snprintf(b, sizeof b, "Track: %s %d%%", gr, (int)(race.rubber * 100)); P.text(x, y, b, RGBA(140, 200, 255), 0.6f);
     }
     if (pf) P.textC(P.vw / 2, 194, "PARC FERME: wing, springs and gearing are sealed", RGBA(255, 120, 60), 0.6f);
-    P.textC(P.vw / 2, 212, trackGarage ? (walkMenus ? "UP/DOWN  row   LEFT/RIGHT  change   X  select   O  back" : "X drive out / flying lap / skip   L / R  tabs   START pause") : "LEFT/RIGHT change   O back to the race settings", DIM, 0.58f);
+    if (trackGarage && engUi.open && engUi.sub[0]) {
+        // the setup engineer talking: her words (two lines if long), and the offer
+        P.fill(2, 192, P.vw - 4, 31, RGBA(10, 14, 22, 225));
+        P.text(8, 193, "SETUP ENGINEER", RGBA(255, 190, 60), 0.5f);
+        char l1[96], l2[96]; snprintf(l1, sizeof l1, "%s", engUi.sub); l2[0] = 0;
+        size_t n = strlen(l1);
+        if (n > 48) { size_t k = n / 2; while (k < n && l1[k] != ' ') k++; if (k < n) { l1[k] = 0; snprintf(l2, sizeof l2, "%s", l1 + k + 1); } }
+        P.text(8, 202, l1, WHITE, 0.56f);
+        if (l2[0]) P.text(8, 211, l2, WHITE, 0.56f);
+        if (engUi.pending()) P.textR(P.vw - 8, 193, "X apply   O ignore", GOLD, 0.52f);
+    } else
+    P.textC(P.vw / 2, 212, trackGarage ? (setupSel == 12 ? "X ask the engineer   L / R  tabs   O pause" : (walkMenus ? "X select   UP/DOWN  row   LEFT/RIGHT  change   O back" : "X drive out / flying lap / skip   L / R  tabs   O pause")) : "LEFT/RIGHT change   O back", DIM, 0.58f);
 }
 
 // the weather screen beside the diagnostics computer (F1-game style): the forecast strip -- an icon, the
@@ -792,10 +795,12 @@ void Game::screenTiming(Panel& P) {
 }
 
 int Game::updateSetup(int dx, int dy, bool ok, bool back, bool trackGarage) {
-    int rows = trackGarage ? 12 : 9;
+    int rows = trackGarage ? 13 : 9;
     setupSel = (setupSel + dy + rows) % rows;
     CarSetup& su = set.setup;
     bool pf = parcFerme();
+    // the setup engineer (practice / qualifying): X asks; her suggestion waits for X apply / O ignore (Game::update)
+    if (ok && trackGarage && setupSel == 12 && !engUi.pending()) { engUi.ask(su, su.tyre, pf); return 0; }
     if (dx) {
         auto step = [&](int& v, int d, int lo, int hi) { v += d; if (v < lo) v = lo; if (v > hi) v = hi; };
         switch (setupSel) {
@@ -958,7 +963,7 @@ void Game::drawPodium() {
     snprintf(b, sizeof b, "You finished P%d", mine);
     gfx::drawFill2D(SCREEN_W / 2 - 100, SCREEN_H - 40, 200, 18, RGBA(0, 0, 0, 150));
     R.font.drawCentre(SCREEN_W / 2, SCREEN_H - 39, b, GOLD, 0.85f);
-    R.font.drawCentre(SCREEN_W / 2, SCREEN_H - 16, "X  continue", DIM, 0.8f);
+    R.font.drawCentre(SCREEN_W / 2, SCREEN_H - 16, "X / O  continue", DIM, 0.8f);
     finishFrame();
 }
 
@@ -1199,7 +1204,7 @@ void Game::screenOptions(Panel& P) {
     header(P, "SETTINGS");
     static const char* PRESET[4] = {"Quality", "Balanced", "Performance", "Custom"};
     static const char* DISTN[3] = {"Far", "Medium", "Near"};
-    char v[22][56];
+    char v[25][56];
     auto vol = [](char* o, const char* name, int x) {
         char bar[12]; for (int i = 0; i < 10; i++) bar[i] = i < x ? '|' : '.'; bar[10] = 0;
         snprintf(o, 56, "%-9s < %s >  %d", name, bar, x);
@@ -1224,10 +1229,12 @@ void Game::screenOptions(Panel& P) {
     snprintf(v[21], 56, "HUD:  < %s >", HUDN[cfg.hudMode]);
     snprintf(v[19], 56, "Rear-view mirror:  < %s >", cfg.mirror ? "On" : "Off");
     snprintf(v[20], 56, "Engineer on a bad day:  < %s >", cfg.swearing ? "Swears" : "Clean");
+    snprintf(v[22], 56, "Look to apex:  < %s >", cfg.lookApex ? "On" : "Off");
+    snprintf(v[23], 56, "Cockpit rumble:  < %s >", cfg.rumble ? "On" : "Off");
     if (optCat < 0) {
         // the categories
         static const char* SUB[OPT_CATS] = {"Volumes, and how the engineer talks on a bad day",
-            "Optimisation, frame rate, draw distance, scenery, effects", "Menus, pit stop camera, steering wheel, HUD, mirror",
+            "Optimisation, frame rate, draw distance, scenery, effects", "Menus, cameras, look to apex, rumble, HUD, mirror",
             "Buttons, steering help, tilt steering", "Temperatures, slipstream, damage, mechanical problems", ""};
         for (int i = 0; i < OPT_CATS; i++) {
             float y = 46 + i * 33;
@@ -1298,7 +1305,7 @@ void Game::screenControls(Panel& P) {
         id == CR_TILTDIR ? "Reversed if turning right steers left" :
         "";
     P.textC(240, 224, tip, DIM, 0.66f);
-    P.textC(240, 238, input::hasTouch() ? "Always: left stick steers, right stick gas / brake, R gas, L brake" : "Always: stick / D-pad steer, R gas, L brake, START pause", DIM, 0.6f);
+    P.textC(240, 238, input::hasTouch() ? "Always: left stick steers, R gas, L brake" : "Always: stick / D-pad steer, R gas, L brake, START pause", DIM, 0.6f);
     P.textC(240, 255, rebinding >= 0 ? "Press the new button for this action" : "X  change     O  back", DIM, 0.72f);
 }
 
@@ -1573,7 +1580,7 @@ void Game::screenCareerNew(Panel& P) {
                snprintf(b2, sizeof b2, "TIP: a 6 h round in %s:", fmtLenShort(-newMin)); P.text(274, y, b2, RGBA(140, 200, 255), 0.6f); y += 11;
                snprintf(b2, sizeof b2, "1 real min = %s", one); P.text(274, y, b2, RGBA(140, 200, 255), 0.6f); }
     }
-    P.textC(240, 254, "UP/DOWN choose   LEFT/RIGHT change   X select", DIM, 0.72f);
+    P.textC(240, 254, "UP/DOWN choose   LEFT/RIGHT change   X select   O back", DIM, 0.72f);
 }
 
 void Game::screenLivery(Panel& P, Panel& I) {
@@ -1596,7 +1603,7 @@ void Game::screenLivery(Panel& P, Panel& I) {
         if (i == 4) { snprintf(b, sizeof b, "#%d", career.number); P.text(24, y + 14, b, tc, 0.8f); }
         if (i < 5) { P.text(P.vw - 26, y + 12, "<", tc, 0.8f); P.text(P.vw - 14, y + 12, ">", tc, 0.8f); }
     }
-    P.textC(P.vw / 2, 249, "LEFT/RIGHT change   X done", DIM, 0.62f);
+    P.textC(P.vw / 2, 249, "LEFT/RIGHT change   O done", DIM, 0.62f);
     const CarDef& d = CARS[career.carIndex()];
     snprintf(b, sizeof b, "%s %s  #%d", d.make, d.model, career.number);
     I.text(8, 3, b, WHITE, 0.9f);
@@ -1980,8 +1987,8 @@ void Game::drawHQ(float dt) {
     P.textC(SCREEN_W / 2, SCREEN_H - 70, b, ACC, 1.15f);
     P.textC(SCREEN_W / 2, SCREEN_H - 46, HQ_LINE1[hqSel], WHITE, 0.72f);
     P.textC(SCREEN_W / 2, SCREEN_H - 32, HQ_LINE2[hqSel], DIM, 0.72f);
-    P.text(10, SCREEN_H - 16, walkMenus ? (walker.near >= 0 ? "X  choose   L  run   right stick  camera" : "Walk up to a model car   L  run   right stick  camera")
-                                        : "LEFT / RIGHT  class     X  choose", DIM, 0.64f);   // [walk]
+    P.text(10, SCREEN_H - 16, walkMenus ? (walker.near >= 0 ? "X  choose   L  run   right stick  camera   O  main menu" : "Walk up to a model car   L  run   right stick  camera   O  main menu")
+                                        : "LEFT / RIGHT  class     X  choose     O  main menu", DIM, 0.64f);   // [walk]
     for (int e = 0; e < ERA_COUNT; e++) P.fill(SCREEN_W / 2 - 30 + e * 16, SCREEN_H - 82, 12, 4, e == hqSel ? ACC : RGBA(255, 255, 255, 90));
     gfx::setBlend(false); gfx::setDepthTest(true);
     nowPlayingBar();
@@ -2015,6 +2022,6 @@ void Game::drawShowroomInfo() {
     snprintf(b, sizeof b, "Cars  #%d  #%d", d.numbers[0], d.numbers[1]);
     P.text(18, 125, b, DIM, 0.66f);
     P.fill(0, SCREEN_H - 22, SCREEN_W, 22, RGBA(0, 0, 0, 160));
-    P.text(8, SCREEN_H - 18, "LEFT/RIGHT team  L/R class  stick turn  UP/DOWN zoom  /\\ spin  O back", DIM, 0.56f);
+    P.text(8, SCREEN_H - 18, "LEFT/RIGHT team  L/R class  R stick turn  UP/DOWN zoom  /\\ spin  O back", DIM, 0.56f);
     gfx::setBlend(false); gfx::setDepthTest(true);
 }

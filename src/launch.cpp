@@ -1,5 +1,5 @@
 // The standing-start launch (player only). While the five lights come on, keep the revs in the green
-// band with the throttle: holding it climbs, letting go drops, the right stick holds a revs level.
+// band with the throttle: holding it climbs, letting go drops, an analogue throttle (stick or trigger) holds a revs level.
 // WEC cars have launch control, so a held throttle sits near the band by itself. Once the
 // lights go out, press the clutch (the boost button or gear up) ONCE. Only the first press counts.
 // Reaction time and how close the revs were give a launch quality 0..1:

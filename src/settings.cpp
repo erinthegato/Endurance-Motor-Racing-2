@@ -79,6 +79,8 @@ void Config::save() const {
             (int)real.cooling, (int)real.slipstream, (int)real.blowTyre, (int)real.ground, (int)real.fuel, real.damagePct);
     for (bool m : real.mech) fprintf(f, " %d", (int)m);
     fprintf(f, "\nengineer %d\nhud %d\n", (int)swearing, hudMode);
+    fprintf(f, "camera %d %d\n", (int)lookApex, (int)rumble);
+    fprintf(f, "sessions %d\n", sessionMin);
     fclose(f);
 }
 
@@ -119,12 +121,18 @@ void Config::load() {
     if (ok && fscanf(f, "\nengineer %d", &sw) == 1) c.swearing = sw != 0;   // (optional line: off in older files)
     int hm = 1;
     if (ok && fscanf(f, "\nhud %d", &hm) == 1) c.hudMode = hm;                // (optional line: full in older files)
+    int la = 1, ru = 1, rs = 0;
+    // (optional line; a third number from an earlier build -- the right stick's use -- is read and ignored)
+    if (ok && fscanf(f, "\ncamera %d %d", &la, &ru) == 2) { c.lookApex = la != 0; c.rumble = ru != 0; if (fscanf(f, " %d", &rs) == 1) (void)rs; }
+    int sm = 30;
+    if (ok && fscanf(f, "\nsessions %d", &sm) == 1) c.sessionMin = sm;     // (optional line: 30 min in older files)
     fclose(f);
     if (!ok) return;
     auto in = [](int x, int lo, int hi) { return x < lo ? lo : (x > hi ? hi : x); };
     c.master = in(c.master, 0, 10); c.music = in(c.music, 0, 10); c.engine = in(c.engine, 0, 10); c.effects = in(c.effects, 0, 10); c.radio = in(c.radio, 0, 10);
     c.attract = in(c.attract / 5 * 5, 5, 30);
     c.pitCam = in(c.pitCam, 0, 1);
+    c.sessionMin = in((c.sessionMin + 5) / 10 * 10, SESSION_MIN_MIN, SESSION_MIN_MAX);
     c.cockpitShow = in(c.cockpitShow, 0, 3); c.hudMode = in(c.hudMode, 0, 2);
     c.preset = in(c.preset, 0, 3); c.fps = in(c.fps, 0, 1); c.distance = in(c.distance, 0, 2);
     c.vsync = vs != 0; c.scenery = sc != 0; c.effects3d = ef != 0; c.showFps = sf != 0; c.autoQuality = aq != 0;

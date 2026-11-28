@@ -603,13 +603,11 @@ void Game::driveOut() {
     race.leaveGarage(set.setup); race.timeAccel = 1; screen = SCR_RACE; R.camInit = false;
 }
 
-// the setup engineer: what he thinks of the car (src/setupeng.h, from the sessions work, when it's in)
+// the setup engineer at her laptop: she reads the laps and offers one change (src/setupeng.h); the
+// conversation has the pad until it's over: X takes the change, O leaves the car as it is
 void Game::askSetupEngineer() {
-#if __has_include("setupeng.h")
-    // TODO(merge): call setupeng::analyse(race, race.playerIdx) here, show / play its suggestions,
-    // and offer setupeng::apply(...) -- the names agreed with the sessions fork
-#endif
-    race.message("Setup engineer: run some laps, then ask me again", RGBA(150, 220, 255));
+    engUi.ask(set.setup, set.setup.tyre, parcFerme());
+    walkFocus = WST_SETUPENG;
 }
 
 void Game::updateWalkPit(float dt, const Pad& p, bool onFoot) {
@@ -625,7 +623,8 @@ void Game::updateWalkPit(float dt, const Pad& p, bool onFoot) {
     race.sfxEvents.clear();
     if (race.over) { finishRace(); return; }
     if (walker.scene != WALK_PIT) walkPitLayout();
-    walkFocusK += ((walkFocus >= 0 ? 1.0f : 0.0f) - walkFocusK) * fminf(1, dt * 5);
+    engUi.update(dt);
+    walkFocusK += ((walkFocus >= 0 && walkFocus != WST_SETUPENG ? 1.0f : 0.0f) - walkFocusK) * fminf(1, dt * 5);
     if (pressed(p, &Pad::start)) { screen = SCR_PAUSE; sel = 0; return; }
     int dy = (pressed(p, &Pad::down) ? 1 : 0) - (pressed(p, &Pad::up) ? 1 : 0);
     int dx = (pressed(p, &Pad::right) ? 1 : 0) - (pressed(p, &Pad::left) ? 1 : 0);
@@ -633,6 +632,12 @@ void Game::updateWalkPit(float dt, const Pad& p, bool onFoot) {
     // a desk in use: its menu has the pad (up / down rows, left / right values), O back on foot
     if (walkFocus >= 0) {
         if (walkFocus == WST_SETUP) {
+            // the computer's "Ask the engineer" row: her offer takes X / O while it stands
+            if (engUi.pending()) {
+                if (ok) { if (engUi.accept(set.setup) && !ttMode) setups.put(set.track, CARS[set.car].era, set.setup); }
+                else if (back) engUi.dismiss();
+                return;
+            }
             int keep = setupTab; setupTab = 0;
             int act = updateSetup(dx, dy, ok, false, true);
             setupTab = keep;
@@ -643,6 +648,14 @@ void Game::updateWalkPit(float dt, const Pad& p, bool onFoot) {
             int tabs = dx + (pressed(p, &Pad::r) ? 1 : 0) - (pressed(p, &Pad::l) ? 1 : 0);
             if (tabs) sessionTab = sessionTab == 1 ? 2 : 1;
             if (sessionTab == 2 && pressed(p, &Pad::square)) timingOverall = !timingOverall;
+        } else if (walkFocus == WST_SETUPENG) {
+            if (engUi.pending()) {
+                if (ok) { if (engUi.accept(set.setup) && !ttMode) setups.put(set.track, CARS[set.car].era, set.setup); }
+                else if (back) { engUi.dismiss(); }
+                return;
+            }
+            if (!engUi.open || back) walkFocus = -1;
+            return;
         } else if (walkFocus == WST_PLANS) {
             updatePlans(dx, dy, ok, back);
             if (screen == SCR_WALK && planDone) { planDone = false; walkFocus = -1; }
@@ -950,6 +963,16 @@ void Game::drawWalkPit() {
     R.drawWeather(race, false);
     // the words (or the plan editor, framed over its monitor)
     if (walkFocus == WST_PLANS && walkFocusK > 0.6f) drawPlans();
+    else if (walkFocus == WST_SETUPENG || (engUi.open && engUi.sub[0])) {
+        walkHud(R, nullptr, engUi.pending() ? "X  make the change     O  leave it" : "", engUi.sub[0] ? "SETUP ENGINEER" : nullptr);
+        if (engUi.sub[0]) {      // her words, as subtitles
+            gfx::setDepthTest(false); gfx::setBlend(true);
+            float w = fminf(SCREEN_W - 20.0f, R.font.width(engUi.sub, 0.72f) + 20);
+            gfx::drawFill2D(SCREEN_W / 2 - w / 2, SCREEN_H - 62, w, 20, RGBA(0, 0, 0, 180));
+            R.font.drawCentre(SCREEN_W / 2, SCREEN_H - 59, engUi.sub, W_WHITE, 0.72f);
+            gfx::setBlend(false); gfx::setDepthTest(true);
+        }
+    }
     else if (walkFocus >= 0) {
         walkHud(R, nullptr, walkFocus == WST_SESSION ? "LEFT / RIGHT  weather / timing     SQUARE  class / overall     O  back"
                                                      : "UP / DOWN  row     LEFT / RIGHT  change     X  select     O  back", nullptr);

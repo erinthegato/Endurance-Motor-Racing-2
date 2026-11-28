@@ -459,11 +459,11 @@ GT = {
     'isarm4':        ('front', 0.68, 0.84, 0.90, 'slim',  1.28, 0.03),
     'kentuckyz6':    ('mid',   0.52, 0.68, 0.90, 'slim',  1.30, 0.00),
     'ashcombevanguard':('front',0.60, 0.80, 0.92, 'round', 1.24, 0.03),
-    'woking720':     ('mid',   0.50, 0.66, 0.85, 'eye',   1.20, 0.00),
+    'woking720':     ('mid',   0.28, 0.66, 0.83, 'eye',   1.24, 0.00),
     'sterneamg':     ('front', 0.62, 0.84, 0.94, 'slim',  1.34, 0.05),
     'kotobukigr':    ('front', 0.58, 0.80, 0.90, 'eye',   1.31, 0.02),
     'dearbornstallion':('front',0.70, 0.82, 0.95, 'bar',  1.22, 0.00),
-    'torotgt':       ('mid',   0.34, 0.68, 0.90, 'eye',   1.20, 0.00),
+    'torotgt':       ('mid',   0.30, 0.68, 0.875, 'eye',   1.18, 0.00),
     'careergt3':     ('front', 0.58, 0.80, 0.90, 'slim',  1.32, 0.02),
 }
 
@@ -504,11 +504,36 @@ GT_X = {
                    cabin=((0.62, 1.16), (0.20, 1.26), (-0.30, 1.27), (-0.80, 1.24), (-1.30, 1.12), (-1.80, None))),
     'ashcombevanguard': dict(wheelbase=2.70, axle_shift=0.0, twin_hood_vents=True, fender_exit=True, corner_vents=True,
                              side_exhaust=True, exhaust=False, wing_back=0.08, endplate_drop=0.25, gt_nose_w=0.76),
-    'woking720': dict(wheelbase=2.67, axle_shift=-0.135, cab_shift=-0.18, wedge=True, fender_rise=0.08, gt_nose_w=0.62,
-                      wing_back=0.26, endplate_drop=0.22, exhaust=(0.12, 0.45, 0.05), roof_scoop=True, mesh_tail=True,
-                      deck_vents=True),
-    'torotgt': dict(wheelbase=2.62, axle_shift=-0.16, cab_shift=-0.30, wedge=True, fender_rise=0.07, gt_nose_w=0.66,
-                    wing_back=0.30, exhaust=(0.26, 0.44, 0.058), hex_intake=True, roof_scoop=True, mesh_tail=True, deck_vents=True),
+    'woking720': dict(wheelbase=2.67, axle_shift=-0.135, cab_shift=-0.18, gt_nose_w=0.42, round_nose=True, rear_flare=1.30, gt_waist=0.86,
+                      bubble=True, wing_back=0.20, endplate_drop=0.10, exhaust=(0.12, 0.45, 0.05), roof_scoop=True,
+                      mesh_tail=True, deck_vents=True,
+                      scallop=[(-0.15, 0.62), (-0.65, 0.60), (-1.05, 0.58), (-1.12, 0.40), (-0.98, 0.24), (-0.50, 0.24), (-0.15, 0.40)],
+                      # traced off the side photo (wheelbase-matched): a low pointed nose, a teardrop canopy peaking
+                      # over the driver, a long fall to a low short tail; the deck well below the roof
+                      trace=dict(top=[(2.29, 0.15), (2.20, 0.25), (2.07, 0.40), (1.97, 0.50), (1.77, 0.63), (1.57, 0.74),
+                                      (1.38, 0.81), (1.17, 0.845), (0.97, 0.85), (0.70, 0.83), (0.45, 0.81), (0.00, 0.80), (-0.60, 0.84), (-1.10, 0.92),
+                                      (-1.40, 0.97), (-1.60, 0.95), (-1.90, 0.90), (-2.15, 0.83), (-2.27, 0.74)],
+                                 fend=[(2.29, 0.15), (2.20, 0.25), (2.07, 0.40), (1.97, 0.50), (1.77, 0.63), (1.57, 0.74),
+                                       (1.38, 0.81), (1.17, 0.845), (0.97, 0.85), (0.70, 0.83), (0.45, 0.81), (0.00, 0.84), (-0.60, 0.90),
+                                       (-1.25, 0.99), (-1.53, 0.98), (-1.90, 0.92), (-2.15, 0.85), (-2.27, 0.76)],
+                                 cabin=[(0.45, None), (0.25, 0.95), (0.05, 1.08), (-0.15, 1.17), (-0.40, 1.23),
+                                        (-0.65, 1.22), (-0.90, 1.16), (-1.15, 1.07), (-1.40, None)],
+                                 header=-0.10, side_end=-0.95, flush_from=0.45)),
+    'torotgt': dict(wheelbase=2.62, axle_shift=-0.16, cab_shift=-0.30, gt_nose_w=0.40, round_nose=True, crease=True,
+                    front_flare=1.0, rear_flare=1.25,
+                    wing_back=0.30, endplate_drop=0.10, exhaust=(0.26, 0.44, 0.058), hex_intake=True, hex_at=(-0.82, 0.55),
+                    hex_scale=1.35, no_canards=True, mesh_tail=True, deck_vents=True,
+                    # traced off the side photo (wheelbase-matched): one arc from the sharp low nose up the long screen
+                    # to a roof peak behind the driver, then a straight fall over the engine cover to a high cut-off tail
+                    trace=dict(top=[(2.30, 0.18), (2.18, 0.30), (2.00, 0.45), (1.80, 0.58), (1.50, 0.72), (1.30, 0.79),
+                                    (1.15, 0.815), (1.00, 0.815), (0.80, 0.80), (0.30, 0.78), (-0.45, 0.84), (-1.30, 1.02), (-1.60, 0.97), (-1.90, 0.91),
+                                    (-2.24, 0.875), (-2.30, 0.80)],
+                               fend=[(2.30, 0.18), (2.18, 0.30), (2.00, 0.45), (1.80, 0.58), (1.50, 0.72), (1.30, 0.79),
+                                     (1.15, 0.815), (1.00, 0.815), (0.80, 0.80), (0.30, 0.80), (-0.45, 0.86), (-0.93, 0.95),
+                                     (-1.30, 0.99), (-1.47, 1.00), (-1.90, 0.95), (-2.24, 0.875), (-2.30, 0.80)],
+                               cabin=[(0.80, None), (0.50, 0.93), (0.20, 1.02), (-0.05, 1.08), (-0.25, 1.13),
+                                      (-0.45, 1.165), (-0.62, 1.18), (-0.85, 1.137), (-1.07, 1.095), (-1.30, None)],
+                               header=-0.25, side_end=-0.70, flush_from=0.80)),
 }
 
 
@@ -577,6 +602,21 @@ def gt_fns(spec):
                      (cab - 1.0, belt + 0.01), (cab - 1.75, tail + 0.02), (xr + 0.12, tail), (xr, tail - 0.05)])
     fr = spec.get('fender_rise', 0.05)
     fend = lambda x: float(top(x) + fr * np.exp(-((x - fa) / 0.45) ** 2) + 0.05 * np.exp(-((x - ra) / 0.42) ** 2))
+    if spec.get('trace'):                      # (traced off the make's side photo: the body's centre line and its
+        T = spec['trace']                      #  shoulder / wing line, model metres)
+        top = curve(T['top'])
+        fc = curve(T['fend'])
+        fend = lambda x: max(float(fc(x)), float(top(x)) - 0.10)
+        if T.get('flush_from') is not None:    # (ahead of the A-pillar: the wing tops flush with the bonnet, no humps)
+            xa = T['flush_from']
+            fend = lambda x, f0=fend: float(top(x)) if x > xa else f0(x)
+        # (the surface always clears the arch tops by 9 cm -- folded into the lines themselves, so everything laid
+        #  on them (louvres, vents) sits on the real surface)
+        clr = lambda x: arch_z(x, (fa, ra), 0.0) + 0.09 if in_arch(x, (fa, ra)) else -1.0
+        top0, fend0 = top, fend
+        xa = T.get('flush_from', 9.0)
+        top = lambda x: max(top0(x), clr(x)) if x > xa else top0(x)
+        fend = lambda x: max(fend0(x), clr(x))
     return W, top, fend
 
 
@@ -592,6 +632,13 @@ def gt_ring(x, spec, fns, lod):
     half = [(0.0, zb), (yi, zb), (yi, za if arch else zb + 0.02), (w * (1.0 if arch else 0.97), za if arch else 0.20),
             (w, max(za + 0.02, 0.50) if arch else 0.50), (w * 0.985, f - 0.12), (w * 0.93, f - 0.025), (w * 0.84, f),
             (w * 0.62, t + 0.01 + bulge * 0.5), (w * 0.30, t + bulge), (0.0, t + bulge)]
+    if spec.get('trace') and not arch and f < 0.66:
+        # (a low nose: the flank's fixed heights (0.20, 0.50) would stand above the shoulder and fold the surface
+        #  back over itself -- spread them between the floor and the shoulder instead)
+        for i, k in zip((3, 4, 5, 6), (0.20, 0.55, 0.80, 0.95)):
+            half[i] = (half[i][0], zb + (f - zb) * k)
+    if spec.get('crease') and lod < 2:         # (a sharp shoulder crease: the flank runs up nearly upright to it)
+        half[5:7] = [(w * 0.998, f - 0.09), (w * 0.99, f - 0.035)]
     if lod >= 2:
         half = [half[i] for i in (0, 1, 2, 3, 4, 6, 8, 10)]
     elif PCSET and lod < 0:
@@ -606,6 +653,12 @@ def gt_cabin(spec, fns):
     ws_x = cab + 0.98                                            # the windscreen's base
     if spec.get('bubble') and lay == 'rear':
         return _bubble_cabin(spec, fns, ws_x)
+    if spec.get('trace'):                     # (traced: (x, roof z) per station, None: just above the body there)
+        spec['ws_top'] = spec['trace']['header']
+        st = spec['trace']['cabin']
+        xs = [x for x, _ in st]
+        roof = [z if z is not None else top(x) + (0.02 if i == 0 else 0.04) for i, (x, z) in enumerate(st)]
+        return xs, roof
     if spec.get('cabin'):                     # (the make's own glass house: (offset from cab, roof z) per station,
         xs = [ws_x] + [cab + dx for dx, _ in spec['cabin']]          #  None: just above the deck)
         roof = [top(ws_x) + 0.02] + [rz if rz is not None else top(cab + dx) + 0.04 for dx, rz in spec['cabin']]
@@ -764,7 +817,17 @@ def build_gt(spec, lod):
         return k in (0, 1, 6, 7)                    # the side windows
     if spec.get('bubble') and spec['layout'] == 'rear':
         glass = _bubble_glass(spec, cxs)
-    if spec.get('wedge'):
+    if spec.get('trace'):
+        def glass(i, k):
+            if k == 8:
+                return False
+            xm = 0.5 * (cxs[i] + cxs[i + 1])
+            if xm > spec['trace']['header']:
+                return True                         # the windscreen
+            if xm < spec['trace']['side_end']:
+                return False                        # (painted buttress / quarter)
+            return k in (0, 1, 6, 7)
+    elif spec.get('wedge'):
         def glass(i, k):
             if k == 8:
                 return False
@@ -807,7 +870,7 @@ def build_gt(spec, lod):
     else:
         m.box((xf - 0.28, -0.90, 0.07), (xf + 0.05, 0.90, 0.095), uv='carbon')
     for s in (-1, 1):
-        for k in range(2):
+        for k in range(0 if spec.get('no_canards') else 2):
             x0 = xf - 0.18 - k * 0.12
             m.quad((x0 + 0.10, s * 0.78, 0.30 + k * 0.08), (x0 - 0.10, s * (W(x0) + 0.04), 0.33 + k * 0.08), (x0 - 0.10, s * (W(x0) + 0.04), 0.345 + k * 0.08), (x0 + 0.10, s * 0.78, 0.315 + k * 0.08), uv='carbon')
         # side skirt
@@ -816,7 +879,7 @@ def build_gt(spec, lod):
         for k in range(4 if lod < 0 else 2):
             xl = fa + 0.10 - k * 0.11
             yl0, yl1 = s * W(xl) * 0.70, s * W(xl) * 0.90
-            zl = fend(xl) + 0.004
+            zl = fend(xl) + 0.008
             m.quad((xl, yl0, zl), (xl - 0.05, yl0, zl - 0.004), (xl - 0.05, yl1, zl - 0.02), (xl, yl1, zl - 0.016), uv='carbon', shade=0.35)
         _gt_lights(m, spec, fns, s)
         # mirror on the door
@@ -907,8 +970,9 @@ def _gt_extras(m, spec, fns):
     W, top, fend = fns
     L = spec['L']; xr = -L / 2; cab = spec['cab']
     if spec.get('hex_intake'):
-        xc, zc = cab - 0.78, 0.56
-        hx = [(0.26, 0.0), (0.14, 0.17), (-0.20, 0.17), (-0.26, -0.02), (-0.14, -0.17), (0.18, -0.15)]
+        xc, zc = spec.get('hex_at', (cab - 0.78, 0.56))
+        hs = spec.get('hex_scale', 1.0)
+        hx = [(0.26 * hs, 0.0), (0.14 * hs, 0.17 * hs), (-0.20 * hs, 0.17 * hs), (-0.26 * hs, -0.02 * hs), (-0.14 * hs, -0.17 * hs), (0.18 * hs, -0.15 * hs)]
         for s in (-1, 1):
             pts = [(xc + dx, s * (_flank_y(spec, fns, xc + dx, zc + dz) + 0.004), zc + dz) for dx, dz in hx]
             V = [(xc, s * (_flank_y(spec, fns, xc, zc) + 0.004), zc)] + pts
@@ -918,6 +982,14 @@ def _gt_extras(m, spec, fns):
             Vi = [(xc, s * (_flank_y(spec, fns, xc, zc) + 0.007), zc)] + [
                 (xc + dx * 0.72, s * (_flank_y(spec, fns, xc + dx * 0.72, zc + dz * 0.72) + 0.006), zc + dz * 0.72) for dx, dz in hx]
             m.part(Vi, F, uv='carbon', flat=True, shade=0.08)
+    if spec.get('scallop'):                     # (the deep dark scallop from the door into the intake ahead of the rear wheel)
+        P = spec['scallop']
+        xc = sum(p[0] for p in P) / len(P); zc = sum(p[1] for p in P) / len(P)
+        n = len(P)
+        for s in (-1, 1):
+            V = [(xc, s * (_flank_y(spec, fns, xc, zc) - 0.02), zc)] + [(x, s * (_flank_y(spec, fns, x, z) + 0.004), z) for x, z in P]
+            F = [[0, 1 + i, 1 + (i + 1) % n] if s > 0 else [0, 1 + (i + 1) % n, 1 + i] for i in range(n)]
+            m.part(V, F, uv='carbon', flat=True, shade=0.12)
     if spec.get('roof_scoop'):
         rz = max(gt_cabin(spec, fns)[1])
         x1, x0 = cab - 0.02, cab - 0.62

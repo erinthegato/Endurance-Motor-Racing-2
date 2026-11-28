@@ -1,6 +1,7 @@
 #include "data.h"
 #include "endian.h"
 #include "png.h"
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -13,12 +14,12 @@ static u32 C(float r, float g, float b) { return RGBA((int)(r * 255), (int)(g * 
 CarDef CARS[] = {
     // id              make        model          team                     numbers     class        era        type       engine                            sound                    idle  max    kg    kW   gain     aero   grip    len    colour                   wheels
     {"ardenza499",   "Ardenza",  "499X",        "Ardenza Corse",         {50, 51},   CLASS_HYPER, ERA_HYPER, TYPE_LMH,  "3.0 V6 twin-turbo hybrid (4WD)",  "engine_hyper_v6",       3200, 9000,  1112, 507,  0.000f, 1.000f, 1.012f, 4.98f, C(0.78f, 0.04f, 0.05f), false},
-    {"kaizen10",     "Kaizen",   "TR-010",      "Kaizen Racing Works",   {7, 8},     CLASS_HYPER, ERA_HYPER, TYPE_LMH,  "3.5 V6 twin-turbo hybrid (4WD)",  "engine_hyper_v6",       3000, 8500,  1120, 505,  0.010f, 1.002f, 1.011f, 4.99f, C(0.06f, 0.06f, 0.07f), false},
+    {"kaizen10",     "Kaizen",   "TR-010",      "Kaizen Racing Works",   {7, 8},     CLASS_HYPER, ERA_HYPER, TYPE_LMH,  "3.5 V6 twin-turbo hybrid (4WD)",  "engine_hyper_v6",       3000, 8500,  1120, 505,  0.010f, 1.002f, 1.011f, 4.99f, C(0.80f, 0.06f, 0.08f), false},
     {"regalvr8",     "Regal",    "VR-8",        "Regal Motorsport",      {12, 38},   CLASS_HYPER, ERA_HYPER, TYPE_LMDH, "5.5 V8 naturally aspirated hybrid", "engine_hyper_v8_na",  2800, 8600,  1108, 506,  0.020f, 0.995f, 1.008f, 5.08f, C(1.00f, 0.78f, 0.05f), false},
     {"isarmh8",      "Isar",     "MH-8",        "Isar Werks Team",       {15, 20},   CLASS_HYPER, ERA_HYPER, TYPE_LMDH, "4.0 V8 twin-turbo hybrid",        "engine_hyper_v8_turbo", 2900, 8500,  1110, 506,  0.008f, 0.993f, 1.007f, 5.08f, C(0.95f, 0.95f, 0.97f), false},
     {"lionne9x9",    "Lionne",   "9X9",         "Lionne Sport",          {93, 94},   CLASS_HYPER, ERA_HYPER, TYPE_LMH,  "2.6 V6 twin-turbo hybrid (4WD)",  "engine_hyper_v6",       3300, 9500,  1104, 508, -0.010f, 0.990f, 1.006f, 4.99f, C(0.13f, 0.13f, 0.15f), false},
-    {"montagne27",   "Montagne", "MA-27",       "Montagne Endurance",    {35, 36},   CLASS_HYPER, ERA_HYPER, TYPE_LMDH, "3.4 V6 twin-turbo hybrid",        "engine_hyper_v6",       3200, 9000,  1112, 506, -0.010f, 1.000f, 1.005f, 5.08f, C(0.04f, 0.22f, 0.70f), false},
-    {"ashcombevalkyr","Ashcombe","Valkyr",      "Ashcombe Thunder",      {107, 109}, CLASS_HYPER, ERA_HYPER, TYPE_LMH,  "6.5 V12 naturally aspirated",     "engine_v12",            3500, 10800, 1108, 504,  0.004f, 1.006f, 1.003f, 4.99f, C(0.00f, 0.28f, 0.20f), false},
+    {"montagne27",   "Montagne", "MA-27",       "Montagne Endurance",    {35, 36},   CLASS_HYPER, ERA_HYPER, TYPE_LMDH, "3.4 V6 twin-turbo hybrid",        "engine_hyper_v6",       3200, 9000,  1112, 506, -0.010f, 1.000f, 1.005f, 5.08f, C(0.10f, 0.38f, 0.84f), false},
+    {"ashcombevalkyr","Ashcombe","Valkyr",      "Ashcombe Thunder",      {107, 109}, CLASS_HYPER, ERA_HYPER, TYPE_LMH,  "6.5 V12 naturally aspirated",     "engine_v12",            3500, 10800, 1108, 504,  0.004f, 1.006f, 1.003f, 4.99f, C(0.02f, 0.40f, 0.38f), false},
     {"origingx01",   "Origin",   "GX-01",       "Origin Racing",         {17, 19},   CLASS_HYPER, ERA_HYPER, TYPE_LMDH, "3.2 V8 twin-turbo hybrid",        "engine_hyper_v8_turbo", 3000, 9000,  1114, 505,  0.000f, 1.000f, 1.002f, 5.08f, C(0.05f, 0.09f, 0.22f), false},
     {"wokingw1",     "Woking",   "W-LMDh",      "Woking Hypercar Team",  {58, 59},   CLASS_HYPER, ERA_HYPER, TYPE_LMDH, "2.9 V6 twin-turbo hybrid",        "engine_hyper_v6",       3200, 9200,  1112, 504,  0.000f, 0.998f, 1.000f, 5.08f, C(1.00f, 0.48f, 0.04f), false},
     {"dearbornlmdh", "Dearborn", "Stallion LMDh","Dearborn Performance", {60, 61},   CLASS_HYPER, ERA_HYPER, TYPE_LMDH, "5.0 V8 naturally aspirated hybrid", "engine_hyper_v8_na",  2800, 8500,  1116, 504,  0.004f, 1.002f, 0.998f, 5.08f, C(0.10f, 0.20f, 0.55f), false},
@@ -232,6 +233,21 @@ bool CarMesh::load(const char* id, bool hd) {
         }
         if (good) lodCount = (int)l + 1;
     }
+    // (optional) the doors: 'DOR1', count, then per door: kind, pivot xyz, axis xyz, the opening angle
+    if (good && lodCount == (int)nl && r.end - r.p >= 8 && !memcmp(r.p, "DOR1", 4)) {
+        r.p += 4;
+        uint32_t nd = r.get<uint32_t>();
+        for (uint32_t k = 0; k < nd && r.ok; k++) {
+            Door d; d.kind = (int)r.get<uint32_t>();
+            for (float& f : d.pivot) f = r.get<float>();
+            for (float& f : d.axis) f = r.get<float>();
+            d.maxAngle = r.get<float>();
+            float al = sqrtf(d.axis[0] * d.axis[0] + d.axis[1] * d.axis[1] + d.axis[2] * d.axis[2]);
+            if (!r.ok || (d.kind != PART_DOOR_L && d.kind != PART_DOOR_R) || al < 1e-4f || doorCount >= 2) continue;
+            for (float& f : d.axis) f /= al;
+            doors[doorCount++] = d;
+        }
+    }
     sys::freeFile(blob);
     if (!good || !lodCount) { sys::log("car %s: %s is damaged or not an ECM1 file\n", id, path); unload(); return false; }
     sys::log("car %s: Blender model, %d levels (%d / %d / %d / %d triangles), textures %d KB\n", id, lodCount,
@@ -242,7 +258,7 @@ void CarMesh::unload() {
     for (Lod& l : lod) { for (Part& p : l.part) { if (p.mesh) gfx::freeMesh(p.mesh); p = Part(); } l.tris = 0; }
     for (Tex& t : texs) if (t.id) gfx::freeTextureRGBA(t.id);
     texs.clear(); mats.clear(); draws.clear();
-    lodCount = 0; textureKB = 0;
+    lodCount = 0; textureKB = 0; doorCount = 0;
 }
 int CarMesh::texFor(const Mat& m, int number, int compound) const {
     int want = (m.flags & MAT_LIVERY) ? TEX_LIVERY : (m.flags & MAT_BOARD) ? TEX_BOARD : (m.flags & MAT_TYRE) ? TEX_TYRE : -1;

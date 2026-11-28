@@ -938,6 +938,12 @@ void Race::update(float dt, float steer, float throttle, float brake, int shift,
     blueFlags(dt);
     updateDrs(dt);
     slipstream(dt);
+    // the doors (the Blender cars): open while a driver change is still to happen in a pit stop, shut after
+    for (auto& c : cars) {
+        float target = (c.pit == PIT_STOP && c.plan.swapDriver && c.driver != c.plan.nextDriver && c.pitPhase >= 0) ? 1.0f : 0.0f;
+        float step = dt / 0.9f;
+        c.door = c.door < target ? fminf(target, c.door + step) : fmaxf(target, c.door - step);
+    }
     for (auto& c : cars) {
         if (c.hold) { c.v = 0; continue; }
         if (c.rel.retired) { retiredDrive(c, dt); continue; }

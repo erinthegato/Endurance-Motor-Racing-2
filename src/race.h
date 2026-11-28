@@ -103,6 +103,7 @@ struct Car {
     int gear = 1; float rpm = 0;
     float wheelSpin = 0;          // wheel rotation (radians) for drawing
     float lift = 0;               // raised on the pit jacks (m)
+    float door = 0;               // the Blender cars' doors: 0 shut .. 1 open (a driver change in the pits)
     float drift = 0;              // human-driven cars: angle between where the nose points and where the car goes
     bool human = false;           // driven by the pad this frame
     bool spinning = false;        // the rear has gone and the car is spinning (human-driven only)

@@ -108,7 +108,7 @@ struct Model {
 struct CarMesh {
     enum { MAT_GLASS = 1, MAT_INTERIOR = 2, MAT_HELMET = 4, MAT_TYRE = 8, MAT_LIVERY = 16, MAT_BOARD = 32 };
     enum { TEX_PLAIN = 0, TEX_LIVERY = 1, TEX_TYRE = 2, TEX_BOARD = 3 };
-    enum { PART_BODY = 0, PART_FL, PART_FR, PART_RL, PART_RR, PART_COUNT };
+    enum { PART_BODY = 0, PART_FL, PART_FR, PART_RL, PART_RR, PART_DOOR_L, PART_DOOR_R, PART_COUNT };
     struct Mat { int tex = -1; float spec = 0.1f, gloss = 12; uint32_t flags = 0; };
     struct Tex { int id = 0; int role = TEX_PLAIN; int arg = 0; int kb = 0; };
     struct Draw { int mat = 0, first = 0, count = 0; };
@@ -123,6 +123,11 @@ struct CarMesh {
     float head[3] = {0, 0, 1};       // the driver's helmet (its centre)
     float hub[4][3] = {};            // wheel hubs: FL, FR, RL, RR
     float wheelR[4] = {};            // tyre radius
+    // the doors ('DOR1' after the levels): each turns about its hinge (a point and a unit axis, game axes)
+    // by up to maxAngle radians as the car's door value goes 0 -> 1
+    struct Door { int kind = 0; float pivot[3] = {}; float axis[3] = {0, 0, 1}; float maxAngle = 0; };
+    int doorCount = 0;
+    Door doors[2];
     int textureKB = 0;
     // hd: full-size textures (your car, the showroom); else halved once when 2048 px or more
     bool load(const char* carId, bool hd);

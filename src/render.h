@@ -31,7 +31,8 @@ struct Renderer {
     // wheels, cabin and driver when present; carModel stays loaded for everything else (the ghost, etc.)
     CarMesh carMesh[48];
     int meshLod(const CarMesh& cm, float d) const;
-    void drawMeshBody(const CarMesh& cm, int lod, const M4& place, int number, bool inside, bool shadow, float d);
+    void drawMeshBody(const CarMesh& cm, int lod, const M4& place, int number, bool inside, bool shadow, float d, float door = 0);
+    void drawMeshPart(const CarMesh& cm, int lod, int part, const M4& place, int number, bool inside, bool shadow, float d);
     void drawMeshWheels(const CarMesh& cm, int lod, const M4& place, float steer, float spin, int compound, int number,
                         const Car* car, const V3* eye, bool frontOnly);
     Model wheel, prop[PROP_COUNT], cockpit[2], steering[ERA_COUNT], pitCrew, fuelRig;

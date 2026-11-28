@@ -41,6 +41,14 @@ struct M4 {
     static M4 rotZ(float a) { M4 r = identity(); float c = cosf(a), s = sinf(a); r.m[0] = c; r.m[1] = s; r.m[4] = -s; r.m[5] = c; return r; }
     static M4 rotY(float a) { M4 r = identity(); float c = cosf(a), s = sinf(a); r.m[0] = c; r.m[2] = -s; r.m[8] = s; r.m[10] = c; return r; }
     static M4 rotX(float a) { M4 r = identity(); float c = cosf(a), s = sinf(a); r.m[5] = c; r.m[6] = s; r.m[9] = -s; r.m[10] = c; return r; }
+    // a rotation by a about the unit axis u (right-hand rule)
+    static M4 rotAxis(const V3& u, float a) {
+        M4 r = identity(); float c = cosf(a), s = sinf(a), t = 1 - c;
+        r.m[0] = t * u.x * u.x + c;       r.m[1] = t * u.x * u.y + s * u.z; r.m[2] = t * u.x * u.z - s * u.y;
+        r.m[4] = t * u.x * u.y - s * u.z; r.m[5] = t * u.y * u.y + c;       r.m[6] = t * u.y * u.z + s * u.x;
+        r.m[8] = t * u.x * u.z + s * u.y; r.m[9] = t * u.y * u.z - s * u.x; r.m[10] = t * u.z * u.z + c;
+        return r;
+    }
     // basis from forward (x), left (y), up (z) axes + position
     static M4 basis(const V3& fx, const V3& ly, const V3& uz, const V3& p) {
         M4 r = identity();

@@ -498,7 +498,7 @@ void Renderer::drawShadows(const Race& r, const Camera& cam) {
             const CarMesh& cm = carMesh[idx];
             int sl = cm.lodCount > 2 ? (len(rel) < 30 ? 1 : 2) : cm.lodCount - 1;
             M4 place = M4::basis(car.fwd, car.left, car.up, rel);
-            drawMeshBody(cm, sl, place, car.number, false, true, len(rel));
+            drawMeshBody(cm, sl, place, car.number, false, true, len(rel), car.door);
             if (len(rel) < 60) drawMeshWheels(cm, sl, place, car.steer, car.wheelSpin, car.tyre, car.number, nullptr, nullptr, false);
             continue;
         }
@@ -798,7 +798,7 @@ void Renderer::drawCar(const Car& c, const V3& eye, const V3& fwd, float tanH, f
         int ml = inside ? 0 : meshLod(cm, d);
         M4 place = M4::basis(c.fwd, c.left, c.up, rel);
         statVerts[3] += cm.lod[ml].tris * 3;
-        drawMeshBody(cm, ml, place, c.number, inside, false, d);
+        drawMeshBody(cm, ml, place, c.number, inside, false, d, c.door);
         if (inside) { drawMeshWheels(cm, 0, place, c.steer, c.wheelSpin, c.tyre, c.number, &c, &eye, true); return; }
         if (d < (sceneLite ? 40 : 200)) drawMeshWheels(cm, ml, place, c.steer, c.wheelSpin, c.tyre, c.number, &c, &eye, false);
         return;
@@ -870,10 +870,8 @@ int Renderer::meshLod(const CarMesh& cm, float d) const {
     return l < cm.lodCount ? l : cm.lodCount - 1;
 }
 
-// the body in its groups; inside (your own car from the cockpit): no glass, interior or helmet (the
-// game's cabin is drawn there); shadow: everything solid, no glass
-void Renderer::drawMeshBody(const CarMesh& cm, int lod, const M4& place, int number, bool inside, bool shadow, float d) {
-    const CarMesh::Part& p = cm.lod[lod].part[CarMesh::PART_BODY];
+void Renderer::drawMeshPart(const CarMesh& cm, int lod, int part, const M4& place, int number, bool inside, bool shadow, float d) {
+    const CarMesh::Part& p = cm.lod[lod].part[part];
     if (!p.mesh) return;
     for (int i = 0; i < p.drawCount; i++) {
         const CarMesh::Draw& dr = cm.draws[p.drawFirst + i];
@@ -887,6 +885,24 @@ void Renderer::drawMeshBody(const CarMesh& cm, int lod, const M4& place, int num
         } else gfx::setMaterial(m.spec, m.gloss);
         gfx::drawMesh(p.mesh, tex, dr.first, dr.count, place);
     }
+}
+
+// the body in its groups, then its doors (turned on their hinges by door 0..1); inside (your own car from
+// the cockpit): no glass, interior or helmet (the game's cabin is drawn there); shadow: everything solid, no glass
+void Renderer::drawMeshBody(const CarMesh& cm, int lod, const M4& place, int number, bool inside, bool shadow, float d, float door) {
+    drawMeshPart(cm, lod, CarMesh::PART_BODY, place, number, inside, shadow, d);
+    for (int k = 0; k < cm.doorCount; k++) {
+        const CarMesh::Door& dd = cm.doors[k];
+        M4 w = place;
+        if (door > 0) {
+            V3 pv(dd.pivot[0], dd.pivot[1], dd.pivot[2]);
+            w = place * M4::translate(pv) * M4::rotAxis(V3(dd.axis[0], dd.axis[1], dd.axis[2]), door * dd.maxAngle) * M4::translate(pv * -1.0f);
+        }
+        drawMeshPart(cm, lod, dd.kind, w, number, inside, shadow, d);
+    }
+    // (a car without hinge data still draws any door parts, shut)
+    if (!cm.doorCount)
+        for (int k = CarMesh::PART_DOOR_L; k <= CarMesh::PART_DOOR_R; k++) drawMeshPart(cm, lod, k, place, number, inside, shadow, d);
     gfx::setMaterial(0.08f, 12);
 }
 

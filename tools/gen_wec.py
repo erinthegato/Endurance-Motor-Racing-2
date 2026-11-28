@@ -190,7 +190,7 @@ def main():
         for it in range(3):
             if rule != 'GT3':
                 G.HY_AXLES = proto_axles(spec['L'], rule)
-            spec['axles'] = G.HY_AXLES if c['hyper'] else G.gt_axles(spec['L'])
+            spec['axles'] = G.HY_AXLES if c['hyper'] else B.gt_axles(spec)
             P = (B.build_proto if c['hyper'] else B.build_gt)(spec, -1).arrays()[0].reshape(-1, 3)
             over = (P[:, 0].max() - P[:, 0].min()) - target
             if abs(over) < 0.002:
@@ -198,7 +198,7 @@ def main():
             spec['L'] = spec['L'] - over
         if rule != 'GT3':
             G.HY_AXLES = proto_axles(spec['L'], rule)
-        spec['axles'] = G.HY_AXLES if c['hyper'] else G.gt_axles(spec['L'])
+        spec['axles'] = G.HY_AXLES if c['hyper'] else B.gt_axles(spec)
         if not c['hyper']:
             spec['bonnet_x'] = spec['axles'][0] - 0.05
         c = dict(c, L=spec['L'])
@@ -226,7 +226,7 @@ def main():
         lods = [(top_mesh, p.img, TS[0]), (mid_mesh, p.img, TS[1]), (far_mesh, p.img, TS[2])]
         px = spec['panel'][0]
         meta = (0.0 if c['hyper'] else spec['cab'], min(fns(px - 0.2), fns(px + 0.2)) + 0.012, px)
-        fa, ra = G.HY_AXLES if c['hyper'] else G.gt_axles(c['L'])
+        fa, ra = spec['axles']
         tf = REG[rule]['tyre_f']
         wy = BODY_HALF_W - tf[0] / 2 - (0.035 if c['hyper'] else 0.06)      # the front wheel's centre, inside the body
         # two files: car_<id>_hd.emm (512 px livery) for your own car, the showroom and the menus;

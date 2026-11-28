@@ -373,15 +373,25 @@ GT = {
 # per make, extra shape (default: none): front fender peaks over the bonnet (m), the rear haunches' flare
 # (x the base), and which cabin stations carry side glass (the 911-like car: small windows, painted quarters)
 GT_X = {
-    'zuffen911': dict(fender_rise=0.15, rear_flare=1.13, gt_waist=0.84, side_glass=(1, 3), nose_drop=0.07),
+    # (the 911-like car: axles 0.15 m forward -- a short nose, the engine hung out behind the rear axle -- the cabin
+    #  0.12 m forward, a rounded nose in plan and profile with a lifted chin, a short bonnet falling steeply)
+    'zuffen911': dict(fender_rise=0.20, rear_flare=1.13, gt_waist=0.84, side_glass=(1, 3), nose_drop=0.05,
+                      axle_shift=0.15, cab_shift=0.12, gt_nose_w=0.56, round_nose=True, chin=0.07),
 }
+
+
+def gt_axles(spec):
+    """the GT car's axles: the common split of its length, moved forward by the make's axle_shift"""
+    fa, ra = G.gt_axles(spec['L'])
+    sh = spec.get('axle_shift', 0.0)
+    return (fa + sh, ra + sh)
 
 
 def gt_spec(cid, spec):
     lay, nose, bonnet, tail, lights, wing_h, bulge = GT.get(cid, GT['careergt3'])
     spec.update(GT_X.get(cid, {}))
     L = spec['L']
-    cab = dict(front=-0.32, mid=0.14, rear=-0.10)[lay]
+    cab = dict(front=-0.32, mid=0.14, rear=-0.10)[lay] + spec.get('cab_shift', 0.0)
     spec.update(layout=lay, nose=nose, bonnet=bonnet, tail=tail, lights=lights, wing_z=wing_h, bulge=bulge, cab=cab,
                 rear_glass=dict(front=1.62, mid=1.15, rear=1.95)[lay], top_panel=cab - 0.25, panel=(cab - 0.02, 0.56),
                 bonnet_x=spec['axles'][0] - 0.05, wing_span=0.88)
@@ -395,13 +405,25 @@ def gt_fns(spec):
     rf = spec.get('rear_flare', 1.15)
     flare = lambda x: 0.07 * (np.exp(-((x - fa) / 0.36) ** 2) + rf * np.exp(-((x - ra) / 0.40) ** 2))
     gw = spec.get('gt_waist', 0.92)           # (the doors drawn in between the arches: the haunches stand out)
-    Wb = curve([(xf, 0.72), (xf - 0.12, 0.88), (xf - 0.45, 0.92), (fa - 0.75, (0.92 + gw) / 2), (0.5 * (fa + ra), gw),
-                (ra + 0.75, (0.92 + gw) / 2), (xr + 0.35, 0.92), (xr, 0.86)])
+    nw = spec.get('gt_nose_w', 0.72)
+    if spec.get('round_nose'):                # (the plan rounded off: the nose's corners swept back)
+        front_w = [(xf, nw), (xf - 0.04, nw + (0.88 - nw) * 0.45), (xf - 0.10, nw + (0.88 - nw) * 0.75),
+                   (xf - 0.20, 0.90), (xf - 0.45, 0.92)]
+    else:
+        front_w = [(xf, nw), (xf - 0.12, 0.88), (xf - 0.45, 0.92)]
+    Wb = curve(front_w + [(fa - 0.75, (0.92 + gw) / 2), (0.5 * (fa + ra), gw),
+                          (ra + 0.75, (0.92 + gw) / 2), (xr + 0.35, 0.92), (xr, 0.86)])
     W = lambda x: float(Wb(x) + flare(x))
     # the top of the body (bonnet, the belt along the cabin, the rear deck)
     if lay == 'rear':
         nd = spec.get('nose_drop', 0.0)        # (a bonnet that falls away between the wings, 911 fashion)
-        top = curve([(xf, nose - nd), (xf - 0.10, nose + 0.06 - nd), (fa, spec['bonnet'] - nd), (cab + 0.80, belt - 0.03), (cab + 0.4, belt),
+        if spec.get('round_nose'):            # (the profile rounded: the tip low, the bonnet climbing steeply)
+            nz = nose - nd
+            front_t = [(xf, nz - 0.07), (xf - 0.04, nz - 0.01), (xf - 0.12, nz + 0.04), (xf - 0.30, nz + 0.09),
+                       (fa, spec['bonnet'] - nd + 0.02)]
+        else:
+            front_t = [(xf, nose - nd), (xf - 0.10, nose + 0.06 - nd), (fa, spec['bonnet'] - nd)]
+        top = curve(front_t + [(cab + 0.80, belt - 0.03), (cab + 0.4, belt),
                      (cab - 1.0, belt + 0.02), (ra + 0.10, tail + 0.04), (xr + 0.12, tail), (xr, tail - 0.08)])
     else:
         top = curve([(xf, nose), (xf - 0.10, nose + 0.05), (fa, spec['bonnet']), (cab + 0.80, belt - 0.02), (cab + 0.4, belt),
@@ -415,7 +437,7 @@ def gt_ring(x, spec, fns, lod):
     W, top, fend = fns
     fa, ra = spec['axles']
     w = W(x); t = top(x); f = fend(x)
-    zb = 0.08
+    zb = 0.08 + spec.get('chin', 0.0) * float(sstep(spec['L'] / 2 - 0.22, spec['L'] / 2, x))   # (a chin swept up)
     arch = in_arch(x, (fa, ra))
     za = arch_z(x, (fa, ra), 0.20) if arch else 0.20
     yi = 0.60 if arch else w * 0.90
@@ -490,7 +512,23 @@ def build_gt(spec, lod):
         return m
     _gt_wing(m, spec, fns, lod)
     # splitter, canards, bonnet vents, side skirts, diffuser, lights, mirrors
-    m.box((xf - 0.28, -0.90, 0.07), (xf + 0.05, 0.90, 0.095), uv='carbon')
+    if spec.get('round_nose'):
+        # a splitter blade following the rounded nose's plan, 20 mm proud of it
+        xs_ = np.linspace(xf - 0.30, xf, 8)
+        hw_ = [min(W(x) * 0.97, 0.95) for x in xs_]
+        out_ = [(x, -h) for x, h in zip(xs_, hw_)] + [(xf + 0.02, -hw_[-1] * 0.7), (xf + 0.02, hw_[-1] * 0.7)] + [(x, h) for x, h in zip(xs_[::-1], hw_[::-1])]
+        V_ = []
+        for (x, y) in out_:
+            V_.append((x, y, 0.09)); V_.append((x, y, 0.07))
+        n_ = len(out_)
+        V_.append((xf - 0.15, 0.0, 0.09)); V_.append((xf - 0.15, 0.0, 0.07))
+        F_ = []
+        for i in range(n_):
+            j = (i + 1) % n_
+            F_ += [[2 * n_, 2 * i, 2 * j], [2 * n_ + 1, 2 * j + 1, 2 * i + 1], [2 * i, 2 * i + 1, 2 * j + 1], [2 * i, 2 * j + 1, 2 * j]]
+        m.part(V_, F_, uv='carbon')
+    else:
+        m.box((xf - 0.28, -0.90, 0.07), (xf + 0.05, 0.90, 0.095), uv='carbon')
     for s in (-1, 1):
         for k in range(2):
             x0 = xf - 0.18 - k * 0.12

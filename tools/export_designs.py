@@ -80,13 +80,13 @@ for c in G.read_cars():
     target = c['L']
     for it in range(3):
         if rule != 'GT3': G.HY_AXLES = W.proto_axles(spec['L'], rule)
-        spec['axles'] = G.HY_AXLES if c['hyper'] else G.gt_axles(spec['L'])
+        spec['axles'] = G.HY_AXLES if c['hyper'] else B.gt_axles(spec)
         P = (B.build_proto if c['hyper'] else B.build_gt)(spec, -1).arrays()[0].reshape(-1, 3)
         over = (P[:, 0].max() - P[:, 0].min()) - target
         if abs(over) < 0.002: break
         spec['L'] = spec['L'] - over
     if rule != 'GT3': G.HY_AXLES = W.proto_axles(spec['L'], rule)
-    spec['axles'] = G.HY_AXLES if c['hyper'] else G.gt_axles(spec['L'])
+    spec['axles'] = G.HY_AXLES if c['hyper'] else B.gt_axles(spec)
     if not c['hyper']: spec['bonnet_x'] = spec['axles'][0] - 0.05
     c = dict(c, L=spec['L'])
     p = Paint(c['L'], S=2048)

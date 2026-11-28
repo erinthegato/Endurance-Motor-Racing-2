@@ -385,7 +385,7 @@ class Paint:
             self.d.rectangle([k * S / SW_DIV, TOP_V[1] * S + 2, (k + 1) * S / SW_DIV, S], fill=rgb(col))
 
 
-STYLES = ['stripe', 'twotone', 'slash', 'band', 'split', 'arrow', 'sweep', 'pixel', 'camo', 'torn', 'arrows']
+STYLES = ['stripe', 'twotone', 'slash', 'band', 'split', 'arrow', 'sweep', 'pixel', 'camo', 'torn', 'arrows', 'shards']
 
 
 def livery(p, cdef, spec, hyper):
@@ -423,6 +423,20 @@ def livery(p, cdef, spec, hyper):
                     (fa - 0.35, 0.72)], B)
         p.top_poly([(ra + 0.70, 0.62), (ra + 0.70, 0.84), (xr + 0.05, 0.95), (xr + 0.05, 0.70)], B)
         p.side_poly([(xf, 0.0), (xf, 0.16), (fa - 0.45, 0.20), (ra + 0.45, 0.20), (xr, 0.18), (xr, 0.0)], C)
+    elif st == 'shards':      # sharp splinters of the second colour, thickening toward the tail, which is solid
+        fa, ra = spec['axles']   # second colour cut by splinters of the base; a darker lower body
+        rng = np.random.RandomState(79)
+        p.side_poly([(ra + 0.55, 0.0), (ra + 0.30, ZMAX), (xr, ZMAX), (xr, 0.0)], B)
+        p.top_poly([(ra + 0.45, 0.0), (ra + 0.20, YMAX), (xr, YMAX), (xr, 0.0)], B)
+        for k in range(55):
+            t = rng.rand() ** 0.45                         # more of them toward the back
+            x0 = xf - 0.3 - t * (L - 0.3); z0 = 0.15 + rng.rand() * 0.85
+            ln = 0.20 + rng.rand() * 0.30; a = rng.uniform(-0.9, 0.9); th = 0.025 + rng.rand() * 0.035
+            dx, dz = ln * np.cos(a), ln * 0.6 * np.sin(a)
+            p.side_poly([(x0, z0), (x0 - dx, z0 - dz + th), (x0 - dx * 0.9, z0 - dz - th)], A if x0 < ra + 0.4 else B)
+            y0 = rng.rand() * YMAX
+            p.top_poly([(x0, y0), (x0 - dx, y0 - dz + th), (x0 - dx * 0.9, y0 - dz - th)], A if x0 < ra + 0.4 else B)
+        p.side_poly([(xf, 0.0), (xf, 0.14), (xr, 0.16), (xr, 0.0)], C)
     elif st == 'arrows':      # GT: a black roof and bonnet centre, white arrows streaming back along the flanks
         fa, ra = spec['axles']
         cab = spec.get('cab', 0.0)
@@ -1084,7 +1098,7 @@ LOOK = {
     'ardenza296':       ('stripe',  (0.98, 0.98, 0.98), (0.05, 0.40, 0.10)),
     'zuffen911':        ('arrows',  (0.06, 0.06, 0.07), (0.96, 0.97, 0.99)),
     'isarm4':           ('slash',   (0.20, 0.55, 0.95), (0.90, 0.12, 0.12)),
-    'sterneamg':        ('band',    (0.08, 0.08, 0.10), (0.10, 0.80, 0.75)),
+    'sterneamg':        ('shards',  (0.93, 0.88, 0.14), (0.12, 0.11, 0.32)),
     'ashcombevanguard': ('arrow',   (0.80, 0.95, 0.20), (0.05, 0.05, 0.05)),
     'kentuckyz6':       ('split',   (0.08, 0.08, 0.10), (0.95, 0.95, 0.95)),
     'woking720':        ('twotone', (0.10, 0.25, 0.60), (0.95, 0.95, 0.95)),

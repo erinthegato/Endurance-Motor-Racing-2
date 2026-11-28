@@ -236,7 +236,8 @@ extern "C" FILE* __wrap_fopen(const char* path, const char* mode) {
     if (!path || !mode) return nullptr;
     std::string p;
     if (mode[0] == 'r' && !strncmp(path, "DATA/", 5)) {
-        for (int layer = 0; layer < 2; layer++) {
+        static int first = getenv("EMR_VITASET") ? 1 : 0;   // (tests) EMR_VITASET=1: the Vita's files, no PC/ layer
+        for (int layer = first; layer < 2; layer++) {
             mapPath(path, p, layer);
             if (FILE* f = openReal(p, mode)) return f;
         }

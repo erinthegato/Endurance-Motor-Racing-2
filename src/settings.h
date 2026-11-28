@@ -40,9 +40,8 @@ struct Config {
     int padSteer = 1;        // (Smooth for new players)
     int help() const;   // PS Vita: holding the rear touch pad looks behind (off: fingers resting on it would)
     bool swearing = false;   // the engineer swears on a bad day (Settings > Sound)
-    // race cameras: turn the view toward the coming corner's apex; the cockpit's high-speed rumble;
-    // the right stick: 0 looks round (all cameras), 1 analogue throttle (up) and brake (down)
-    bool lookApex = true, rumble = true; int rstick = 0;
+    // race cameras: turn the view toward the coming corner's apex; the cockpit's high-speed rumble
+    bool lookApex = true, rumble = true;
     int pitCam = 0;          // pit stops and the garage: 0 cinematic camera, 1 your own camera        // seconds idle on the main menu before the highlights start (5..30)
     // BTN_NONE = the action has no button
     Realism real;            // car realism and mechanical problems (settings > Car realism)

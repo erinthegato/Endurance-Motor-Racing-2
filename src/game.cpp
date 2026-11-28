@@ -498,8 +498,7 @@ void Game::trackSpeakers() {
 void Game::updateRace(float dt, const Pad& p) {
     Car& me = race.player();
     bool manage = me.plan.aiDrives && !aiDrivesPlayer;
-    // the race camera: the right stick looks round (unless it is set to throttle / brake), look to apex, rumble
-    R.lookX = !manage && cfg.rstick == 0 ? p.rstickX : 0; R.lookY = !manage && cfg.rstick == 0 ? p.rstickY : 0;
+    // the race camera: look to apex and the cockpit rumble (Settings); the right stick does nothing in the car
     R.lookApex = cfg.lookApex; R.rumble = cfg.rumble;
     if (pressed(p, &Pad::start) || tapIn(p, SCREEN_W - 130, 0, SCREEN_W, 50)) { screen = SCR_PAUSE; sel = 0; raceAudio(); return; }
     if (manage && race.session == SES_RACE) updateManager(p);
@@ -597,10 +596,6 @@ void Game::updateRace(float dt, const Pad& p) {
     // R accelerates and L brakes as well as the bound buttons (only while driving)
     float thr = held(p, ACT_ACCEL) || p.r ? 1.0f : (p.stickY < -0.4f ? -p.stickY : 0);
     float brk = held(p, ACT_BRAKE) || p.l ? 1.0f : (p.stickY > 0.4f ? p.stickY : 0);
-    // PS Vita right stick: analogue throttle (up) and brake (down), from a light touch to full
-    // (Settings: only when the right stick is set to throttle / brake; otherwise it moves the camera)
-    if (cfg.rstick == 1 && p.rstickY < 0) thr = fmaxf(thr, clampf((-p.rstickY - 0.10f) / 0.85f, 0, 1));
-    if (cfg.rstick == 1 && p.rstickY > 0) brk = fmaxf(brk, clampf((p.rstickY - 0.10f) / 0.85f, 0, 1));
     // PC controller triggers (Moonlight on the Vita: map L2 / R2 to the rear touch pad): analogue brake / throttle
     thr = fmaxf(thr, p.trigR); brk = fmaxf(brk, p.trigL);
     int shift = (bindPressed(p, ACT_GEAR_UP) ? 1 : 0) - (bindPressed(p, ACT_GEAR_DOWN) ? 1 : 0);
@@ -697,7 +692,6 @@ int Game::tapRow(const Pad& p, float x0, float x1, float y0, float step, int n) 
 
 void Game::update(float dt, const Pad& p) {
     t += dt;
-    R.lookX = R.lookY = 0;                            // (the race sets them each frame while driving)
     if (screen != SCR_RACE) tiltCal = false;          // re-centre tilt steering whenever driving starts again
     noteT -= dt;
     bool any = p.cross || p.circle || p.square || p.triangle || p.start || p.select || p.up || p.down || p.left || p.right || p.l || p.r;
@@ -1470,7 +1464,6 @@ void Game::updateOptions(const Pad& p, int dx, int dy, bool ok, bool back) {
     if ((dx || ok) && id == 21) { cfg.hudMode = (cfg.hudMode + (dx ? dx : 1) + 3) % 3; cfg.save(); return; }
     if ((dx || ok) && id == 22) { cfg.lookApex = !cfg.lookApex; cfg.save(); return; }
     if ((dx || ok) && id == 23) { cfg.rumble = !cfg.rumble; cfg.save(); return; }
-    if ((dx || ok) && id == 24) { cfg.rstick ^= 1; cfg.save(); return; }
     if (dx) {
         auto step = [&](int& v, int lo, int hi) { v += dx; if (v < lo) v = lo; if (v > hi) v = hi; };
         bool custom = false;
@@ -1505,7 +1498,7 @@ int Game::optRows(int* ids) const {
     int n = 0;
     if (optCat == OC_SOUND) { for (int i = 0; i <= 4; i++) ids[n++] = i; ids[n++] = 20; }
     if (optCat == OC_DISPLAY) for (int i = 5; i <= 12; i++) ids[n++] = i;
-    if (optCat == OC_CAMERA) { ids[n++] = 13; ids[n++] = 14; ids[n++] = 22; ids[n++] = 23; ids[n++] = 24; ids[n++] = 21; ids[n++] = 17; ids[n++] = 18; if (gfx::highDetail()) ids[n++] = 19; }
+    if (optCat == OC_CAMERA) { ids[n++] = 13; ids[n++] = 14; ids[n++] = 22; ids[n++] = 23; ids[n++] = 21; ids[n++] = 17; ids[n++] = 18; if (gfx::highDetail()) ids[n++] = 19; }
     ids[n++] = 16;   // Back
     return n;
 }

@@ -276,10 +276,6 @@ Camera Renderer::camera(const Race& r, int mode, float dt, bool lookBack) {
     if (dt > 0.1f) dt = 0.1f;
     float sx = 0, sy = 0;
     speedShake(r, c, dt, sx, sy);
-    // the right stick: where the player looks, springing back when it is let go (quick out, a touch slower back)
-    float wantYaw = -lookX * (mode == CAM_COCKPIT ? 1.40f : 2.70f), wantPitch = -lookY * (mode == CAM_COCKPIT ? 0.35f : 0.45f);
-    float kl = 1 - expf(-dt * ((fabsf(wantYaw) > fabsf(lookYawS)) ? 10.0f : 6.0f));
-    lookYawS += (wantYaw - lookYawS) * kl; lookPitchS += (wantPitch - lookPitchS) * kl;
     // look to apex (smoothed: a head turning, not a snap)
     float apexWant = lookApex && !lookBack ? apexTarget(r, c, c.pos) : 0;
     apexYaw += (apexWant - apexYaw) * (1 - expf(-dt * 3.0f));
@@ -300,12 +296,11 @@ Camera Renderer::camera(const Race& r, int mode, float dt, bool lookBack) {
         cam.eye = eyeC + c.up * (sy * 0.006f + rz * rumbleAmp * 0.0045f) + c.left * (ry * rumbleAmp * 0.0030f);
         // the head shakes with the car: a small turn of the view (the wheel and dash shake with it)
         V3 base = lookBack ? c.fwd * -1.0f : norm(c.fwd + c.up * (-0.10f + sy * 0.010f + rz * rumbleAmp * 0.006f) + c.left * (sx * 0.007f + ry * rumbleAmp * 0.004f));
-        // turned by the apex and the right stick, round the car's up axis, and tipped up / down
-        float yaw = lookBack ? 0 : apexYaw + lookYawS, cy = cosf(yaw), syw = sinf(yaw);
+        // turned toward the apex round the car's up axis
+        float yaw = lookBack ? 0 : apexYaw, cy = cosf(yaw), syw = sinf(yaw);
         V3 side = cross(c.up, base);
         V3 f = base * cy + side * syw;
-        f = norm(f + c.up * lookPitchS);
-        cam.fwd = f;
+        cam.fwd = norm(f);
         cam.up = c.up;
         cam.fov = 64 + speedFeel * 9;
         camInit = false;
@@ -328,10 +323,9 @@ Camera Renderer::camera(const Race& r, int mode, float dt, bool lookBack) {
     camYaw += dyaw * (1 - expf(-dt * ky));
     camZ += (c.pos.z - camZ) * (1 - expf(-dt * 10.0f));
     camCarLast = c.pos;
-    float yaw = camYaw + lookYawS + apexYaw * 0.3f, pitch = lookPitchS;
+    float yaw = camYaw + apexYaw * 0.3f;
     V3 dir(cosf(yaw), sinf(yaw), 0);
-    float hb = back * cosf(pitch), hz = height + back * sinf(pitch);
-    camPos = V3(c.pos.x, c.pos.y, camZ) - dir * hb + V3(0, 0, hz);
+    camPos = V3(c.pos.x, c.pos.y, camZ) - dir * back + V3(0, 0, height);
     camFwd = dir;
     float gz = c.pos.z + 0.8f;                        // keep the camera above the ground
     if (camPos.z < gz) camPos.z = gz;

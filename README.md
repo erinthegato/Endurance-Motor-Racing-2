@@ -110,8 +110,9 @@ The same game for Windows (and Linux), made to be streamed from the PC to **Moon
   cap, `--fps 0` removes it), with 4x anti-aliasing and filtered textures so the picture stays clean
   through the video stream.
 * **Controls**: the Vita arrives through Moonlight as an Xbox pad: X / O / Square / Triangle as on
-  the Vita, the left stick steers, the right stick is analogue throttle (up) and brake (down); in
-  Moonlight's settings you can put L2 / R2 (analogue brake / throttle) on the Vita's rear touch pad.
+  the Vita, the left stick steers (up / down: throttle / brake); the right stick does nothing in the
+  car (it turns the camera on foot); in Moonlight's settings you can put L2 / R2 (analogue brake /
+  throttle) on the Vita's rear touch pad.
   Keyboard: arrows, Enter, Backspace, Esc, W / S throttle / brake, Q / E = L / R. Alt + Enter: window.
   Command line: `--windowed [WxH]`, `--msaa N` (0, 2, 4, 8), `--novsync`, `--fps N`.
 * **What's higher on the PC** (the Vita's set is unchanged):

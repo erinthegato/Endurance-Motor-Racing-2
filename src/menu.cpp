@@ -1180,7 +1180,6 @@ void Game::screenOptions(Panel& P) {
     snprintf(v[20], 56, "Engineer on a bad day:  < %s >", cfg.swearing ? "Swears" : "Clean");
     snprintf(v[22], 56, "Look to apex:  < %s >", cfg.lookApex ? "On" : "Off");
     snprintf(v[23], 56, "Cockpit rumble:  < %s >", cfg.rumble ? "On" : "Off");
-    snprintf(v[24], 56, "Right stick:  < %s >", cfg.rstick ? "Throttle / brake" : "Look round");
     if (optCat < 0) {
         // the categories
         static const char* SUB[OPT_CATS] = {"Volumes, and how the engineer talks on a bad day",
@@ -1255,7 +1254,7 @@ void Game::screenControls(Panel& P) {
         id == CR_TILTDIR ? "Reversed if turning right steers left" :
         "";
     P.textC(240, 224, tip, DIM, 0.66f);
-    P.textC(240, 238, input::hasTouch() ? "Always: left stick steers, right stick gas / brake, R gas, L brake" : "Always: stick / D-pad steer, R gas, L brake, START pause", DIM, 0.6f);
+    P.textC(240, 238, input::hasTouch() ? "Always: left stick steers, R gas, L brake" : "Always: stick / D-pad steer, R gas, L brake, START pause", DIM, 0.6f);
     P.textC(240, 255, rebinding >= 0 ? "Press the new button for this action" : "X  change     O  back", DIM, 0.72f);
 }
 

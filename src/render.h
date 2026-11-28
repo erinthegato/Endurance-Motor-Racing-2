@@ -89,8 +89,6 @@ struct Renderer {
     V3 camPos, camFwd;
     bool camInit = false;
     float camYaw = 0, camZ = 0; V3 camCarLast;     // the chase camera's smoothed heading and height, the car last frame
-    // looking round: the right stick (set each frame by the game, -1..1; 0 = no input) and its sprung view offset
-    float lookX = 0, lookY = 0, lookYawS = 0, lookPitchS = 0;
     // look to apex (Settings): the view turned toward the coming corner's apex (radians, smoothed)
     bool lookApex = true; float apexYaw = 0;
     float apexTarget(const Race& r, const Car& c, const V3& eye) const;

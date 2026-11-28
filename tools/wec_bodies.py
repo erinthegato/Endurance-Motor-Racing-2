@@ -457,11 +457,11 @@ GT = {
     'ardenza296':    ('mid',   0.42, 0.66, 0.89, 'slim',  1.18, 0.00),
     'zuffen911':     ('rear',  0.52, 0.70, 0.84, 'round', 1.28, 0.00),
     'isarm4':        ('front', 0.68, 0.84, 0.90, 'slim',  1.28, 0.03),
-    'kentuckyz6':    ('mid',   0.52, 0.68, 0.90, 'slim',  1.30, 0.00),
+    'kentuckyz6':    ('mid',   0.43, 0.68, 0.84, 'slim',  1.14, 0.00),
     'ashcombevanguard':('front',0.60, 0.80, 0.92, 'round', 1.24, 0.03),
     'woking720':     ('mid',   0.28, 0.66, 0.83, 'eye',   1.24, 0.00),
     'sterneamg':     ('front', 0.62, 0.84, 0.94, 'slim',  1.34, 0.05),
-    'kotobukigr':    ('front', 0.58, 0.80, 0.90, 'eye',   1.31, 0.02),
+    'kotobukigr':    ('front', 0.50, 0.80, 0.93, 'eye',   1.17, 0.00),
     'dearbornstallion':('front',0.70, 0.82, 0.95, 'bar',  1.22, 0.00),
     'torotgt':       ('mid',   0.30, 0.68, 0.875, 'eye',   1.18, 0.00),
     'careergt3':     ('front', 0.58, 0.80, 0.90, 'slim',  1.32, 0.02),
@@ -493,21 +493,29 @@ GT_X = {
     #  wheels, slatted vents at the tail's corners, side-exit pipes, a swan-neck wing with big end plates)
     # (the M4-like car: a 2.86 m wheelbase, a long bonnet with two vents, an upright boxy glass house well back,
     #  exits behind the front wheels and ahead of the rear ones, a tall swan-neck wing with big end plates)
-    # (the 296-like car: a 2.66 m wheelbase set back, a very low nose with a central bonnet duct, a short screen and
-    #  a small cabin far forward, sculpted intakes behind the doors, a flat louvred deck, the wing hung out behind)
-    'ardenza296': dict(wheelbase=2.66, axle_shift=-0.14, cab_shift=-0.47, gt_nose_w=0.64, fender_rise=0.09,
-                       bonnet_duct=True, hex_intake=True, deck_vents=True, wing_back=0.30, endplate_drop=0.14,
+    # (the 296-like car: traced -- one flat flush bonnet from the screen's foot right down to the intake at the
+    #  nose, the wing tops flush with it, a small cabin, a flat louvred deck, the wing hung out behind)
+    'ardenza296': dict(wheelbase=2.66, axle_shift=-0.14, cab_shift=-0.47, gt_nose_w=0.56, round_nose=True, no_canards=True,
+                       eye_dz=-0.08, arch_clr=0.01, flat_hood=True, no_tow=True, bonnet_duct=True, deck_vents=True, wing_back=0.30, endplate_drop=0.14,
                        exhaust=(0.14, 0.42, 0.05), mesh_tail=True,
-                       cabin=((0.62, 1.12), (0.25, 1.19), (-0.15, 1.18), (-0.55, 1.13), (-0.95, None))),
+                       trace=dict(top=[(2.30, 0.32), (1.70, 0.495), (1.19, 0.643), (0.65, 0.80), (0.20, 0.82),
+                                       (-0.50, 0.86), (-0.95, 0.90), (-1.20, 0.93), (-1.50, 0.93), (-2.00, 0.91),
+                                       (-2.27, 0.89), (-2.30, 0.82)],
+                                  fend=[(2.30, 0.32), (1.70, 0.495), (1.19, 0.643), (0.65, 0.80), (0.20, 0.82), (-0.50, 0.87),
+                                        (-0.95, 0.92), (-1.47, 0.96), (-2.00, 0.92), (-2.27, 0.89), (-2.30, 0.82)],
+                                  hood_bump=(1.19, 0.55, 0.11),
+                                  cabin=[(0.65, None), (0.40, 0.98), (0.20, 1.08), (-0.10, 1.15), (-0.40, 1.18), (-0.70, 1.16),
+                                         (-0.95, 1.08), (-1.20, None)],
+                                  header=0.30, side_end=-0.80, flush_from=0.65)),
     'isarm4': dict(wheelbase=2.86, axle_shift=0.1375, cab_shift=0.30, gt_nose_w=0.78, twin_hood_vents=True,
                    fender_exit=True, rear_vent=True, side_glass=(1, 4), wing_back=0.10, endplate_drop=0.16,
                    cabin=((0.62, 1.16), (0.20, 1.26), (-0.30, 1.27), (-0.80, 1.24), (-1.30, 1.12), (-1.80, None))),
     'ashcombevanguard': dict(wheelbase=2.70, axle_shift=0.0, twin_hood_vents=True, fender_exit=True, corner_vents=True,
                              side_exhaust=True, exhaust=False, wing_back=0.08, endplate_drop=0.15, gt_nose_w=0.76),
     'woking720': dict(wheelbase=2.67, axle_shift=-0.135, cab_shift=-0.18, gt_nose_w=0.42, round_nose=True, no_canards=True, rear_flare=1.30, gt_waist=0.86,
-                      bubble=True, wing_back=0.20, endplate_drop=0.10, exhaust=(0.12, 0.45, 0.05), roof_scoop=True,
+                      bubble=True, wing_back=0.20, endplate_drop=0.10, exhaust=(0.12, 0.45, 0.05), eye_dz=-0.10,
+                      no_bpillar=True, no_pillars=True, no_filler=True,
                       mesh_tail=True, deck_vents=True,
-                      scallop=[(-0.15, 0.62), (-0.65, 0.60), (-1.05, 0.58), (-1.12, 0.40), (-0.98, 0.24), (-0.50, 0.24), (-0.15, 0.40)],
                       # traced off the side photo (wheelbase-matched): a low pointed nose, a teardrop canopy peaking
                       # over the driver, a long fall to a low short tail; the deck well below the roof
                       trace=dict(top=[(2.29, 0.15), (2.20, 0.25), (2.07, 0.40), (1.97, 0.50), (1.77, 0.63), (1.57, 0.74),
@@ -519,6 +527,32 @@ GT_X = {
                                  cabin=[(0.45, None), (0.25, 0.95), (0.05, 1.08), (-0.15, 1.17), (-0.40, 1.23),
                                         (-0.65, 1.22), (-0.90, 1.16), (-1.15, 1.07), (-1.40, None)],
                                  header=-0.10, side_end=-0.95, flush_from=0.45)),
+    # (the Z06-like car and the RC F-like car: traced from the user's own OBJ models' sections -- centre line,
+    #  shoulder line, glass -- in model metres, nose at +x)
+    'kentuckyz6': dict(wheelbase=2.71, axle_shift=-0.085, cab_shift=-0.27, gt_nose_w=0.52, round_nose=True, no_canards=True,
+                       eye_dz=-0.12, arch_clr=0.05, wing_back=0.05, endplate_drop=0.14, exhaust=(0.30, 0.38, 0.05), deck_vents=True,
+                       trace=dict(top=[(2.42, 0.22), (2.35, 0.43), (2.25, 0.50), (2.15, 0.55), (2.05, 0.59), (1.95, 0.62),
+                                       (1.85, 0.66), (1.60, 0.70), (1.30, 0.76), (1.05, 0.77), (0.85, 0.78), (0.40, 0.82),
+                                       (-0.40, 0.84), (-1.25, 0.90), (-1.65, 0.92), (-1.95, 0.88), (-2.30, 0.84), (-2.42, 0.74)],
+                                  fend=[(2.42, 0.24), (2.35, 0.40), (2.15, 0.50), (2.05, 0.54), (1.95, 0.60), (1.85, 0.65),
+                                        (1.75, 0.69), (1.55, 0.74), (1.35, 0.767), (1.05, 0.77), (0.85, 0.78), (0.40, 0.83),
+                                        (-0.40, 0.86), (-0.85, 0.90), (-1.25, 0.907), (-1.65, 0.91), (-1.95, 0.89),
+                                        (-2.30, 0.85), (-2.42, 0.75)],
+                                  cabin=[(0.85, None), (0.65, 0.93), (0.45, 1.04), (0.25, 1.10), (0.05, 1.128), (-0.15, 1.125),
+                                         (-0.35, 1.106), (-0.55, 1.07), (-0.75, 1.027), (-0.95, 0.98), (-1.15, 0.94), (-1.35, None)],
+                                  header=0.40, side_end=-0.55, rear_glass=(-0.70, -1.40), flush_from=0.85)),
+    'kotobukigr': dict(wheelbase=2.726, axle_shift=0.028, cab_shift=0.29, gt_nose_w=0.62, no_canards=True, arch_clr=0.06,
+                       wing_back=0.10, endplate_drop=0.14, twin_hood_vents=True, fender_exit=True,
+                       trace=dict(top=[(2.40, 0.25), (2.35, 0.50), (2.25, 0.59), (2.15, 0.66), (2.05, 0.72), (1.95, 0.75),
+                                       (1.85, 0.80), (1.55, 0.82), (1.25, 0.855), (0.95, 0.875), (0.75, 0.88), (0.30, 0.90),
+                                       (-0.60, 0.92), (-1.75, 0.95), (-1.95, 0.95), (-2.30, 0.93), (-2.40, 0.85)],
+                                  fend=[(2.40, 0.25), (2.35, 0.45), (2.15, 0.55), (2.05, 0.60), (1.95, 0.69), (1.85, 0.73),
+                                        (1.75, 0.77), (1.55, 0.796), (1.35, 0.82), (1.15, 0.848), (0.95, 0.862), (0.75, 0.88),
+                                        (0.30, 0.90), (-0.60, 0.93), (-1.15, 0.96), (-1.55, 0.96), (-1.95, 0.92),
+                                        (-2.30, 0.90), (-2.40, 0.82)],
+                                  cabin=[(0.95, None), (0.65, 1.02), (0.45, 1.11), (0.25, 1.19), (0.05, 1.24), (-0.25, 1.276),
+                                         (-0.55, 1.28), (-0.85, 1.258), (-1.15, 1.139), (-1.45, 1.048), (-1.75, None)],
+                                  header=0.35, side_end=-1.00, rear_glass=(-1.00, -1.80), flush_from=0.95)),
     'torotgt': dict(wheelbase=2.62, axle_shift=-0.16, cab_shift=-0.30, gt_nose_w=0.40, round_nose=True, crease=True,
                     front_flare=1.0, rear_flare=1.25,
                     wing_back=0.30, endplate_drop=0.10, exhaust=(0.26, 0.44, 0.058), hex_intake=True, hex_at=(-0.82, 0.55),
@@ -602,6 +636,14 @@ def gt_fns(spec):
                      (cab - 1.0, belt + 0.01), (cab - 1.75, tail + 0.02), (xr + 0.12, tail), (xr, tail - 0.05)])
     fr = spec.get('fender_rise', 0.05)
     fend = lambda x: float(top(x) + fr * np.exp(-((x - fa) / 0.45) ** 2) + 0.05 * np.exp(-((x - ra) / 0.42) ** 2))
+    if spec.get('flush') and not spec.get('trace'):
+        # (the bonnet and the wing tops one flush surface ahead of the screen; arches always under the surface,
+        #  front and rear)
+        xw = spec['cab'] + 0.98
+        clr = lambda x: arch_z(x, (fa, ra), 0.0) + 0.09 if in_arch(x, (fa, ra)) else -1.0
+        top1, fend1 = top, fend
+        top = lambda x: max(float(top1(x)), clr(x)) if x > xw else float(top1(x))
+        fend = lambda x: max(float(top(x)), clr(x)) if x > xw else max(float(fend1(x)), clr(x))
     if spec.get('trace'):                      # (traced off the make's side photo: the body's centre line and its
         T = spec['trace']                      #  shoulder / wing line, model metres)
         top = curve(T['top'])
@@ -612,11 +654,16 @@ def gt_fns(spec):
             fend = lambda x, f0=fend: float(top(x)) if x > xa else f0(x)
         # (the surface always clears the arch tops by 9 cm -- folded into the lines themselves, so everything laid
         #  on them (louvres, vents) sits on the real surface)
-        clr = lambda x: arch_z(x, (fa, ra), 0.0) + 0.09 if in_arch(x, (fa, ra)) else -1.0
+        ac = spec.get('arch_clr', 0.09)
+        clr = lambda x: arch_z(x, (fa, ra), 0.0) + ac if in_arch(x, (fa, ra)) else -1.0
         top0, fend0 = top, fend
         xa = T.get('flush_from', 9.0)
         top = lambda x: max(top0(x), clr(x)) if x > xa else top0(x)
         fend = lambda x: max(fend0(x), clr(x))
+        hb = T.get('hood_bump')                # (wing tops a slight rounded hump above a flat bonnet: (x, half length, height))
+        if hb:
+            top = top0
+            fend = lambda x, f1=fend: max(f1(x), float(top0(x)) + hb[2] * float(np.exp(-((x - hb[0]) / hb[1]) ** 2)))
     return W, top, fend
 
 
@@ -637,6 +684,8 @@ def gt_ring(x, spec, fns, lod):
         #  back over itself -- spread them between the floor and the shoulder instead)
         for i, k in zip((3, 4, 5, 6), (0.20, 0.55, 0.80, 0.95)):
             half[i] = (half[i][0], zb + (f - zb) * k)
+    if spec.get('flat_hood') and x > spec.get('trace', {}).get('flush_from', 9.0):
+        half[8:11] = [(w * 0.62, t), (w * 0.30, t), (0.0, t)]      # (a flat bonnet: no crown)
     if spec.get('crease') and lod < 2:         # (a sharp shoulder crease: the flank runs up nearly upright to it)
         half[5:7] = [(w * 0.998, f - 0.09), (w * 0.99, f - 0.035)]
     if lod >= 2:
@@ -760,7 +809,7 @@ def _gt_pillars(m, spec, rings, glass):
             joints.append((r, 0.040))               # A / C pillar
     side_idx = [i for i in range(S - 1) if ks[i] == 'side']
     inner = [r for r in range(1, S - 1) if ks[r - 1] == 'side' and ks[r] == 'side']
-    if len(side_idx) >= 3 and inner:
+    if len(side_idx) >= 3 and inner and not spec.get('no_bpillar'):
         bx = spec['cab'] - 0.25
         r = min(inner, key=lambda r: abs(xs[r] - bx))
         joints.append((r, 0.030))                   # B pillar
@@ -824,6 +873,9 @@ def build_gt(spec, lod):
             xm = 0.5 * (cxs[i] + cxs[i + 1])
             if xm > spec['trace']['header']:
                 return True                         # the windscreen
+            rg = spec['trace'].get('rear_glass')
+            if rg and rg[1] < xm < rg[0]:
+                return True                         # the rear window
             if xm < spec['trace']['side_end']:
                 return False                        # (painted buttress / quarter)
             return k in (0, 1, 6, 7)
@@ -838,7 +890,7 @@ def build_gt(spec, lod):
                 return False                        # (painted buttress / engine cover)
             return k in (0, 1, 6, 7)
     m.loft(rings, cap_front=False, cap_back=spec['layout'] == 'mid', glass=glass)
-    if lod < 2:
+    if lod < 2 and not spec.get('no_pillars'):
         _gt_pillars(m, spec, rings, glass)
     # the headliner: a dark lining just under the roof, so from the seat the roof is black, not the livery
     if lod < 2:
@@ -912,7 +964,13 @@ def build_gt(spec, lod):
     if lod < 0:
         m.box((xr - 0.03, -0.03, 0.30), (xr + 0.01, 0.03, 0.34), uv='yellow')
         rz = max(gt_cabin(spec, fns)[1])
-        m.box((spec['cab'] - 0.35, -0.004, rz), (spec['cab'] - 0.29, 0.004, rz + 0.12), uv='carbon')    # antenna
+        cx_, cz_ = gt_cabin(spec, fns)
+        roof_at = lambda x: float(np.interp(x, cx_[::-1], cz_[::-1]))     # (the roof's height where a part stands on it)
+        if spec.get('trace'):
+            ra_ = roof_at(spec['cab'] - 0.32) - 0.01
+            m.box((spec['cab'] - 0.35, -0.004, ra_), (spec['cab'] - 0.29, 0.004, ra_ + 0.12), uv='carbon')   # antenna, on the roof
+        else:
+            m.box((spec['cab'] - 0.35, -0.004, rz), (spec['cab'] - 0.29, 0.004, rz + 0.12), uv='carbon')    # antenna
     if lod < 2:
         _gt_extras(m, spec, fns)
     if lod < 0 and PCSET:
@@ -924,10 +982,14 @@ def build_gt(spec, lod):
             m.cyl((xr - 0.026, s * ey, ez), (xr + 0.24, s * ey, ez), er * 0.75, sides=12, uv='carbon', shade=0.3, caps=False)   # the dark inside
         xs_, roof = gt_cabin(spec, fns)
         xfc = spec['cab'] - 0.55; zfc = top(xfc) + 0.12
-        m.cyl((xfc, W(xfc) * 0.80, zfc), (xfc, W(xfc) * 0.80 + 0.03, zfc), 0.04, sides=12, uv='grey', shade=1.1)
+        if not spec.get('no_filler'):
+            m.cyl((xfc, W(xfc) * 0.80, zfc), (xfc, W(xfc) * 0.80 + 0.03, zfc), 0.04, sides=12, uv='grey', shade=1.1)
         for s in (-1, 1):
+            if spec.get('trace'):
+                continue                            # (traced roofs: no position lights -- they stood clear of the curved roof)
             m.box((spec['cab'] + 0.05, s * 0.10 - 0.012, rz - 0.004), (spec['cab'] + 0.12, s * 0.10 + 0.012, rz + 0.012), uv='red' if s > 0 else 'white', shade=1.3)
-        m.tube([(xf - 0.02, 0.25, 0.16), (xf + 0.015, 0.25, 0.16), (xf + 0.015, 0.25, 0.20)], 0.009, sides=6, uv='yellow')
+        if not spec.get('no_tow'):
+            m.tube([(xf - 0.02, 0.25, 0.16), (xf + 0.015, 0.25, 0.16), (xf + 0.015, 0.25, 0.20)], 0.009, sides=6, uv='yellow')
     return m
 
 

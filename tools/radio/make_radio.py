@@ -37,6 +37,10 @@ GROUPS = {
     # weather, tyres, neutralisations, traffic, night, the drivers, the clock
     "info": ["rain_soon", "rain_wets", "drying", "radar_rain", "radar_dry", "tyres_warm", "tyres_cold", "tyres_hot",
              "fcy", "slowzone", "hyper_behind", "blue_leaders", "night", "sunrise", "tired", "driver_limit", "hour_left", "ten_left"],
+    # the pit plan read-back: a plan picked from the touch-screen corners in the race (flow "EMR2 engineer pit plans")
+    "plan": ["plan_1", "plan_2", "plan_3", "plan_4", "plan_empty", "fuel_full", "fuel_three_quarter", "fuel_half",
+             "fuel_quarter", "fuel_splash", "fuel_none", "tyres_soft", "tyres_medium", "tyres_hard", "tyres_inter",
+             "tyres_wet", "tyres_none", "repair", "swap", "no_swap", "box_plan", "cancel"],
 }
 # a bad day (a poor finish, out of the race), each clean and then swearing (Settings > Sound > Engineer)
 BAD_DAY = ["finish_bad", "finish_bad_swear", "retired", "retired_swear"]

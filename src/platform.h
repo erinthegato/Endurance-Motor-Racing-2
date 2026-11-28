@@ -109,6 +109,10 @@ void freeMesh(int mesh);
 int createTextureRGBA(const u8* rgba, int w, int h);   // 0: failed
 void freeTextureRGBA(int tex);
 int textureKB(int tex);                                // video memory it takes (for the performance log)
+// (the PC) the compressed texture kept on disk under a key, with its mipmaps: 0 when there is none (or the
+// card doesn't compress). save stores one made by createTextureRGBA. Elsewhere: 0 and nothing.
+int loadCachedTexture(uint64_t key);
+void saveCachedTexture(int tex, uint64_t key);
 // triangles [firstIndex, firstIndex + indexCount) of a mesh, with a texture (0: the colours only), lit
 // like the models (normals, the sun's shadow, setMaterial's shine, setGlass's see-through glass)
 void drawMesh(int mesh, int tex, int firstIndex, int indexCount, const M4& model);

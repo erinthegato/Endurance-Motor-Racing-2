@@ -33,6 +33,7 @@
 #include <malloc.h>
 #else
 #include <malloc.h>
+#include <sys/stat.h>
 #endif
 #include "platform.h"
 #include "game.h"
@@ -76,11 +77,15 @@ typedef void (APIENTRY* FL_BINDBUFFER)(GLenum, GLuint);
 typedef void (APIENTRY* FL_BUFFERDATA)(GLenum, fl_GLsizeiptr, const void*, GLenum);
 typedef void (APIENTRY* FL_DELETEBUFFERS)(GLsizei, const GLuint*);
 typedef void (APIENTRY* FL_GENERATEMIPMAP)(GLenum);
+typedef void (APIENTRY* FL_COMPRESSEDTEXIMAGE2D)(GLenum, GLint, GLenum, GLsizei, GLsizei, GLint, GLsizei, const void*);
+typedef void (APIENTRY* FL_GETCOMPRESSEDTEXIMAGE)(GLenum, GLint, void*);
 static FL_GENBUFFERS fl_glGenBuffers = nullptr;
 static FL_BINDBUFFER fl_glBindBuffer = nullptr;
 static FL_BUFFERDATA fl_glBufferData = nullptr;
 static FL_DELETEBUFFERS fl_glDeleteBuffers = nullptr;
 static FL_GENERATEMIPMAP fl_glGenerateMipmap = nullptr;
+static FL_COMPRESSEDTEXIMAGE2D fl_glCompressedTexImage2D = nullptr;
+static FL_GETCOMPRESSEDTEXIMAGE fl_glGetCompressedTexImage = nullptr;
 static bool haveBuffers = false;
 
 // the graphics code below is shared with the Vita layer and calls these names
@@ -106,6 +111,8 @@ static void loadGlProcs() {
     fl_glBufferData = glProc<FL_BUFFERDATA>("glBufferData", "glBufferDataARB");
     fl_glDeleteBuffers = glProc<FL_DELETEBUFFERS>("glDeleteBuffers", "glDeleteBuffersARB");
     fl_glGenerateMipmap = glProc<FL_GENERATEMIPMAP>("glGenerateMipmap", "glGenerateMipmapEXT");
+    fl_glCompressedTexImage2D = glProc<FL_COMPRESSEDTEXIMAGE2D>("glCompressedTexImage2D", "glCompressedTexImage2DARB");
+    fl_glGetCompressedTexImage = glProc<FL_GETCOMPRESSEDTEXIMAGE>("glGetCompressedTexImage", "glGetCompressedTexImageARB");
     haveBuffers = fl_glGenBuffers && fl_glBindBuffer && fl_glBufferData && fl_glDeleteBuffers;
 }
 
@@ -1120,6 +1127,121 @@ void freeTextureRGBA(int tex) {
     curTex = nullptr;
 }
 int textureKB(int tex) { return tex > 0 && tex <= (int)gTexRGBA.size() ? gTexRGBA[tex - 1].kb : 0; }
+
+// The cars' textures, compressed (S3TC) with their mipmaps, kept on disk (texcache/ in the save folder):
+// the driver's compression is what made loading a full field slow, and a cached picture needs no PNG
+// decoding either. Named by the caller's key (a hash of the PNG's bytes and how it is used).
+#ifndef GL_TEXTURE_COMPRESSED_IMAGE_SIZE
+#define GL_TEXTURE_COMPRESSED_IMAGE_SIZE 0x86A0
+#endif
+#ifndef GL_TEXTURE_INTERNAL_FORMAT
+#define GL_TEXTURE_INTERNAL_FORMAT 0x1003
+#endif
+#ifndef GL_TEXTURE_MAX_LEVEL
+#define GL_TEXTURE_MAX_LEVEL 0x813D
+#endif
+#ifndef GL_TEXTURE_WIDTH
+#define GL_TEXTURE_WIDTH 0x1000
+#endif
+#ifndef GL_TEXTURE_HEIGHT
+#define GL_TEXTURE_HEIGHT 0x1001
+#endif
+#ifndef GL_NO_ERROR
+#define GL_NO_ERROR 0
+#endif
+static bool texDiskCacheOn() {
+    return haveS3TC && fl_glCompressedTexImage2D && fl_glGetCompressedTexImage && !getenv("EMR_NOTEXCACHE");
+}
+static std::string texCachePath(uint64_t key) {
+    char n[48]; snprintf(n, sizeof n, "texcache/%016llx.dxc", (unsigned long long)key);
+    return saveDir + n;
+}
+static const uint32_t TEXCACHE_VERSION = 1;
+int loadCachedTexture(uint64_t key) {
+    if (!texDiskCacheOn()) return 0;
+    FILE* f = openReal(texCachePath(key), "rb");
+    if (!f) return 0;
+    uint32_t h[6] = {};          // 'DXC1', version, GL format, width, height, levels
+    bool ok = fread(h, 4, 6, f) == 6 && !memcmp(h, "DXC1", 4) && h[1] == TEXCACHE_VERSION &&
+              (h[2] == GL_COMPRESSED_RGB_S3TC_DXT1_EXT || h[2] == GL_COMPRESSED_RGBA_S3TC_DXT5_EXT) &&
+              h[3] > 0 && h[3] <= 8192 && h[4] > 0 && h[4] <= 8192 && h[5] >= 1 && h[5] <= 14;
+    GLuint id = 0;
+    double bytes = 0;
+    if (ok) {
+        glGenTextures(1, &id);
+        glBindTexture(GL_TEXTURE_2D, id);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        if (anisotropy > 1) glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, anisotropy);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, (GLint)h[5] - 1);
+        std::vector<u8> buf;
+        int w = (int)h[3], hh = (int)h[4];
+        for (uint32_t l = 0; l < h[5] && ok; l++) {
+            uint32_t n = 0;
+            ok = fread(&n, 4, 1, f) == 1 && n > 0 && n <= (64u << 20);
+            if (ok) { buf.resize(n); ok = fread(buf.data(), 1, n, f) == n; }
+            if (ok) fl_glCompressedTexImage2D(GL_TEXTURE_2D, (GLint)l, (GLenum)h[2], w, hh, 0, (GLsizei)n, buf.data());
+            bytes += n;
+            w = w > 1 ? w / 2 : 1; hh = hh > 1 ? hh / 2 : 1;
+        }
+        glBindTexture(GL_TEXTURE_2D, 0);
+        curTex = nullptr;
+        if (!ok || glGetError() != GL_NO_ERROR) { glDeleteTextures(1, &id); id = 0; ok = false; }
+    }
+    fclose(f);
+    if (!ok) return 0;
+    GTexRGBA t; t.id = id; t.kb = (int)(bytes / 1024);
+    for (size_t i = 0; i < gTexRGBA.size(); i++) if (!gTexRGBA[i].id) { gTexRGBA[i] = t; return (int)i + 1; }
+    gTexRGBA.push_back(t);
+    return (int)gTexRGBA.size();
+}
+void saveCachedTexture(int tex, uint64_t key) {
+    if (!texDiskCacheOn() || tex <= 0 || tex > (int)gTexRGBA.size() || !gTexRGBA[tex - 1].id) return;
+    glBindTexture(GL_TEXTURE_2D, gTexRGBA[tex - 1].id);
+    GLint fmt = 0, w = 0, h = 0;
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_INTERNAL_FORMAT, &fmt);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &w);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &h);
+    std::vector<std::vector<u8>> lv;
+    bool ok = (fmt == GL_COMPRESSED_RGB_S3TC_DXT1_EXT || fmt == GL_COMPRESSED_RGBA_S3TC_DXT5_EXT) && w > 0 && h > 0;
+    for (int l = 0, lw = w, lh = h; ok; l++) {
+        GLint n = 0;
+        glGetTexLevelParameteriv(GL_TEXTURE_2D, l, GL_TEXTURE_COMPRESSED_IMAGE_SIZE, &n);
+        if (n <= 0) { ok = false; break; }
+        lv.emplace_back((size_t)n);
+        fl_glGetCompressedTexImage(GL_TEXTURE_2D, l, lv.back().data());
+        if (lw == 1 && lh == 1) break;
+        lw = lw > 1 ? lw / 2 : 1; lh = lh > 1 ? lh / 2 : 1;
+    }
+    glBindTexture(GL_TEXTURE_2D, 0);
+    curTex = nullptr;
+    if (!ok || glGetError() != GL_NO_ERROR) return;
+#ifdef _WIN32
+    CreateDirectoryW(widen(saveDir + "texcache").c_str(), nullptr);
+#else
+    mkdir((saveDir + "texcache").c_str(), 0755);
+#endif
+    std::string path = texCachePath(key), tmp = path + ".tmp";
+    FILE* f = openReal(tmp, "wb");
+    if (!f) return;
+    uint32_t hd[6] = {0, TEXCACHE_VERSION, (uint32_t)fmt, (uint32_t)w, (uint32_t)h, (uint32_t)lv.size()};
+    memcpy(hd, "DXC1", 4);
+    bool good = fwrite(hd, 4, 6, f) == 6;
+    for (auto& b : lv) {
+        uint32_t n = (uint32_t)b.size();
+        good = good && fwrite(&n, 4, 1, f) == 1 && fwrite(b.data(), 1, n, f) == n;
+    }
+    good = fclose(f) == 0 && good;
+    // (written whole, then renamed over: a half-written file is never read)
+#ifdef _WIN32
+    if (good) good = MoveFileExW(widen(tmp).c_str(), widen(path).c_str(), MOVEFILE_REPLACE_EXISTING) != 0;
+#else
+    if (good) good = rename(tmp.c_str(), path.c_str()) == 0;
+#endif
+    if (!good) removeReal(tmp);
+}
 void drawMesh(int mesh, int tex, int first, int count, const M4& model) {
     if (mesh <= 0 || mesh > (int)gMeshes.size() || count <= 0) return;
     const GMesh& m = gMeshes[mesh - 1];

@@ -200,6 +200,13 @@ bool CarMesh::load(const char* id, bool hd) {
             // the same picture twice (the liveries' per-level copies, a class's tyres on every car): one texture
             uint64_t key = tb ? texKey(tb, ts, hd) : 0;
             if (tb) { auto it = texCache().find(key); if (it != texCache().end()) { it->second.refs++; t.id = it->second.id; sys::freeFile(tb); continue; } }
+            // (the PC) compressed on an earlier run and kept on disk: no decoding, no compressing
+            if (tb && (t.id = gfx::loadCachedTexture(key)) != 0) {
+                t.kb = gfx::textureKB(t.id); textureKB += t.kb;
+                texCache()[key] = SharedTex{t.id, 1};
+                sys::freeFile(tb);
+                continue;
+            }
             std::vector<uint8_t> px; int w = 0, h = 0;
             if (tb && png::decode(tb, (size_t)ts, px, w, h)) {
                 // the AI cars' pictures at half size (mipmaps would never reach the top level anyway). The PC's
@@ -212,7 +219,7 @@ bool CarMesh::load(const char* id, bool hd) {
                 if (!hd && w >= HALVE_FROM && h >= HALVE_FROM) png::halve(px, w, h);
                 t.id = gfx::createTextureRGBA(px.data(), w, h);
                 t.kb = gfx::textureKB(t.id); textureKB += t.kb;
-                if (t.id) texCache()[key] = SharedTex{t.id, 1};
+                if (t.id) { texCache()[key] = SharedTex{t.id, 1}; gfx::saveCachedTexture(t.id, key); }
             } else sys::log("car %s: texture %s missing or not a PNG this reader takes\n", id, tp);
             if (tb) sys::freeFile(tb);
         }

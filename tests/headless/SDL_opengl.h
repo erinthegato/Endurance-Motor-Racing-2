@@ -27,6 +27,7 @@ void glReadPixels(GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, void*); void g
 void glColor4f(GLfloat, GLfloat, GLfloat, GLfloat); void glNormal3f(GLfloat, GLfloat, GLfloat);
 void glClientActiveTexture(GLenum); void glActiveTexture(GLenum); void glColorMask(GLboolean, GLboolean, GLboolean, GLboolean);
 void glCullFace(GLenum); void glPolygonOffset(GLfloat, GLfloat); void glReadBuffer(GLenum); void glDrawBuffer(GLenum);
+void glGetTexLevelParameteriv(GLenum, GLint, GLenum, GLint*); GLenum glGetError(void);
 }
 #define GL_FALSE 0
 #define GL_TRUE 1

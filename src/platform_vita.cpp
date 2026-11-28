@@ -1077,6 +1077,8 @@ void freeTextureRGBA(int tex) {
     gTexRGBA[tex - 1] = nullptr;
 }
 int textureKB(int tex) { return tex > 0 && tex <= (int)gTexRGBA.size() && gTexRGBA[tex - 1] ? gTexRGBA[tex - 1]->kb : 0; }
+int loadCachedTexture(uint64_t) { return 0; }   // (the PC only: the driver compresses there)
+void saveCachedTexture(int, uint64_t) {}
 void drawMesh(int mesh, int tex, int first, int count, const M4& model) {
     if (!inScene || !meshReady || mesh <= 0 || mesh > (int)gMeshes.size() || count <= 0) return;
     const GMesh& m = gMeshes[mesh - 1];

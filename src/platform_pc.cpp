@@ -180,6 +180,8 @@ int createMesh(const MeshVertex*, int, const uint32_t*, int) { return 0; }
 void freeMesh(int) {}
 int createTextureRGBA(const u8*, int, int) { return 0; }
 void freeTextureRGBA(int) {}
+int loadCachedTexture(uint64_t) { return 0; }   // (the PC only: the driver compresses there)
+void saveCachedTexture(int, uint64_t) {}
 int textureKB(int) { return 0; }
 void drawMesh(int, int, int, int, const M4&) {}
 void beginFrame(u32 clear) {

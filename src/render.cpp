@@ -888,7 +888,7 @@ void Renderer::drawCar(const Car& c, const V3& eye, const V3& fwd, float tanH, f
         statVerts[3] += cm.lod[ml].tris * 3;
         drawMeshBody(cm, ml, place, c.number, inside, false, d, c.door);
         if (inside) { drawMeshWheels(cm, 0, place, c.steer, c.wheelSpin, c.tyre, c.number, &c, &eye, true); return; }
-#ifndef PLATFORM_DESKTOP
+#if PLATFORM_VITA
         const float WHEELS_TO = 110;           // (960 x 544: a wheel is 3-4 px there)
 #else
         const float WHEELS_TO = 200;

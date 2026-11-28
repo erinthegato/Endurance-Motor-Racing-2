@@ -13,7 +13,7 @@
 // the walkable areas
 enum { WALK_HUB = 0, WALK_HQ, WALK_PIT };
 // station ids the game gives meaning to (the main menu's stations use the title item ids 0..9)
-enum { WST_LIST = 100, WST_ENGINEER = 200, WST_CAR = 201 };
+enum { WST_LIST = 100, WST_ENGINEER = 200, WST_CAR = 201, WST_SETUP = 210, WST_SESSION, WST_PLANS, WST_SETUPENG };
 
 // an obstacle: a box on the ground (h: its height -- low ones up to STEP_H are stepped onto, tall ones
 // over CAM_H also stop the camera), a turned box (a car), a post
@@ -44,6 +44,7 @@ struct Walker {
     std::vector<WalkStation> stations;
     int near = -1;                           // index of the station in reach (-1 none)
     bool moving = false;                     // the pad asked to move this frame
+    bool helmet = true;                      // drawn in a helmet (a driver), else a head and a cap (the engineers)
 
     void clear();
     void place(float px, float py, float facing);

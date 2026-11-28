@@ -276,6 +276,35 @@ int menuStands(V3* pos, V3* facing, int max) {
 }
 
 // ------------------------------------------------------------------ drawing the garage and its screens
+// [walk] a desk monitor in our garage at the track (walk.cpp): the setup computer, the session screen
+// (weather / timing), the pit plans' title; `live`: the whole screen, else just its title (far off)
+void Game::drawGarageDesk(int which, const V3& pos, const V3& facing, const V3& eye, bool live) {
+    Panel p; p.R = &R; p.vw = 236; p.vh = 258; p.k = 0.0038f;
+    V3 pr = norm(cross(Z, facing));
+    p.m = M4::basis(pr, Z, facing, pos);
+    p.fill(0, 0, p.vw, p.vh, RGBA(8, 11, 18));
+    static const char* TITLE[3] = {"CAR SETUP", "SESSION", "PIT PLANS"};
+    if (!live || which == 2) {
+        p.textC(p.vw / 2, p.vh / 2 - 20, TITLE[which], WHITE, 1.3f);
+        if (which == 2) {
+            char b[48];
+            for (int i = 0; i < PLANS; i++) {
+                const PitPlan& q = pitPlans[i];
+                if (pitPlanSet[i]) snprintf(b, sizeof b, "%d  %s  %.0f%%%s", i + 1, q.tyres ? TYRE_NAME[q.tyre] : "no tyres", q.fuel * 100, q.swapDriver ? "  swap" : "");
+                else snprintf(b, sizeof b, "%d  (empty)", i + 1);
+                p.text(30, p.vh / 2 + 10 + i * 18, b, DIM, 0.72f);
+            }
+        }
+    } else {
+        int keep = setupTab;
+        setupTab = which == 0 ? 0 : sessionTab;
+        screenSetupComputer(p, true);
+        setupTab = keep;
+    }
+    gfx::setDepthTest(true);
+    p.flush(eye);
+}
+
 static void header(Panel& P, const char* title) {
     P.fill(0, 0, P.vw, 34, RGBA(0, 0, 0, 150));
     P.fill(0, 34, P.vw, 2, ACC);
@@ -324,6 +353,7 @@ void Game::drawMenus(float dt) {
     // [walk] the main menu on foot: the walker's own camera (the menu camera glides on from it after)
     bool walking = screen == SCR_TITLE && walkMenus && !walkList;
     if (walking) { walkMenuCamera(eye, fwd, menuFov); menuEye = eye; menuTarget = eye + fwd * 3.0f; }
+    if (walking) boxCar.pos.z = 0.30f;      // [walk] the car up on its stands in the main menu garage
 
     gfx::beginFrame(RGBA(126, 172, 228));
     M4 proj = M4::perspective(menuFov, (float)SCREEN_W / SCREEN_H, 0.3f, 140.0f), view = M4::lookDir(V3(0, 0, 0), fwd, Z);
@@ -618,7 +648,7 @@ void Game::screenSetupComputer(Panel& P, bool trackGarage) {
         snprintf(b, sizeof b, "Track: %s %d%%", gr, (int)(race.rubber * 100)); P.text(x, y, b, RGBA(140, 200, 255), 0.6f);
     }
     if (pf) P.textC(P.vw / 2, 194, "PARC FERME: wing, springs and gearing are sealed", RGBA(255, 120, 60), 0.6f);
-    P.textC(P.vw / 2, 212, trackGarage ? "X drive out / flying lap / skip   L / R  tabs   /\\ walk   START pause" : "LEFT/RIGHT change   O back to the race settings", DIM, 0.58f);
+    P.textC(P.vw / 2, 212, trackGarage ? (walkMenus ? "UP/DOWN  row   LEFT/RIGHT  change   X  select   O  back" : "X drive out / flying lap / skip   L / R  tabs   START pause") : "LEFT/RIGHT change   O back to the race settings", DIM, 0.58f);
 }
 
 // the weather screen beside the diagnostics computer (F1-game style): the forecast strip -- an icon, the

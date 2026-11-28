@@ -105,6 +105,7 @@ void Game::startSession(Session ses) {
         // practice and qualifying start in the garage, at the diagnostics computer
         race.toGarage();
         screen = SCR_GARAGE; setupPage = true; look = 1; setupSel = 8;
+        if (walkMenus) walkPitBegin(true);       // [walk] out of the car, on foot in the garage
     }
 }
 
@@ -645,7 +646,7 @@ void Game::updateRace(float dt, const Pad& p) {
         else if (pitPlanSel >= 0) pitPlanApply();      // [walk] a pit plan was called: the stop just runs it
         else { screen = SCR_TEAM; sel = 5; race.timeAccel = 1; sound::silence(); sound::radio("16_box"); }   // (on RELEASE THE CAR)
     }
-    if (race.inGarage()) { screen = SCR_GARAGE; setupSel = 8; race.timeAccel = 1; sound::silence(); }
+    if (race.inGarage()) { screen = SCR_GARAGE; setupSel = 8; race.timeAccel = 1; sound::silence(); if (walkMenus) walkPitBegin(true); }   // [walk] climbs out
     if (race.over) finishRace();
 }
 
@@ -900,12 +901,9 @@ void Game::update(float dt, const Pad& p) {
         updateRace(dt, p);
         break;
     case SCR_WALK:
-        updateWalkPit(dt, p);      // [walk] on foot in the pits (walk.cpp)
+        updateWalkPit(dt, p);      // [walk] on foot in the garage and the pits, or at one of its desks (walk.cpp)
         break;
-    case SCR_PLANS:
-        updateWalkPit(dt, p, false);      // [walk] (the session carries on round the plan editor)
-        if (screen == SCR_PLANS) { walker.near = -1; updatePlans(dx, dy, ok, back); }
-        break;
+
     case SCR_GARAGE: {
         // practice / qualifying: the car is in its garage; the session carries on outside
         {
@@ -978,7 +976,7 @@ void Game::update(float dt, const Pad& p) {
         if (pressed(p, &Pad::start) || (ok && sel == 0)) { screen = SCR_RACE; }
         else if (ok && sel == 1) startSession(race.session);
         else if (ok && sel == 3) { screen = SCR_OPTIONS; optionsFrom = SCR_PAUSE; sel = 0; optCat = -1; }
-        else if (ok && sel == 4 && race.session != SES_RACE) { race.toGarage(); screen = SCR_GARAGE; setupPage = true; setupSel = 0; sound::silence(); }
+        else if (ok && sel == 4 && race.session != SES_RACE) { race.toGarage(); screen = SCR_GARAGE; setupPage = true; setupSel = 0; sound::silence(); if (walkMenus) walkPitBegin(true); }   // [walk]
         else if (ok && sel == 5 && race.session != SES_RACE) { race.endSession(); screen = SCR_RESULTS; sel = 0; t = 0; sound::silence(); }
         else if (ok && sel == 6) { screen = SCR_TITLE; sel = 0; t = 0; leaveRace(); }
         break;
@@ -1345,7 +1343,7 @@ void Game::draw() {
     if (screen == SCR_INTRO) { drawIntro(); return; }
     if (screen == SCR_PODIUM) { if (raceLoaded) drawPodium(); else { gfx::beginFrame(0); finishFrame(); } return; }
     if (screen == SCR_GARAGE) { if (raceLoaded) drawGarageView(); else { gfx::beginFrame(0); finishFrame(); } return; }
-    if (screen == SCR_WALK || screen == SCR_PLANS) { if (raceLoaded) drawWalkPit(); else { gfx::beginFrame(0); finishFrame(); } return; }   // [walk]
+    if (screen == SCR_WALK) { if (raceLoaded) drawWalkPit(); else { gfx::beginFrame(0); finishFrame(); } return; }   // [walk]
     bool pausedOptions = (screen == SCR_OPTIONS || screen == SCR_CONTROLS || screen == SCR_REALISM) && optionsFrom == SCR_PAUSE && raceLoaded;
     if (pausedOptions) { drawRaceView(); drawOptionsFlat(); finishFrame(); return; }
     if (screen == SCR_RACE || screen == SCR_PAUSE || screen == SCR_RESULTS || screen == SCR_TEAM || screen == SCR_REEL || screen == SCR_REPLAY || screen == SCR_PHOTO) {

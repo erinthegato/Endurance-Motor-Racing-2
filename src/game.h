@@ -29,7 +29,7 @@ enum Screen { SCR_TITLE, SCR_TRACK, SCR_CAR, SCR_SETTINGS, SCR_HELP, SCR_RACE, S
               SCR_TEAM, SCR_PODIUM, SCR_CHAMP, SCR_LOAD, SCR_REEL, SCR_OPTIONS, SCR_CONTROLS, SCR_GARAGE, SCR_INTRO,
               SCR_CAREER, SCR_CAREER_NEW, SCR_LIVERY, SCR_TROPHIES, SCR_REPLAY, SCR_PHOTO, SCR_REALISM,
               SCR_HQ, SCR_SHOWROOM,
-              SCR_WALK, SCR_PLANS };     // [walk] on foot in the pits; the pit plans at the engineer's place (walk.cpp)
+              SCR_WALK };     // [walk] on foot in the garage and the pits (walk.cpp)
 
 struct Game {
     Screen screen = SCR_TITLE;
@@ -165,13 +165,15 @@ struct Game {
     bool walkMenus = true;       // the main menu and headquarters on foot (the PC tests turn it off for the old flow)
     bool walkList = false;       // the main menu's list shown at its monitor (the old menu), O back to walking
     bool walkGarage = false;     // the pit walk started from the practice / qualifying garage (not a race stop)
+    // the garage's desks: the one being used (a WST_* id, -1 walking), the camera's blend to its monitor
+    int walkFocus = -1; float walkFocusK = 0; int sessionTab = 1;   // sessionTab: the session desk's WEATHER (1) / TIMING (2)
     // the pit plans (walk.cpp): up to four, made at the engineer's place during practice / qualifying and
     // called in the race by touching a corner of the screen (1 top left, 2 top right, 3 bottom left,
     // 4 bottom right); the engineer reads the plan out and the stop runs it with no team screen
     static const int PLANS = 4;
     PitPlan pitPlans[PLANS]; bool pitPlanSet[PLANS] = {}; int pitPlansEra = -1;
     int pitPlanSel = -1;         // the plan called in this race (-1 none: the team screen at the stop)
-    int planEdit = 0, planRow = 0;                 // the plan editor: which plan, which row
+    int planEdit = 0, planRow = 0; bool planDone = false;   // the plan editor: which plan, which row, finished
     std::vector<std::string> radioQ;               // engineer clips waiting their turn ("16_plan_1" ...)
     void pitPlansLoad(int e);
     void pitPlansSave() const;
@@ -246,6 +248,10 @@ private:
     void drawWalkPit();
     void updatePlans(int dx, int dy, bool ok, bool back);
     void drawPlans();
+    // a desk monitor in our garage (menu.cpp): 0 car setup, 1 session (weather / timing), 2 pit plans title
+    void drawGarageDesk(int which, const V3& pos, const V3& facing, const V3& eye, bool live);
+    void askSetupEngineer();       // the setup engineer at his laptop (hook for src/setupeng.h)
+    void driveOut();               // in at the driver's door and out of the garage
     void walkFigure(const V3& at, const V3& fwdW, const V3& eye);
 
     void drawMenuBack(const char* title);

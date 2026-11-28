@@ -454,7 +454,7 @@ def proto_side_w(spec, z=0.40):
 # ====================================================================== LMGT3
 GT = {
     #                 layout   nose  bonnet tail  lights   wing_h  bulge
-    'ardenza296':    ('mid',   0.50, 0.66, 0.88, 'slim',  1.30, 0.00),
+    'ardenza296':    ('mid',   0.42, 0.66, 0.89, 'slim',  1.18, 0.00),
     'zuffen911':     ('rear',  0.52, 0.70, 0.84, 'round', 1.28, 0.00),
     'isarm4':        ('front', 0.68, 0.84, 0.90, 'slim',  1.28, 0.03),
     'kentuckyz6':    ('mid',   0.52, 0.68, 0.90, 'slim',  1.30, 0.00),
@@ -493,6 +493,12 @@ GT_X = {
     #  wheels, slatted vents at the tail's corners, side-exit pipes, a swan-neck wing with big end plates)
     # (the M4-like car: a 2.86 m wheelbase, a long bonnet with two vents, an upright boxy glass house well back,
     #  exits behind the front wheels and ahead of the rear ones, a tall swan-neck wing with big end plates)
+    # (the 296-like car: a 2.66 m wheelbase set back, a very low nose with a central bonnet duct, a short screen and
+    #  a small cabin far forward, sculpted intakes behind the doors, a flat louvred deck, the wing hung out behind)
+    'ardenza296': dict(wheelbase=2.66, axle_shift=-0.14, cab_shift=-0.47, gt_nose_w=0.64, fender_rise=0.09,
+                       bonnet_duct=True, hex_intake=True, deck_vents=True, wing_back=0.30, endplate_drop=0.25,
+                       exhaust=(0.14, 0.42, 0.05), mesh_tail=True,
+                       cabin=((0.62, 1.12), (0.25, 1.19), (-0.15, 1.18), (-0.55, 1.13), (-0.95, None))),
     'isarm4': dict(wheelbase=2.86, axle_shift=0.1375, cab_shift=0.30, gt_nose_w=0.78, twin_hood_vents=True,
                    fender_exit=True, rear_vent=True, side_glass=(1, 4), wing_back=0.10, endplate_drop=0.28,
                    cabin=((0.62, 1.16), (0.20, 1.26), (-0.30, 1.27), (-0.80, 1.24), (-1.30, 1.12), (-1.80, None))),
@@ -923,6 +929,11 @@ def _gt_extras(m, spec, fns):
             return V
         m.box((x0, -0.15, rz - 0.03), (x1, 0.15, rz + 0.04), uv='second', taper=ramp)
         m.quad((x1 + 0.002, -0.12, rz), (x1 + 0.002, 0.12, rz), (x1 + 0.002, 0.12, rz + 0.035), (x1 + 0.002, -0.12, rz + 0.035), uv='carbon', shade=0.15)
+    if spec.get('bonnet_duct'):                 # (one big duct in the middle of the bonnet, louvred)
+        fa, ra = spec['axles']
+        for k in range(6):
+            x0 = fa + 0.05 - k * 0.09
+            m.quad((x0, -0.26, top(x0) + 0.008), (x0, 0.26, top(x0) + 0.008), (x0 - 0.06, 0.26, top(x0 - 0.06) + 0.008), (x0 - 0.06, -0.26, top(x0 - 0.06) + 0.008), uv='carbon', shade=0.15)
     if spec.get('fender_exit'):                 # (a tall exit vent behind each front wheel, leaning back)
         fa, ra = spec['axles']
         for s in (-1, 1):

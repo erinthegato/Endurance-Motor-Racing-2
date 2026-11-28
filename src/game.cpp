@@ -82,6 +82,7 @@ void Game::ghostPath(char* out, int n) const { snprintf(out, n, "tt_%s_%s.gst", 
 
 void Game::startSession(Session ses) {
     if (raceLoaded) race.end();
+    pitPlanSel = -1; radioQ.clear();      // [walk] no pit plan called yet in this session
     if (!ttMode && (ses == SES_PRACTICE || (ses == SES_RACE && !set.weekend))) setups.get(set.track, CARS[set.car].era, set.setup);   // a new weekend: the remembered setup
     std::vector<int> grid;
     if (ses == SES_RACE && set.weekend && !ttMode) grid = qualiGrid;
@@ -498,9 +499,12 @@ void Game::trackSpeakers() {
 void Game::updateRace(float dt, const Pad& p) {
     Car& me = race.player();
     bool manage = me.plan.aiDrives && !aiDrivesPlayer;
-    if (pressed(p, &Pad::start) || tapIn(p, SCREEN_W - 130, 0, SCREEN_W, 50)) { screen = SCR_PAUSE; sel = 0; raceAudio(); return; }
+    radioTick();      // [walk] the engineer reading out a called pit plan, clip by clip
+    // [walk] in a race the screen's four corners belong to the pit plans (not the pause / map taps)
+    bool inCorner = race.session == SES_RACE && p.touches > 0 && touchCorner(p.tx[0], p.ty[0]) >= 0;
+    if (pressed(p, &Pad::start) || (tapIn(p, SCREEN_W - 130, 0, SCREEN_W, 50) && !inCorner)) { screen = SCR_PAUSE; sel = 0; raceAudio(); return; }
     if (manage && race.session == SES_RACE) updateManager(p);
-    if (tapIn(p, 0, SCREEN_H - 90, 92, SCREEN_H) && !race.qte.on && !manage) race.cycleMap();      // tap the track map
+    if (tapIn(p, 0, SCREEN_H - 90, 92, SCREEN_H) && !race.qte.on && !manage && !inCorner) race.cycleMap();      // tap the track map
     if (manage) {
         // managing: the team's driver races; Triangle changes the speed of time
         if (pressed(p, &Pad::triangle)) {
@@ -524,7 +528,8 @@ void Game::updateRace(float dt, const Pad& p) {
     if (bindPressed(p, ACT_MAP) && !manage && !race.qte.on) race.cycleMap();
     // the HUD: light -> full -> telemetry (its button, the PC's H, or a tap on the Vita's screen)
     {
-        bool tap = input::hasTouch() && p.touches > 0 && prev.touches == 0 && !race.qte.on && !manage;
+        bool corner = pitPlanTouch(p, manage);      // [walk] the screen's corners call the pit plans (walk.cpp)
+        bool tap = input::hasTouch() && p.touches > 0 && prev.touches == 0 && !race.qte.on && !manage && !corner;
         if (bindPressed(p, ACT_HUD) || (p.hudKey && !prev.hudKey) || tap) {
             static const char* HN[3] = {"HUD: light", "HUD: full", "HUD: telemetry"};
             cfg.hudMode = (cfg.hudMode + 1) % 3; cfg.save();
@@ -637,6 +642,7 @@ void Game::updateRace(float dt, const Pad& p) {
     raceAudio();
     if (race.playerAtBox()) {
         if (aiDrivesPlayer) race.releasePlayer();
+        else if (pitPlanSel >= 0) pitPlanApply();      // [walk] a pit plan was called: the stop just runs it
         else { screen = SCR_TEAM; sel = 5; race.timeAccel = 1; sound::silence(); sound::radio("16_box"); }   // (on RELEASE THE CAR)
     }
     if (race.inGarage()) { screen = SCR_GARAGE; setupSel = 8; race.timeAccel = 1; sound::silence(); }
@@ -705,6 +711,14 @@ void Game::update(float dt, const Pad& p) {
         introUpdate(dt, any && t > 0.6f && !(prev.cross || prev.circle || prev.start));
         break;
     case SCR_TITLE:
+        // [walk] the main menu is walked round: each item at its station in the garage (walk.cpp);
+        // the old list is the station at the main menu monitor (O from it: back on foot)
+        if (walkMenus && !walkList) {
+            int id = updateWalkHub(dt, p);
+            dy = 0; ok = id >= 0; back = id == -2;
+            if (ok) sel = id;
+            if (!ok && !back) { if (idle > cfg.attract && !aiDrivesPlayer) { idle = 0; introBegin(1); } break; }
+        } else if (walkMenus && back) { walkList = false; break; }
         if (dy) {
             // TIME TRIAL (id 6) is shown second; the other items keep their ids
             int pos = 0; for (int i = 0; i < TITLE_N; i++) if (TITLE_ORDER[i] == sel) pos = i;
@@ -712,7 +726,7 @@ void Game::update(float dt, const Pad& p) {
         }
         if (back) { screen = SCR_HQ; hqSel = era; t = 0; break; }
         if (idle > cfg.attract && !aiDrivesPlayer) { idle = 0; introBegin(1); break; }
-        if (ok || pressed(p, &Pad::start)) {
+        if (ok || (pressed(p, &Pad::start) && !(walkMenus && !walkList))) {
             t = 0;
             ttMode = sel == 6;
             if (sel == 0 || sel == 6) {
@@ -739,6 +753,7 @@ void Game::update(float dt, const Pad& p) {
         }
         break;
     case SCR_HQ:
+        if (walkMenus) { updateWalkHQ(dt, p); break; }      // [walk] the office on foot (walk.cpp)
         // team headquarters: the four eras' cars on the desk
         if (dx) hqSel = (hqSel + dx + ERA_COUNT) % ERA_COUNT;
         if (idle > cfg.attract && !aiDrivesPlayer) { idle = 0; introBegin(1); break; }
@@ -884,6 +899,13 @@ void Game::update(float dt, const Pad& p) {
     case SCR_RACE:
         updateRace(dt, p);
         break;
+    case SCR_WALK:
+        updateWalkPit(dt, p);      // [walk] on foot in the pits (walk.cpp)
+        break;
+    case SCR_PLANS:
+        updateWalkPit(dt, p, false);      // [walk] (the session carries on round the plan editor)
+        if (screen == SCR_PLANS) { walker.near = -1; updatePlans(dx, dy, ok, back); }
+        break;
     case SCR_GARAGE: {
         // practice / qualifying: the car is in its garage; the session carries on outside
         {
@@ -896,6 +918,7 @@ void Game::update(float dt, const Pad& p) {
         race.sfxEvents.clear();
         sound::silence();
         if (pressed(p, &Pad::start)) { screen = SCR_PAUSE; sel = 0; break; }
+        if (pressed(p, &Pad::triangle)) { walkPitBegin(true); break; }                  // [walk] out into the pit lane
         if (pressed(p, &Pad::r)) setupTab = (setupTab + 1) % 3;                         // SETUP, WEATHER, TIMING
         if (pressed(p, &Pad::l)) setupTab = (setupTab + 2) % 3;
         if (setupTab == 2 && pressed(p, &Pad::square)) timingOverall = !timingOverall;   // by class <-> overall
@@ -1322,6 +1345,7 @@ void Game::draw() {
     if (screen == SCR_INTRO) { drawIntro(); return; }
     if (screen == SCR_PODIUM) { if (raceLoaded) drawPodium(); else { gfx::beginFrame(0); finishFrame(); } return; }
     if (screen == SCR_GARAGE) { if (raceLoaded) drawGarageView(); else { gfx::beginFrame(0); finishFrame(); } return; }
+    if (screen == SCR_WALK || screen == SCR_PLANS) { if (raceLoaded) drawWalkPit(); else { gfx::beginFrame(0); finishFrame(); } return; }   // [walk]
     bool pausedOptions = (screen == SCR_OPTIONS || screen == SCR_CONTROLS || screen == SCR_REALISM) && optionsFrom == SCR_PAUSE && raceLoaded;
     if (pausedOptions) { drawRaceView(); drawOptionsFlat(); finishFrame(); return; }
     if (screen == SCR_RACE || screen == SCR_PAUSE || screen == SCR_RESULTS || screen == SCR_TEAM || screen == SCR_REEL || screen == SCR_REPLAY || screen == SCR_PHOTO) {

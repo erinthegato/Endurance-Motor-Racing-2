@@ -8,6 +8,7 @@
 #include "champ.h"
 #include "career.h"
 #include "settings.h"
+#include "walk.h"
 
 struct Panel;
 
@@ -27,7 +28,8 @@ const char* eraSave(const char* kind, int era);   // "career_2016.sav": one save
 enum Screen { SCR_TITLE, SCR_TRACK, SCR_CAR, SCR_SETTINGS, SCR_HELP, SCR_RACE, SCR_PAUSE, SCR_RESULTS,
               SCR_TEAM, SCR_PODIUM, SCR_CHAMP, SCR_LOAD, SCR_REEL, SCR_OPTIONS, SCR_CONTROLS, SCR_GARAGE, SCR_INTRO,
               SCR_CAREER, SCR_CAREER_NEW, SCR_LIVERY, SCR_TROPHIES, SCR_REPLAY, SCR_PHOTO, SCR_REALISM,
-              SCR_HQ, SCR_SHOWROOM };
+              SCR_HQ, SCR_SHOWROOM,
+              SCR_WALK, SCR_PLANS };     // [walk] on foot in the pits; the pit plans at the engineer's place (walk.cpp)
 
 struct Game {
     Screen screen = SCR_TITLE;
@@ -158,6 +160,25 @@ struct Game {
     std::string hqTheme;                 // the headquarters theme playing ("" none)
     static constexpr float TOUCH_SKIP_W = 64, TOUCH_SKIP_H = 40;   // main menu: the top corners skip songs
     int hqSel = 3; bool hqChosen = false; float hqLook = 3;   // (headquarters: the era looked at, picked yet)
+    // [walk] on foot (walk.cpp): the main menu garage, the headquarters and the pits are walked round
+    Walker walker;
+    bool walkMenus = true;       // the main menu and headquarters on foot (the PC tests turn it off for the old flow)
+    bool walkList = false;       // the main menu's list shown at its monitor (the old menu), O back to walking
+    bool walkGarage = false;     // the pit walk started from the practice / qualifying garage (not a race stop)
+    // the pit plans (walk.cpp): up to four, made at the engineer's place during practice / qualifying and
+    // called in the race by touching a corner of the screen (1 top left, 2 top right, 3 bottom left,
+    // 4 bottom right); the engineer reads the plan out and the stop runs it with no team screen
+    static const int PLANS = 4;
+    PitPlan pitPlans[PLANS]; bool pitPlanSet[PLANS] = {}; int pitPlansEra = -1;
+    int pitPlanSel = -1;         // the plan called in this race (-1 none: the team screen at the stop)
+    int planEdit = 0, planRow = 0;                 // the plan editor: which plan, which row
+    std::vector<std::string> radioQ;               // engineer clips waiting their turn ("16_plan_1" ...)
+    void pitPlansLoad(int e);
+    void pitPlansSave() const;
+    static int touchCorner(float x, float y);      // 0..3 for a point in a corner zone, else -1
+    bool pitPlanTouch(const Pad& p, bool manage);  // a new touch in a corner (in a race): true if it was taken
+    void pitPlanApply();                           // at the box: the chosen plan, the car released
+    void radioTick();
 private:
     void update(float dt, const Pad& pad);
     void updateRace(float dt, const Pad& p);
@@ -209,6 +230,23 @@ private:
     void drawGarageView();
     void nowPlayingBar();
     void drawIntro();
+    // [walk] (walk.cpp)
+    void walkHubLayout();
+    int updateWalkHub(float dt, const Pad& p);        // -1 nothing, else the title item to open (O does nothing on foot)
+    void walkMenuCamera(V3& eye, V3& fwd, float& fov) const;
+    void drawWalkHub(const V3& eye, const V3& fwd);
+    void walkHQLayout();
+    void updateWalkHQ(float dt, const Pad& p);
+    void drawWalkHQ(const V3& eye, const V3& fwd);
+    void walkPitLayout();
+    void walkPitBegin(bool garage);
+    void updateWalkPit(float dt, const Pad& p, bool onFoot = true);
+    Camera walkPitCamera() const;
+    V3 walkPitWorld(float x, float y, float z) const;
+    void drawWalkPit();
+    void updatePlans(int dx, int dy, bool ok, bool back);
+    void drawPlans();
+    void walkFigure(const V3& at, const V3& fwdW, const V3& eye);
 
     void drawMenuBack(const char* title);
     void raceAudio();

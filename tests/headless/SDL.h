@@ -129,6 +129,9 @@ inline int SDL_ShowCursor(int) { return 0; }
 inline int SDL_GetWindowDisplayIndex(SDL_Window*) { return 0; }
 inline int SDL_GetCurrentDisplayMode(int, SDL_DisplayMode* m) { m->w = 1280; m->h = 720; m->refresh_rate = 60; return 0; }
 inline int SDL_PollEvent(SDL_Event*) { return 0; }
+#define SDL_BUTTON_LMASK 1u
+inline Uint32 SDL_GetMouseState(int* x, int* y) { if (x) *x = 0; if (y) *y = 0; return 0; }
+inline void SDL_GetWindowSize(SDL_Window* w, int* x, int* y) { if (x) *x = w->w; if (y) *y = w->h; }
 inline const Uint8* SDL_GetKeyboardState(int*) { static Uint8 k[512] = {}; return k; }
 inline int SDL_NumJoysticks() { return 0; }
 inline bool SDL_IsGameController(int) { return false; }

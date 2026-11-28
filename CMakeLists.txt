@@ -20,7 +20,7 @@ set(GAME_SRC
   src/data.cpp src/track.cpp src/race.cpp src/racecontrol.cpp src/launch.cpp src/reliability.cpp
   src/champ.cpp src/career.cpp src/settings.cpp src/menu.cpp
   src/sound.cpp src/render.cpp src/render_fx.cpp src/clip.cpp
-  src/game.cpp src/intro.cpp src/trophies.cpp src/setups.cpp
+  src/game.cpp src/intro.cpp src/trophies.cpp src/setups.cpp src/walk.cpp
   src/platform_desktop.cpp)
 
 # WIN32: a normal Windows program (no console window); the log goes to %APPDATA%\CODE4\EnduranceMotorRacing2\log.txt

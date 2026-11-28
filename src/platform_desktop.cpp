@@ -1223,6 +1223,22 @@ void poll(Pad& p) {
     if (k[SDL_SCANCODE_W]) p.trigR = 1;
     if (k[SDL_SCANCODE_S]) p.trigL = 1;
     p.hasTilt = false; p.touches = 0;
+    // [walk] the mouse's left button as a touch on the screen, in the game's 480 x 272 layout: Moonlight
+    // brings the Vita's touch screen to the PC as the mouse (and SDL turns real touches into it too), so
+    // the touch corners (the pit plans) work here as on the Vita
+    {
+        int mx = 0, my = 0, ww = 1, wh = 1;
+        Uint32 mb = SDL_GetMouseState(&mx, &my);
+        if ((mb & SDL_BUTTON_LMASK) && window) {
+            SDL_GetWindowSize(window, &ww, &wh);
+            float px = ww > 0 ? mx * (float)winW / ww : mx, py = wh > 0 ? my * (float)winH / wh : my;   // (points -> drawable pixels)
+            if (vpW > 0 && vpH > 0 && px >= vpX && py >= vpY && px < vpX + vpW && py < vpY + vpH) {
+                p.touches = 1;
+                p.tx[0] = (px - vpX) * SCREEN_W / vpW;
+                p.ty[0] = (py - vpY) * SCREEN_H / vpH;
+            }
+        }
+    }
 }
 }
 

@@ -263,6 +263,18 @@ const Station& stationFor(Screen s) {
 }
 }   // namespace
 
+// [walk] the monitors on stands (walk.cpp walks round them): screen centres and the way they face
+int menuStands(V3* pos, V3* facing, int max) {
+    if (!built) return 0;
+    Panel* all[5] = {&pTitle, &pCarList, &pCarInfo, &pSetup, &pSetupInfo};
+    int n = 0;
+    for (Panel* p : all) {
+        if (n >= max) break;
+        pos[n] = V3(p->m.m[12], p->m.m[13], p->m.m[14]); facing[n] = V3(p->m.m[8], p->m.m[9], 0); n++;
+    }
+    return n;
+}
+
 // ------------------------------------------------------------------ drawing the garage and its screens
 static void header(Panel& P, const char* title) {
     P.fill(0, 0, P.vw, 34, RGBA(0, 0, 0, 150));
@@ -309,6 +321,9 @@ void Game::drawMenus(float dt) {
     // a gentle sway so the scene is never frozen (not when seated)
     V3 eye = seated ? menuEye : menuEye + V3(sinf(t * 0.5f) * 0.03f, 0, sinf(t * 0.37f) * 0.015f);
     V3 fwd = seated ? inCam.fwd : norm(menuTarget - eye);
+    // [walk] the main menu on foot: the walker's own camera (the menu camera glides on from it after)
+    bool walking = screen == SCR_TITLE && walkMenus && !walkList;
+    if (walking) { walkMenuCamera(eye, fwd, menuFov); menuEye = eye; menuTarget = eye + fwd * 3.0f; }
 
     gfx::beginFrame(RGBA(126, 172, 228));
     M4 proj = M4::perspective(menuFov, (float)SCREEN_W / SCREEN_H, 0.3f, 140.0f), view = M4::lookDir(V3(0, 0, 0), fwd, Z);
@@ -388,6 +403,7 @@ void Game::drawMenus(float dt) {
         drawInCarPanels(boxCar, c, carRel, false);
     }
     if (screen == SCR_SHOWROOM) drawShowroomInfo();
+    if (walking) drawWalkHub(eye, fwd);      // [walk]
     nowPlayingBar();
     if (cfg.showFps) drawFps();
     finishFrame();
@@ -602,7 +618,7 @@ void Game::screenSetupComputer(Panel& P, bool trackGarage) {
         snprintf(b, sizeof b, "Track: %s %d%%", gr, (int)(race.rubber * 100)); P.text(x, y, b, RGBA(140, 200, 255), 0.6f);
     }
     if (pf) P.textC(P.vw / 2, 194, "PARC FERME: wing, springs and gearing are sealed", RGBA(255, 120, 60), 0.6f);
-    P.textC(P.vw / 2, 212, trackGarage ? "X drive out / flying lap / skip   L / R  tabs   START pause" : "LEFT/RIGHT change   O back to the race settings", DIM, 0.58f);
+    P.textC(P.vw / 2, 212, trackGarage ? "X drive out / flying lap / skip   L / R  tabs   /\\ walk   START pause" : "LEFT/RIGHT change   O back to the race settings", DIM, 0.58f);
 }
 
 // the weather screen beside the diagnostics computer (F1-game style): the forecast strip -- an icon, the
@@ -947,7 +963,7 @@ void Game::screenTitle(Panel& P) {
         if (id == sel) P.fill(8, y - 1.5f, P.vw - 16, 12.6f, RGBA(255, 150, 40, 230));
         P.textC(P.vw / 2, y, items[id], id == sel ? INK : WHITE, 0.74f);
     }
-    P.textC(P.vw / 2, 158, "O  headquarters (change class)", DIM, 0.58f);
+    P.textC(P.vw / 2, 158, walkMenus ? "O  back to walking (headquarters: by the door)" : "O  headquarters (change class)", DIM, 0.58f);   // [walk]
     if (sound::musicPackMissing())
         P.textC(P.vw / 2, 168, "Music pack not installed (see README)", ACC, 0.56f);
 }
@@ -1886,6 +1902,7 @@ void Game::drawHQ(float dt) {
     V3 target(hqLook, HQ_DESK_Y + 0.25f, HQ_TOP + 0.20f);
     V3 fwd = norm(target - eye);
     float fov = 42;
+    if (walkMenus) walkMenuCamera(eye, fwd, fov);      // [walk] the office on foot
     gfx::beginFrame(RGBA(30, 34, 44));
     M4 proj = M4::perspective(fov, (float)SCREEN_W / SCREEN_H, 0.05f, 120.0f), view = M4::lookDir(V3(0, 0, 0), fwd, Z);
     gfx::setProjection(proj); gfx::setView(view);
@@ -1919,6 +1936,7 @@ void Game::drawHQ(float dt) {
         R.quad3D(plaque, -0.11f, -0.035f, 0.11f, 0.035f, e == hqSel ? RGBA(255, 150, 40) : RGBA(190, 160, 80));
         R.text3D(plaque * M4::translate(V3(0, -0.022f, 0.002f)), ERA_SHORT[e], 0.045f, RGBA(20, 20, 20), true);
     }
+    if (walkMenus) drawWalkHQ(eye, fwd);      // [walk]
     // the words: what the era is, how to pick it
     gfx::setDepthTest(false); gfx::setBlend(true);
     Panel P; P.R = &R; P.flat = true;
@@ -1932,7 +1950,8 @@ void Game::drawHQ(float dt) {
     P.textC(SCREEN_W / 2, SCREEN_H - 70, b, ACC, 1.15f);
     P.textC(SCREEN_W / 2, SCREEN_H - 46, HQ_LINE1[hqSel], WHITE, 0.72f);
     P.textC(SCREEN_W / 2, SCREEN_H - 32, HQ_LINE2[hqSel], DIM, 0.72f);
-    P.text(10, SCREEN_H - 16, "LEFT / RIGHT  class     X  choose", DIM, 0.64f);
+    P.text(10, SCREEN_H - 16, walkMenus ? (walker.near >= 0 ? "X  choose   L  run   right stick  camera" : "Walk up to a model car   L  run   right stick  camera")
+                                        : "LEFT / RIGHT  class     X  choose", DIM, 0.64f);   // [walk]
     for (int e = 0; e < ERA_COUNT; e++) P.fill(SCREEN_W / 2 - 30 + e * 16, SCREEN_H - 82, 12, 4, e == hqSel ? ACC : RGBA(255, 255, 255, 90));
     gfx::setBlend(false); gfx::setDepthTest(true);
     nowPlayingBar();

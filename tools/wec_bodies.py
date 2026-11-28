@@ -377,6 +377,8 @@ GT_X = {
     #  0.12 m forward, a rounded nose in plan and profile with a lifted chin, a short bonnet falling steeply)
     'zuffen911': dict(fender_rise=0.20, rear_flare=1.13, gt_waist=0.84, side_glass=(1, 3), nose_drop=0.05,
                       axle_shift=0.15, cab_shift=0.12, gt_nose_w=0.56, round_nose=True, chin=0.07),
+    # (the AMG-like car: one flat bonnet sloping evenly down to the nose, no wing humps or arch flares in front)
+    'sterneamg': dict(fender_rise=0.0, front_flare=0.0, bulge=0.0, flat_bonnet=True),
 }
 
 
@@ -395,6 +397,8 @@ def gt_spec(cid, spec):
     spec.update(layout=lay, nose=nose, bonnet=bonnet, tail=tail, lights=lights, wing_z=wing_h, bulge=bulge, cab=cab,
                 rear_glass=dict(front=1.62, mid=1.15, rear=1.95)[lay], top_panel=cab - 0.25, panel=(cab - 0.02, 0.56),
                 bonnet_x=spec['axles'][0] - 0.05, wing_span=0.88)
+    if 'bulge' in GT_X.get(cid, {}):
+        spec['bulge'] = GT_X[cid]['bulge']
     return spec
 
 
@@ -403,7 +407,8 @@ def gt_fns(spec):
     fa, ra = spec['axles']
     cab = spec['cab']; nose = spec['nose']; belt = 0.88; tail = spec['tail']; lay = spec['layout']
     rf = spec.get('rear_flare', 1.15)
-    flare = lambda x: 0.07 * (np.exp(-((x - fa) / 0.36) ** 2) + rf * np.exp(-((x - ra) / 0.40) ** 2))
+    ff = spec.get('front_flare', 1.0)
+    flare = lambda x: 0.07 * (ff * np.exp(-((x - fa) / 0.36) ** 2) + rf * np.exp(-((x - ra) / 0.40) ** 2))
     gw = spec.get('gt_waist', 0.92)           # (the doors drawn in between the arches: the haunches stand out)
     nw = spec.get('gt_nose_w', 0.72)
     if spec.get('round_nose'):                # (the plan rounded off: the nose's corners swept back)
@@ -425,6 +430,11 @@ def gt_fns(spec):
             front_t = [(xf, nose - nd), (xf - 0.10, nose + 0.06 - nd), (fa, spec['bonnet'] - nd)]
         top = curve(front_t + [(cab + 0.80, belt - 0.03), (cab + 0.4, belt),
                      (cab - 1.0, belt + 0.02), (ra + 0.10, tail + 0.04), (xr + 0.12, tail), (xr, tail - 0.08)])
+    elif spec.get('flat_bonnet'):              # (one even slope from the windscreen's foot down to the nose)
+        xw, zw = cab + 0.80, belt - 0.02
+        slope = [(xf + (xw - xf) * k, nose + (zw - nose) * k) for k in (0.0, 0.25, 0.5, 0.75)]
+        top = curve(slope + [(xw, zw), (cab + 0.4, belt),
+                     (cab - 1.0, belt + 0.01), (cab - 1.75, tail + 0.02), (xr + 0.12, tail), (xr, tail - 0.05)])
     else:
         top = curve([(xf, nose), (xf - 0.10, nose + 0.05), (fa, spec['bonnet']), (cab + 0.80, belt - 0.02), (cab + 0.4, belt),
                      (cab - 1.0, belt + 0.01), (cab - 1.75, tail + 0.02), (xr + 0.12, tail), (xr, tail - 0.05)])

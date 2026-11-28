@@ -493,13 +493,31 @@ def _bubble_cabin(spec, fns, ws_x):
     z0 = top(ws_x) + 0.02
     xp, zp = cab - 0.12, 1.28                                 # the crown, over the driver's head
     xe = cab - 1.95; ze = top(xe) + 0.03                      # the fastback's foot on the engine lid
-    # the screen: leaves the bonnet raked (~ 36 deg) and bows outward into the roof
-    rake = np.array([-np.cos(np.radians(36)), np.sin(np.radians(36))])
-    front = [(ws_x, z0), (ws_x + rake[0] * 0.24, z0 + rake[1] * 0.24), (xp + 0.66, zp), (xp, zp)]
+    # the screen: leaves the bonnet steeply (~ 50 deg) and bows outward in one arc into the roof -- about 56 mm
+    # proud of the straight line from its foot to its header (z 1.22)
+    rake = np.array([-np.cos(np.radians(50)), np.sin(np.radians(50))])
+    front = [(ws_x, z0), (ws_x + rake[0] * 0.25, z0 + rake[1] * 0.25), (xp + 0.60, zp), (xp, zp)]
     # the fastback: level off the crown, then a long convex fall to the engine lid
     back = [(xp, zp), (xp - 0.55, zp), (xe + 0.55, ze + 0.16), (xe, ze)]
-    pts = [_bez(front, t) for t in np.linspace(0, 1, 7)] + [_bez(back, t) for t in np.linspace(0, 1, 8)[1:]]
+    tt = np.linspace(0, 1, 400)
+    fz = np.array([_bez(front, t) for t in tt])
+    spec['ws_top'] = float(fz[np.argmax(fz[:, 1] >= 1.22), 0])      # the windscreen's header
+    pts = [_bez(front, t) for t in np.linspace(0, 1, 10)] + [_bez(back, t) for t in np.linspace(0, 1, 9)[1:]]
     return [float(p[0]) for p in pts], [float(p[1]) for p in pts]
+
+
+def _dome_half(wb, belt, rz):
+    """the bubble glass house's half section: 5 points on one ellipse from the belt (wb, belt) up to the crown
+    (0, rz). The ellipse's centre sits below the belt, so the side glass already leans in at the belt (tumblehome)
+    and the shoulder rolls over into the roof with no corner"""
+    h = max(rz - belt, 1e-3)
+    zc = belt - 0.45 * h                                       # (lower: more tumblehome)
+    b = rz - zc
+    th0 = np.arcsin((belt - zc) / b)
+    a = wb / np.cos(th0)
+    th = np.linspace(th0, np.pi / 2, 5)
+    th[1:-1] = th0 + (np.pi / 2 - th0) * np.array([0.28, 0.55, 0.80])   # (points closer on the shoulder)
+    return [(float(a * np.cos(t)) if i < 4 else 0.0, float(zc + b * np.sin(t))) for i, t in enumerate(th)]
 
 
 def _bubble_glass(spec, cxs):
@@ -510,8 +528,8 @@ def _bubble_glass(spec, cxs):
         if k == 8:
             return False
         xm = 0.5 * (cxs[i] + cxs[i + 1])
-        if xm > cab + 0.55:
-            return True                             # the windscreen, curving up into the roof
+        if xm > spec.get('ws_top', cab + 0.55):
+            return True                             # the windscreen, curving up to its header
         if xm < cab - 1.40:
             return True                             # the rear glass
         if cab - 0.80 <= xm:
@@ -535,10 +553,8 @@ def build_gt(spec, lod):
     for x, rz in zip(cxs, roof):
         belt = top(x) - 0.01
         wb = W(x) * 0.86; wr = W(x) * 0.62
-        if spec.get('bubble'):                      # (rounded tumblehome, the roof domed across)
-            h = max(rz - belt, 0.0)
-            half = [(wb, belt), (wb - 0.035, belt + h * 0.52), (wr * 1.04, rz - min(0.055, h * 0.4)),
-                    (wr * 0.56, rz - min(0.022, h * 0.12)), (0.0, rz)]
+        if spec.get('bubble'):                      # (a dome from the front: one elliptic arc from the belt to the crown)
+            half = _dome_half(wb, belt, rz)
         else:
             half = [(wb, belt), (wb - 0.06, belt + (rz - belt) * 0.55), (wr, rz - 0.015), (wr * 0.5, rz), (0.0, rz)]
         rings.append(np.array([(x, y, z) for y, z in half] + [(x, -y, z) for y, z in half[-2::-1]]))

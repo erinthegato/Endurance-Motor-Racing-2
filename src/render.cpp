@@ -1348,8 +1348,9 @@ void Renderer::drawNewInstruments(const Race& r, const Car& c, const M4& car, co
     // four tyres seen from above, coloured by what is left of them, compound letter in the middle
     auto tyres = [&](Display& d, float cx, float cy, float s) {
         float life = 1 - c.wear;
-        u32 lc = life > 0.5f ? RGBA(70, 220, 90) : (life > 0.25f ? RGBA(250, 200, 40) : RGBA(250, 60, 40));
-        for (int k = 0; k < 4; k++) {
+        for (int k = 0; k < 4; k++) {        // each tyre coloured by its own wear (the outside ones go first)
+            float lk = 1 - c.tyreWear[k];
+            u32 lc = lk > 0.5f ? RGBA(70, 220, 90) : (lk > 0.25f ? RGBA(250, 200, 40) : RGBA(250, 60, 40));
             float x = cx + (k & 1 ? s * 0.55f : -s * 0.55f), y = cy + (k < 2 ? s * 0.75f : -s * 0.75f);
             d.box(x - s * 0.32f, y - s * 0.5f, x + s * 0.32f, y + s * 0.5f, lc, 0.0025f);
         }

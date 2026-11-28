@@ -598,7 +598,7 @@ void Game::walkPitBegin(bool garage) {
 }
 
 void Game::driveOut() {
-    if (!ttMode) setups.put(set.track, CARS[set.car].era, set.setup);
+    if (!ttMode) setups.put(set.track, CARS[set.car].era, set.setup, race.playerChassis);
     walkFocus = -1;
     race.leaveGarage(set.setup); race.timeAccel = 1; screen = SCR_RACE; R.camInit = false;
 }
@@ -634,7 +634,7 @@ void Game::updateWalkPit(float dt, const Pad& p, bool onFoot) {
         if (walkFocus == WST_SETUP) {
             // the computer's "Ask the engineer" row: her offer takes X / O while it stands
             if (engUi.pending()) {
-                if (ok) { if (engUi.accept(set.setup) && !ttMode) setups.put(set.track, CARS[set.car].era, set.setup); }
+                if (ok) { if (engUi.accept(set.setup) && !ttMode) setups.put(set.track, CARS[set.car].era, set.setup, race.playerChassis); }
                 else if (back) engUi.dismiss();
                 return;
             }
@@ -650,7 +650,7 @@ void Game::updateWalkPit(float dt, const Pad& p, bool onFoot) {
             if (sessionTab == 2 && pressed(p, &Pad::square)) timingOverall = !timingOverall;
         } else if (walkFocus == WST_SETUPENG) {
             if (engUi.pending()) {
-                if (ok) { if (engUi.accept(set.setup) && !ttMode) setups.put(set.track, CARS[set.car].era, set.setup); }
+                if (ok) { if (engUi.accept(set.setup) && !ttMode) setups.put(set.track, CARS[set.car].era, set.setup, race.playerChassis); }
                 else if (back) { engUi.dismiss(); }
                 return;
             }

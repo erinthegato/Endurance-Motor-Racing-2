@@ -65,6 +65,13 @@ struct CarSetup {
     float bias() const { return brakeF / (float)(brakeF + brakeR); }
 };
 
+// the chassis settings added in 2.8 (kept apart from CarSetup so older race saves still load):
+//   ride   ride height: 0 low (more downforce, bottoms out on bumps and kerbs), 1 medium, 2 high
+//   diff   differential: 0 open (turns in, less traction), 1 medium, 2 locked (traction, pushes on entry, slides out of corners)
+//   press  cold tyre pressure, 0..4 = 1.40 .. 1.60 bar (they rise as the tyres heat; best hot is ~1.80 bar)
+struct Chassis { int ride = 1, diff = 1, press = 2; };
+static const float PRESS_COLD0 = 1.40f, PRESS_STEP = 0.05f, PRESS_BEST = 1.80f;
+
 // team manager (EMR's manager mode): the team's orders for one of our cars. Pace is the car's engine
 // map; tyre / fuel / driver are the plan for its next stop (-1: the team decides), cleared after it
 struct MgrOrders { bool team = false; bool autoStrat = true; int tyre = -1; int fuel = -1; int driver = -1; };
@@ -119,7 +126,7 @@ struct Car {
     float startDelay = 0;         // Le Mans start: driver running to the car
     // tyres, fuel, drivers
     int tyre = TY_MEDIUM; float wear = 0;
-    void coldTyres() { for (float& t : tyreT) t = 45; rel.flat = -1; }   // a fresh set straight from the rack
+    void coldTyres() { for (float& t : tyreT) t = 45; for (float& w : tyreWear) w = 0; rel.flat = -1; }   // a fresh set straight from the rack
     float tyreTemp() const { return (tyreT[0] + tyreT[1] + tyreT[2] + tyreT[3]) * 0.25f; }
     float fuel = 1;               // 0..1 of the tank
     int driver = 0; float stint = 0;   // who is driving, and for how long (race seconds) since the last change
@@ -170,6 +177,8 @@ struct Car {
     CarBody body;                 // (save version 7) suspension and the car in the air
     CarRel rel;                   // (save version 8) temperatures, slipstream, mechanical problems, retirement
     MgrOrders mgr;                // (save version 9) our team's cars: the manager's orders
+    Chassis ch;                   // (save version 10) ride height, differential, tyre pressures
+    float tyreWear[4] = {0, 0, 0, 0};   // (save version 10) each tyre's wear (wear = their average)
 
     float damage() const { float m = 0; for (float x : dmg) m = m > x ? m : x; return m; }
 };
@@ -446,6 +455,8 @@ struct Race {
         float aqua = 0;          // 0..1 aquaplaning
         float flatSpot = 0;      // from lockups (vibration, a little grip)
         int lastGear = 1;
+        float bottom = 0;        // the plank on the road (s): sparks, a moment's less grip
+        float sausage = 0;       // just hit a sausage kerb (s)
     };
     std::vector<Handling> hand;
     float standingWater() const;
@@ -476,6 +487,14 @@ struct Race {
     void setupPit();
     void setupStart();
 
+    // the weather and the clock: air and track temperature (deg C); the track's own climate, warmer by day,
+    // the tarmac far hotter in the sun, cooled by rain
+    float airTemp() const;
+    float trackTemp() const;
+    float tyrePressure(const Car& c, int k) const;   // hot pressure of tyre k (bar)
+    Chassis playerChassis;
+    float airNow = 20, trackNow = 30;             // airTemp() / trackTemp(), worked out once a frame (Race::update)
+    int bottomEvents = 0, sausageHits = 0;        // (tests) times a car's plank met the road / a car hit a sausage kerb                        // the player's ride height / diff / pressures (copied onto the car)
 private:
     void plan();
     void physics(Car& c, float dt);

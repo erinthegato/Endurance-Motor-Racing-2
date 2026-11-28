@@ -205,6 +205,14 @@ jobs:
           set -o pipefail
           EMR_WX=1 ./emr_test_asan teamswap imola 4 shots 2>&1 | grep -E "^teamswap"
           ./emr_test_asan careerlen shots 2>&1 | grep -E "^careerlen"
+      - name: Physics (air / track temperature by the clock, each tyre's wear, saves, low ride bottoming)
+        env:
+          ASAN_OPTIONS: detect_leaks=0
+        run: |
+          set -o pipefail
+          ./emr_test_asan temps x 2>/dev/null | grep -vE "^track"
+          ./emr_test_asan tyrewear imola 4 2>/dev/null | grep -E "^tyrewear"
+          EMR_CH="0 1 2" ./emr_test_asan physlap spa 0 3 2>/dev/null | grep -E "best|bottomed"
       - name: Cars, replay, steering help
         env:
           ASAN_OPTIONS: detect_leaks=0

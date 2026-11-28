@@ -234,10 +234,12 @@ int main(int argc, char** argv) {
         std::string tid = argv[2]; int era = atoi(argv[3]), laps = atoi(argv[4]);
         int tr = 0; for (int i = 0; i < TRACK_COUNT; i++) if (tid == TRACKS[i].id) tr = i;
         g.ttMode = true; g.set.track = tr; g.set.car = eraFirstCar(era); g.aiDrivesPlayer = true; g.set.weather = WX_DRY;
+        if (const char* ch = getenv("EMR_CH")) sscanf(ch, "%d %d %d", &g.race.playerChassis.ride, &g.race.playerChassis.diff, &g.race.playerChassis.press);
         g.startSession(SES_PRACTICE);
         g.race.toGarage(); g.race.flyingLap(g.set.setup);
         Race& r = g.race;
         float simT = 0, light = 0, minLoad = 9, maxAir = 0, maxLift = 0; int lastLap = 0; float best = 1e9f;
+        double tSum = 0, pSum = 0; int nS = 0;
         while (r.player().lap < laps && simT < 1500) {
             r.update(1.0f / 60, 0, 0, 0, 0, true); simT += 1.0f / 60;
             r.sfxEvents.clear();
@@ -251,11 +253,18 @@ int main(int argc, char** argv) {
                 int i = r.track.index(me.s);
                 fprintf(stderr, "s %6.0f d %5.1f hw %4.1f kerb %d v %3.0f load %.2f hOff %+.3f vz %+.2f grade %+.3f\n", me.s, me.d, r.track.pts[i].hw, (int)r.track.pts[i].kerb, me.v * 3.6f, me.body.load, me.body.hOff, me.body.vz, r.track.gradeAt(me.s));
             }
+            if (me.lap >= 2) { tSum += me.tyreTemp(); pSum += 0.25f * (r.tyrePressure(me, 0) + r.tyrePressure(me, 1) + r.tyrePressure(me, 2) + r.tyrePressure(me, 3)); nS++; }
             if (me.lap != lastLap) { lastLap = me.lap; if (me.lap >= 2) best = fminf(best, me.lastLap); }
             if (getenv("FL_PARTS")) { static int mx[5], fr = 0; int n[5] = {}; for (auto& q : r.parts) n[q.kind]++; for (int k = 0; k < 5; k++) mx[k] = n[k] > mx[k] ? n[k] : mx[k];
                 if (++fr % 3600 == 0) fprintf(stderr, "particles now/max: smoke %d/%d spray %d/%d shard %d/%d spark %d/%d flame %d/%d\n", n[0], mx[0], n[1], mx[1], n[2], mx[2], n[3], mx[3], n[4], mx[4]); }
         }
         printf("%-12s era %d  best %.3f  light %.2f s  min load %.2f  max air %.2f s  max rise %.2f m\n", tid.c_str(), era, best, light, minLoad, maxAir, maxLift);
+        {   const Car& me = g.race.player();
+            printf("   on the timed laps: tyres %.1f C, %.3f bar on average\n", nS ? tSum / nS : 0, nS ? pSum / nS : 0);
+            printf("   sausage kerbs hit %d  bottomed %d times  tyres %.0f %.0f %.0f %.0f C  hot %.2f %.2f %.2f %.2f bar  wear %.3f %.3f %.3f %.3f  air %.0f track %.0f C\n",
+                   g.race.sausageHits, g.race.bottomEvents, me.tyreT[0], me.tyreT[1], me.tyreT[2], me.tyreT[3],
+                   g.race.tyrePressure(me, 0), g.race.tyrePressure(me, 1), g.race.tyrePressure(me, 2), g.race.tyrePressure(me, 3),
+                   me.tyreWear[0], me.tyreWear[1], me.tyreWear[2], me.tyreWear[3], g.race.airNow, g.race.trackNow); }
         return 0;
     }
     if (mode == "barriers") {   // barrier lines of a circuit (x y per point, left then right), with / without the run-off cut
@@ -518,6 +527,44 @@ int main(int argc, char** argv) {
         fprintf(stderr, "back at screen %d, round %d\n", (int)g.screen, g.career.champ.round);
         shot(g, out + "/c_report.ppm");
         Career c2; bool okLoad = c2.load(eraSave("career", c2.cls = g.career.cls)); fprintf(stderr, "saved career loads: %d round %d\n", (int)okLoad, c2.champ.round);
+        return 0;
+    }
+    if (mode == "tyrewear") {
+        // tyrewear <track> <minutes>: the AI races our car; each tyre's wear, temperature and hot pressure at
+        // the end, then a save and a load (save version 10) to check they come back
+        std::string tid = argv[2];
+        for (int i = 0; i < TRACK_COUNT; i++) if (tid == TRACKS[i].id) g.set.track = i;
+        g.set.car = 1; g.set.opponents = 7; g.set.raceMin = atoi(argv[3]); g.set.weather = WX_DRY; g.aiDrivesPlayer = true; g.mgrMode = false;
+        g.startRace();
+        g.race.playerChassis.ride = 0; g.race.playerChassis.diff = 2; g.race.playerChassis.press = 1;   // (after any remembered setup)
+        g.race.player().ch = g.race.playerChassis;
+        for (int i = 0; i < 30 * 60 * g.set.raceMin && !g.race.player().finished; i++) { Pad z{}; g.frame(1.0f / 30, z); }
+        const Car& me = g.race.player();
+        printf("tyrewear: %s after %.0f s: wear FL %.3f FR %.3f RL %.3f RR %.3f (mean %.3f)  temps %.0f %.0f %.0f %.0f  hot %.2f %.2f %.2f %.2f bar\n",
+               tid.c_str(), g.race.time, me.tyreWear[0], me.tyreWear[1], me.tyreWear[2], me.tyreWear[3], me.wear, me.tyreT[0], me.tyreT[1], me.tyreT[2], me.tyreT[3],
+               g.race.tyrePressure(me, 0), g.race.tyrePressure(me, 1), g.race.tyrePressure(me, 2), g.race.tyrePressure(me, 3));
+        float w1 = me.tyreWear[1]; Chassis c0 = me.ch;
+        bool saved = g.race.save("tyrewear_test.sav");
+        Race r2; bool loaded = r2.load("tyrewear_test.sav");
+        const Car& b2 = r2.player();
+        bool ok = saved && loaded && fabsf(b2.tyreWear[1] - w1) < 1e-6f && b2.ch.ride == c0.ride && b2.ch.diff == c0.diff && b2.ch.press == c0.press
+                  && r2.playerChassis.diff == 2 && me.wear > 0;
+        printf("tyrewear: save %d load %d -- %s\n", (int)saved, (int)loaded, ok ? "ok" : "MISMATCH");
+        if (!ok) printf("  w %.4f/%.4f  ch %d%d%d/%d%d%d  pc %d  idx %d/%d\n", w1, b2.tyreWear[1], c0.ride, c0.diff, c0.press, b2.ch.ride, b2.ch.diff, b2.ch.press, r2.playerChassis.diff, g.race.playerIdx, r2.playerIdx);
+        remove("tyrewear_test.sav");
+        return ok ? 0 : 1;
+    }
+    if (mode == "temps") {
+        // temps: each circuit's air and track temperature through the day (Race::airTemp / trackTemp)
+        for (int t = 0; t < TRACK_COUNT; t++) {
+            g.set.track = t; g.set.car = 1; g.set.weather = WX_DRY; g.ttMode = true;
+            g.startSession(SES_PRACTICE);
+            Race& r = g.race; r.greenTime = r.time; r.timeScale = 1;
+            printf("%-12s", TRACKS[t].id);
+            for (int h = 2; h < 24; h += 4) { r.startHour = (float)h; printf("  %02d:00 %2.0f/%2.0f", h, r.airTemp(), r.trackTemp()); }
+            int sl = 0, first = -1; for (int i = 0; i < r.track.n; i++) if (r.track.pts[i].sausageL || r.track.pts[i].sausageR) { sl++; if (first < 0) first = i; }
+            printf("   (air/track C)  sausage kerbs %.0f m (first at %.0f m)\n", sl * r.track.step, first * r.track.step);
+        }
         return 0;
     }
     if (mode == "radiolog") {   // radiolog <track> <minutes> <event hours> [weather]: every engineer call in a timed race
@@ -793,8 +840,8 @@ int main(int argc, char** argv) {
         g.setupTab = 2; settle(400); shot(g, out + "/g_1t_timing.ppm"); g.timingOverall = true; shot(g, out + "/g_1t_timing_overall.ppm"); g.timingOverall = false; g.setupTab = 0;
         int inG = 0; for (auto& c : g.race.cars) if (c.pit == PIT_STOP) inG++;
         fprintf(stderr, "practice start: screen %d, player at the computer %d, cars in garages %d/%d\n", (int)g.screen, g.race.inGarage(), inG, (int)g.race.cars.size());
-        g.setupSel = 0; press(g, &Pad::right); press(g, &Pad::right);          // wing 3 -> 5
-        g.setupSel = 8; press(g, &Pad::cross);                                // drive out
+        g.setupSel = Game::SR_WING; press(g, &Pad::right); press(g, &Pad::right);          // wing 3 -> 5
+        g.setupSel = Game::SR_DRIVE; press(g, &Pad::cross);                                // drive out
         settle(60); shot(g, out + "/g_2_pushed.ppm");
         settle(55); shot(g, out + "/g_2b_pushing.ppm"); settle(8); shot(g, out + "/g_2c_pushing.ppm");
         settle(87);
@@ -818,18 +865,18 @@ int main(int argc, char** argv) {
         fprintf(stderr, "pit request -> garage: %s at %.0f s; frames with cars inside each other: %d\n", sawIn ? "yes" : "NO", g.race.time, overlaps);
         g.aiDrivesPlayer = false;
         g.race.toGarage(); g.screen = SCR_GARAGE;
-        g.setupSel = 10; press(g, &Pad::right); press(g, &Pad::right);        // time x16
+        g.setupSel = Game::SR_TIME; press(g, &Pad::right); press(g, &Pad::right);        // time x16
         float t0 = g.race.time; settle(30);
         fprintf(stderr, "time x%d: %.1f s of session in 1 s\n", (int)g.race.timeAccel, g.race.time - t0);
-        g.setupSel = 9; press(g, &Pad::cross); settle(5);                      // flying lap
+        g.setupSel = Game::SR_FLYING; press(g, &Pad::cross); settle(5);                      // flying lap
         fprintf(stderr, "flying lap: pit %d v %.0f km/h outLap %d\n", g.race.player().pit, g.race.player().v * 3.6f, (int)g.race.player().outLap);
         shot(g, out + "/g_5_flying.ppm");
         g.race.toGarage(); g.screen = SCR_GARAGE; settle(3);
-        g.setupSel = 11; press(g, &Pad::cross); settle(5);                     // skip to qualifying
+        g.setupSel = Game::SR_SKIP; press(g, &Pad::cross); settle(5);                     // skip to qualifying
         fprintf(stderr, "skip: screen %d (7 = results)\n", (int)g.screen);
         press(g, &Pad::cross); settle(40);
         fprintf(stderr, "quali: screen %d at the computer %d\n", (int)g.screen, g.race.inGarage());
-        g.setupSel = 0; press(g, &Pad::left); g.setupSel = 3; press(g, &Pad::right);
+        g.setupSel = Game::SR_WING; press(g, &Pad::left); g.setupSel = Game::SR_BRAKEF; press(g, &Pad::right);
         settle(3); shot(g, out + "/g_6_quali.ppm");
         fprintf(stderr, "quali setup: wing %d (sealed at 5), brake front %d\n", g.set.setup.wing, g.set.setup.brakeF);
         return 0;

@@ -476,6 +476,7 @@ void Race::toGarage() {
 
 static void applySetup(Race& r, Car& c, const CarSetup& su) {
     c.su = su;
+    if (c.player) c.ch = r.playerChassis;
     // inters / wets: as chosen in the garage; slicks: the chosen compound, unless the track is wet
     c.tyre = su.tyre >= TY_INTER ? su.tyre : (r.wet > 0.22f ? r.bestTyreFor(r.wet) : su.tyre);
     c.wear = 0; c.tyreLaps = 0; c.coldTyres(); c.fuel = clampf(su.fuel / 100.0f, 0.1f, 1.0f);
@@ -609,6 +610,38 @@ void Race::setupStart() {
 
 // ------------------------------------------------------------------ weather
 // rubber on the racing line: up to +3 % grip on it, marbles cost up to 5 % more than 4.5 m off it
+// ------------------------------------------------------------------ air, track and tyre pressures
+// each circuit's air at night (its season and climate) and how much warmer the afternoon gets
+static void climate(const char* id, float& night, float& dayRise) {
+    struct C { const char* id; float night, rise; };
+    static const C T[] = {{"lusail", 21, 7}, {"bahrain", 20, 7}, {"imola", 12, 9}, {"spa", 10, 8},
+                          {"lemans", 13, 10}, {"silverstone", 11, 8}, {"interlagos", 18, 9}, {"cota", 20, 11}, {"fuji", 12, 7}};
+    night = 15; dayRise = 8;
+    for (const C& c : T) if (id && !strcmp(c.id, id)) { night = c.night; dayRise = c.rise; }
+}
+
+float Race::airTemp() const {
+    float night, rise; climate(track.def ? track.def->id : nullptr, night, rise);
+    float h = clockHour();
+    // warmest at 15:00, coolest before dawn (a smooth curve over the day)
+    float day = 0.5f + 0.5f * cosf((h - 15.0f) / 24.0f * 2 * 3.14159f);
+    return night + rise * day * day - 3.0f * rain;
+}
+
+float Race::trackTemp() const {
+    // the sun on the tarmac: up to ~18 C over the air at midday, nothing at night; wet tarmac stays near the air
+    float sun = 1 - sunLevel();
+    float h = clockHour();
+    float high = clampf(1 - fabsf(h - 13.5f) / 7.0f, 0, 1);      // the sun's height
+    return airTemp() + 18.0f * sun * high * (1 - 0.8f * wet) * (1 - 0.5f * rain);
+}
+
+float Race::tyrePressure(const Car& c, int k) const {
+    // set cold in the garage; the air inside heats with the tyre (Gay-Lussac: p ~ absolute temperature)
+    float cold = PRESS_COLD0 + PRESS_STEP * c.ch.press;
+    return cold * (c.tyreT[k] + 273.0f) / 293.0f;
+}
+
 float Race::rubberGrip(const Car& c) const {
     if (rubber <= 0.01f) return 1.0f;
     float off = fabsf(c.d - line[track.index(c.s)]);
@@ -1282,8 +1315,9 @@ void Race::particles(float dt) {
         }
         // the plank and skid blocks scraping the track: the Hypercars' titanium skids throw sparks from
         // under the car at speed when it bottoms out -- over bumps and crests, and diving under hard braking
-        if (c.def->era == ERA_HYPER && c.v > 50 && c.pit == PIT_NONE && wet < 0.5f) {
-            float scrape = (c.body.load > 1.08f ? (c.body.load - 1.08f) * 6 : 0) + (c.brake > 0.6f ? 0.25f : 0) + (c.v > 80 ? 0.08f : 0);
+        bool bottoming = handOf(c).bottom > 0;
+        if ((c.def->era == ERA_HYPER || bottoming) && c.v > 50 && c.pit == PIT_NONE && wet < 0.5f) {
+            float scrape = (c.body.load > 1.08f ? (c.body.load - 1.08f) * 6 : 0) + (c.brake > 0.6f ? 0.25f : 0) + (c.v > 80 ? 0.08f : 0) + (bottoming ? 0.9f : 0);
             if (rnd() < scrape) sparks(c.pos - c.fwd * (1.4f + rnd() * 0.8f) + c.left * ((rnd() - 0.5f) * 0.6f) + V3(0, 0, 0.04f),
                                        c.fwd * (c.v * 0.55f) + V3(0, 0, 1.5f), 3 + (int)(rnd() * 4), 4.0f);
         }
@@ -1331,7 +1365,7 @@ bool Race::save(const char* path) const {
     FILE* f = fopen(path, "wb");
     if (!f) return false;
     SaveHead h; memset((void*)&h, 0, sizeof h);
-    memcpy(h.magic, "EMS1", 4); h.version = 9;   // v9: the manager's orders (MgrOrders) at the end of the Car record; v8: CarRel (temperatures, failures, retirement) at the end of the Car record; v7: the body on its springs (CarBody) at the end of the Car record; v6: tyre temperatures at the end of the Car record; v5: spins, slow zones, hybrid
+    memcpy(h.magic, "EMS1", 4); h.version = 10;   // v10: Chassis and per-tyre wear at the end of the Car record; v9: the manager's orders (MgrOrders) at the end of the Car record; v8: CarRel (temperatures, failures, retirement) at the end of the Car record; v7: the body on its springs (CarBody) at the end of the Car record; v6: tyre temperatures at the end of the Car record; v5: spins, slow zones, hybrid
     h.set = set; h.session = session; h.playerIdx = playerIdx; h.carCount = (int)cars.size();
     h.time = time; h.countdown = countdown; h.timeScale = timeScale; h.consumeScale = consumeScale; h.startHour = startHour; h.timeAccel = timeAccel; h.greenTime = greenTime;
     h.rain = rain; h.wet = wet; h.rainTarget = rainTarget; h.rainTimer = rainTimer; h.scCooldown = scCooldown;
@@ -1350,17 +1384,18 @@ bool Race::load(const char* path) {
     FILE* f = fopen(path, "rb");
     if (!f) return false;
     SaveHead h;
-    if (fread(&h, sizeof h, 1, f) != 1 || memcmp(h.magic, "EMS1", 4) || (h.version < 5 || h.version > 9) || h.carCount <= 0 || h.carCount > 64) { fclose(f); return false; }
+    if (fread(&h, sizeof h, 1, f) != 1 || memcmp(h.magic, "EMS1", 4) || (h.version < 5 || h.version > 10) || h.carCount <= 0 || h.carCount > 64) { fclose(f); return false; }
     std::vector<Car> cs(h.carCount);
     for (auto& c : cs) {
         int def = 0;
         // version 5: no tyre temperatures; 6: no CarBody (it starts on the road)
-        size_t recSize = h.version == 9 ? sizeof(Car) : h.version == 8 ? offsetof(Car, mgr) : h.version == 7 ? offsetof(Car, rel) : (h.version == 6 ? offsetof(Car, body) : offsetof(Car, tyreT));
+        size_t recSize = h.version == 10 ? sizeof(Car) : h.version == 9 ? offsetof(Car, ch) : h.version == 8 ? offsetof(Car, mgr) : h.version == 7 ? offsetof(Car, rel) : (h.version == 6 ? offsetof(Car, body) : offsetof(Car, tyreT));
         if (fread(&def, 4, 1, f) != 1 || fread(&c, recSize, 1, f) != 1 || def < 0 || def >= CAR_COUNT) { fclose(f); return false; }
         if (h.version == 5) for (float& t : c.tyreT) t = 80;
         if (h.version < 7) c.body = CarBody();
         if (h.version < 8) c.rel = CarRel();
         if (h.version < 9) c.mgr = MgrOrders();
+        if (h.version < 10) { c.ch = Chassis(); for (float& w : c.tyreWear) w = c.wear; }
         c.def = &CARS[def];
     }
     fclose(f);
@@ -1377,6 +1412,7 @@ bool Race::load(const char* path) {
     lightning = 0; thunderPending = -1; nextStrike = 10;
     markFirst.clear();
     for (auto& c : cars) { c.lastMark = -1; pose(c); }   // the live gaps start again from here
+    playerChassis = cars[playerIdx].ch;                    // the garage carries on from the car's own settings
     rank();
     return true;
 }

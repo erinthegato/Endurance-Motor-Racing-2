@@ -119,6 +119,9 @@ struct Game {
     float fps = 60, lastDt = 1.0f / 60;
     // in-car menus: race settings on the tablet, car setup on the diagnostics computer to the right
     bool setupPage = false; float look = 0; int setupSel = 0;
+    // the setup computer's rows (the first five are sealed in parc ferme)
+    enum SetupRow { SR_WING = 0, SR_SPRINGS, SR_RIDE, SR_DIFF, SR_GEARING, SR_BRAKEF, SR_BRAKER, SR_PRESS, SR_MAP, SR_TYRE, SR_FUEL,
+                    SR_DRIVE, SR_FLYING, SR_TIME, SR_SKIP, SR_ASK, SR_ROWS };
     bool timingOverall = false;      // garage TIMING tab: the whole field in one order (Square) instead of by class
     int setupTab = 0;                // the diagnostics computer at the track: 0 SETUP, 1 WEATHER, 2 TIMING (L / R)
     float podiumScr[3][2] = {{240, 120}, {150, 140}, {330, 150}};   // the winners' heads on screen (champagne)

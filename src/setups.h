@@ -8,8 +8,9 @@ struct SetupStore {
     static const int MAX_TRACKS = 32;            // >= TRACK_COUNT
     bool has[MAX_TRACKS][ERA_COUNT] = {};
     CarSetup su[MAX_TRACKS][ERA_COUNT];
-    bool get(int track, int cls, CarSetup& out) const;    // false (out untouched) if none saved yet
-    void put(int track, int cls, const CarSetup& s);      // remembers and saves
+    Chassis ch[MAX_TRACKS][ERA_COUNT];           // ride height, differential, pressures (setups.sav EMSU2)
+    bool get(int track, int cls, CarSetup& out, Chassis& outCh) const;    // false (both untouched) if none saved yet
+    void put(int track, int cls, const CarSetup& s, const Chassis& c);   // remembers and saves
     void load();
     void save() const;
 };

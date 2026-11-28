@@ -574,31 +574,37 @@ void Game::screenSetupComputer(Panel& P, bool trackGarage) {
             return;
         }
     } else P.text(6, 2, b, WHITE, 0.8f);
-    char v[13][40];
-    snprintf(v[0], 40, "Rear wing  < %d >", su.wing);
-    snprintf(v[1], 40, "Springs  < %s >", SOFT3[su.susp]);
-    snprintf(v[2], 40, "Gearing  < %s >", GEAR3[su.gearing]);
-    snprintf(v[3], 40, "Brake front  < %d%% >", su.brakeF);
-    snprintf(v[4], 40, "Brake rear  < %d%% >", su.brakeR);
-    snprintf(v[5], 40, "Engine map  < %s >", MAP_NAME[su.map]);
-    snprintf(v[6], 40, "Tyres  < %s >", TYRE_NAME[su.tyre]);
-    snprintf(v[7], 40, "Fuel  < %d%% >", su.fuel);
-    snprintf(v[8], 40, trackGarage ? "DRIVE OUT" : "< Race settings");
-    snprintf(v[9], 40, "FLYING LAP");
-    snprintf(v[10], 40, "Time  < x%d >", (int)(raceLoaded ? race.timeAccel : 1));
-    snprintf(v[11], 40, raceLoaded && race.set.timeTrial ? "End time trial" : (raceLoaded && race.session == SES_PRACTICE ? "Skip to qualifying" : "Skip to the race"));
-    snprintf(v[12], 40, "Ask the engineer  (%d laps)", setupeng::cleanLaps());
-    int rows = trackGarage ? 13 : 9;
+    static const char* RIDE3[3] = {"Low", "Medium", "High"};
+    static const char* DIFF3[3] = {"Open", "Medium", "Locked"};
+    Chassis& ch = race.playerChassis;
+    char v[SR_ROWS][40];
+    snprintf(v[SR_WING], 40, "Rear wing  < %d >", su.wing);
+    snprintf(v[SR_SPRINGS], 40, "Springs  < %s >", SOFT3[su.susp]);
+    snprintf(v[SR_RIDE], 40, "Ride height  < %s >", RIDE3[ch.ride]);
+    snprintf(v[SR_DIFF], 40, "Differential  < %s >", DIFF3[ch.diff]);
+    snprintf(v[SR_GEARING], 40, "Gearing  < %s >", GEAR3[su.gearing]);
+    snprintf(v[SR_BRAKEF], 40, "Brake front  < %d%% >", su.brakeF);
+    snprintf(v[SR_BRAKER], 40, "Brake rear  < %d%% >", su.brakeR);
+    snprintf(v[SR_PRESS], 40, "Tyre pressure  < %.2f bar >", PRESS_COLD0 + PRESS_STEP * ch.press);
+    snprintf(v[SR_MAP], 40, "Engine map  < %s >", MAP_NAME[su.map]);
+    snprintf(v[SR_TYRE], 40, "Tyres  < %s >", TYRE_NAME[su.tyre]);
+    snprintf(v[SR_FUEL], 40, "Fuel  < %d%% >", su.fuel);
+    snprintf(v[SR_DRIVE], 40, trackGarage ? "DRIVE OUT" : "< Race settings");
+    snprintf(v[SR_FLYING], 40, "FLYING LAP");
+    snprintf(v[SR_TIME], 40, "Time  < x%d >", (int)(raceLoaded ? race.timeAccel : 1));
+    snprintf(v[SR_SKIP], 40, raceLoaded && race.set.timeTrial ? "End time trial" : (raceLoaded && race.session == SES_PRACTICE ? "Skip to qualifying" : "Skip to the race"));
+    snprintf(v[SR_ASK], 40, "Ask the engineer  (%d laps)", setupeng::cleanLaps());
+    int rows = trackGarage ? SR_ROWS : SR_DRIVE + 1;
     bool active = setupPage || trackGarage;
-    float rowH = trackGarage ? 12.8f : 18;
+    float rowH = trackGarage ? 10.4f : 14;
     for (int i = 0; i < rows; i++) {
         float y = 25 + i * rowH;
-        bool sealed = pf && i < 3;
-        bool timeOff = i == 10 && raceLoaded && race.set.sessionMin <= 5;
+        bool sealed = pf && i < SR_BRAKEF;
+        bool timeOff = i == SR_TIME && raceLoaded && race.set.sessionMin <= 5;
         if (i == setupSel && active) P.fill(3, y - 2, 170, rowH - 1, sealed || timeOff ? RGBA(120, 120, 130, 230) : RGBA(80, 180, 255, 230));
-        u32 col = i == setupSel && active ? INK : (sealed || timeOff ? DIM : (i == 8 || i == 9 ? GOLD : (i == 12 ? RGBA(140, 200, 255) : WHITE)));
-        P.text(8, y, v[i], col, trackGarage ? 0.68f : 0.74f);
-        if (sealed) P.textR(170, y + 1, "SEALED", i == setupSel && active ? INK : RGBA(255, 120, 60), 0.55f);
+        u32 col = i == setupSel && active ? INK : (sealed || timeOff ? DIM : (i == SR_DRIVE || i == SR_FLYING ? GOLD : (i == SR_ASK ? RGBA(140, 200, 255) : WHITE)));
+        P.text(8, y, v[i], col, trackGarage ? 0.6f : 0.7f);
+        if (sealed) P.textR(170, y + 1, "SEALED", i == setupSel && active ? INK : RGBA(255, 120, 60), 0.5f);
     }
     // read-outs on the right
     float x = 182, y = 28;
@@ -618,7 +624,16 @@ void Game::screenSetupComputer(Panel& P, bool trackGarage) {
     const char* bal = su.bias() < 0.6f ? "Rotates on the brakes" : (su.bias() > 0.68f ? "Stable on the brakes" : "Balanced");
     P.text(x, y, bal, RGBA(140, 200, 255), 0.6f); y += 13;
     const char* ride = su.susp == 0 ? "Soft: kerbs and rain" : (su.susp == 2 ? "Stiff: sharp, dry" : "Medium springs");
-    P.text(x, y, ride, RGBA(140, 200, 255), 0.6f); y += 16;
+    P.text(x, y, ride, RGBA(140, 200, 255), 0.6f); y += 13;
+    // what the row under the cursor does (the new chassis settings)
+    {
+        const char* tip = nullptr;
+        if (setupSel == SR_RIDE) tip = ch.ride == 0 ? "Low: downforce; bottoms on bumps" : (ch.ride == 2 ? "High: safe over kerbs; less grip" : "Medium ride height");
+        if (setupSel == SR_DIFF) tip = ch.diff == 0 ? "Open: turns in; less traction" : (ch.diff == 2 ? "Locked: traction; slides out" : "Medium differential");
+        if (setupSel == SR_PRESS) tip = ch.press < 2 ? "Low: warm, grippy; hot days wear" : (ch.press > 2 ? "High: cooler; less grip" : "Hot ~1.80 bar is best");
+        if (tip) { P.text(x, y, tip, GOLD, 0.56f); y += 12; }
+    }
+    y += 3;
     float trackKm = (raceLoaded ? race.track.length : (previewIdx == set.track && preview.n ? preview.length : 5000.0f)) / 1000.0f;
     static const float MAPF[MAP_COUNT] = {0.6f, 1.0f, 1.25f};
     float laps = su.fuel / 100.0f * (CARS[set.car].cls == CLASS_HYPER ? 180.0f : 190.0f) / (trackKm * MAPF[su.map]);
@@ -639,7 +654,7 @@ void Game::screenSetupComputer(Panel& P, bool trackGarage) {
         const char* gr = race.rubber < 0.25f ? "green" : (race.rubber < 0.55f ? "rubbering in" : "rubbered in");
         snprintf(b, sizeof b, "Track: %s %d%%", gr, (int)(race.rubber * 100)); P.text(x, y, b, RGBA(140, 200, 255), 0.6f);
     }
-    if (pf) P.textC(P.vw / 2, 194, "PARC FERME: wing, springs and gearing are sealed", RGBA(255, 120, 60), 0.6f);
+    if (pf) P.textC(P.vw / 2, 194, "PARC FERME: the chassis settings are sealed", RGBA(255, 120, 60), 0.6f);
     if (trackGarage && engUi.open && engUi.sub[0]) {
         // the setup engineer talking: her words (two lines if long), and the offer
         P.fill(2, 192, P.vw - 4, 31, RGBA(10, 14, 22, 225));
@@ -651,7 +666,7 @@ void Game::screenSetupComputer(Panel& P, bool trackGarage) {
         if (l2[0]) P.text(8, 211, l2, WHITE, 0.56f);
         if (engUi.pending()) P.textR(P.vw - 8, 193, "X apply   O ignore", GOLD, 0.52f);
     } else
-    P.textC(P.vw / 2, 212, trackGarage ? (setupSel == 12 ? "X ask the engineer   L / R  tabs   O pause" : (walkMenus ? "X select   UP/DOWN  row   LEFT/RIGHT  change   O back" : "X drive out / flying lap / skip   L / R  tabs   O pause")) : "LEFT/RIGHT change   O back", DIM, 0.58f);
+    P.textC(P.vw / 2, 212, trackGarage ? (setupSel == SR_ASK ? "X ask the engineer   L / R  tabs   O pause" : (walkMenus ? "X select   UP/DOWN  row   LEFT/RIGHT  change   O back" : "X drive out / flying lap / skip   L / R  tabs   O pause")) : "LEFT/RIGHT change   O back", DIM, 0.58f);
 }
 
 // the weather screen beside the diagnostics computer (F1-game style): the forecast strip -- an icon, the
@@ -684,7 +699,7 @@ void Game::screenForecast(Panel& P) {
     snprintf(tb, sizeof tb, "%s   %d%% water", tw, (int)(race.wet * 100 + 0.5f));
     P.text(40, y - 1, tb, WHITE, 0.62f);
     P.fill(40, y + 11, 150, 3, RGBA(40, 44, 54)); P.fill(40, y + 11, 150 * clampf(race.wet, 0, 1), 3, RGBA(70, 140, 240));
-    snprintf(tb, sizeof tb, "Air %d C  Track %d C", 18 + (int)(8 * (1 - race.rain) * (1 - race.nightLevel())), 22 + (int)(16 * (1 - race.wet) * (1 - race.nightLevel())));
+    snprintf(tb, sizeof tb, "Air %d C  Track %d C", (int)(race.airTemp() + 0.5f), (int)(race.trackTemp() + 0.5f));
     P.text(200, y - 1, tb, DIM, 0.52f);
     y += 22;
     char n1[48], n2[48], n3[48];
@@ -795,41 +810,45 @@ void Game::screenTiming(Panel& P) {
 }
 
 int Game::updateSetup(int dx, int dy, bool ok, bool back, bool trackGarage) {
-    int rows = trackGarage ? 13 : 9;
+    int rows = trackGarage ? SR_ROWS : SR_DRIVE + 1;
     setupSel = (setupSel + dy + rows) % rows;
     CarSetup& su = set.setup;
+    Chassis& ch = race.playerChassis;
     bool pf = parcFerme();
     // the setup engineer (practice / qualifying): X asks; her suggestion waits for X apply / O ignore (Game::update)
-    if (ok && trackGarage && setupSel == 12 && !engUi.pending()) { engUi.ask(su, su.tyre, pf); return 0; }
+    if (ok && trackGarage && setupSel == SR_ASK && !engUi.pending()) { engUi.ask(su, su.tyre, pf); return 0; }
     if (dx) {
         auto step = [&](int& v, int d, int lo, int hi) { v += d; if (v < lo) v = lo; if (v > hi) v = hi; };
         switch (setupSel) {
-            case 0: if (!pf) step(su.wing, dx, 1, 5); break;
-            case 1: if (!pf) step(su.susp, dx, 0, 2); break;
-            case 2: if (!pf) step(su.gearing, dx, 0, 2); break;
-            case 3: step(su.brakeF, dx * 5, 30, 100); break;
-            case 4: step(su.brakeR, dx * 5, 20, 100); break;
-            case 5: step(su.map, dx, 0, MAP_COUNT - 1); break;
-            case 6: {
+            case SR_WING: if (!pf) step(su.wing, dx, 1, 5); break;
+            case SR_SPRINGS: if (!pf) step(su.susp, dx, 0, 2); break;
+            case SR_RIDE: if (!pf) step(ch.ride, dx, 0, 2); break;
+            case SR_DIFF: if (!pf) step(ch.diff, dx, 0, 2); break;
+            case SR_GEARING: if (!pf) step(su.gearing, dx, 0, 2); break;
+            case SR_BRAKEF: step(su.brakeF, dx * 5, 30, 100); break;
+            case SR_BRAKER: step(su.brakeR, dx * 5, 20, 100); break;
+            case SR_PRESS: step(ch.press, dx, 0, 4); break;
+            case SR_MAP: step(su.map, dx, 0, MAP_COUNT - 1); break;
+            case SR_TYRE: {
                 // practice and qualifying: the full range, inters and wets too (the race starts on what the track calls for)
                 bool wetOk = raceLoaded && trackGarage && race.session != SES_RACE;
                 step(su.tyre, dx, TY_SOFT, wetOk ? TY_WET : TY_HARD);
                 if (!wetOk && su.tyre > TY_HARD) su.tyre = TY_HARD;
                 break;
             }
-            case 7: step(su.fuel, dx * 10, 10, 100); break;
-            case 10:
+            case SR_FUEL: step(su.fuel, dx * 10, 10, 100); break;
+            case SR_TIME:
                 if (trackGarage && race.set.sessionMin > 5) { static const int A[3] = {1, 4, 16}; int k = race.timeAccel >= 16 ? 2 : (race.timeAccel >= 4 ? 1 : 0); k = (k + dx + 3) % 3; race.timeAccel = (float)A[k]; }
                 break;
         }
-        if (setupSel < 3 && pf) { snprintf(note, sizeof note, "Sealed: parc ferme"); noteT = 1.5f; }
+        if (setupSel < SR_BRAKEF && pf) { snprintf(note, sizeof note, "Sealed: parc ferme"); noteT = 1.5f; }
     }
     int leave = 0;
-    if (ok && setupSel == 8) leave = 1;
-    else if (ok && trackGarage && setupSel == 9) leave = 2;
-    else if (ok && trackGarage && setupSel == 11) leave = 3;
+    if (ok && setupSel == SR_DRIVE) leave = 1;
+    else if (ok && trackGarage && setupSel == SR_FLYING) leave = 2;
+    else if (ok && trackGarage && setupSel == SR_SKIP) leave = 3;
     else if (back && !trackGarage) leave = 1;
-    if (leave && !ttMode) setups.put(set.track, CARS[set.car].era, su);   // remembered for this circuit and era
+    if (leave && !ttMode) setups.put(set.track, CARS[set.car].era, su, ch);   // remembered for this circuit and era
     return leave;
 }
 

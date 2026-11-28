@@ -66,6 +66,13 @@ static const HandEra HAND[ERA_COUNT] = {
     {   0.11f,  0.64f,  0.48f,  1.4f,  1.1f,  0.03f, 0.22f },   // Hypercar: hybrid torque, much downforce
     {   0.15f,  0.62f,  0.50f,  1.7f,  1.2f,  0.04f, 0.10f }};  // LMGT3: weight moves more, ABS and traction control
 
+// the chassis settings (Chassis): ride height (low / medium / high) and the differential (open / medium / locked)
+static const float RIDE_DF[3] = {1.02f, 1.0f, 0.97f}, RIDE_DRAG[3] = {1.01f, 1.0f, 0.99f};
+static const float RIDE_PLANK[3] = {-0.045f, -0.06f, -0.075f};    // the body's travel (m) before the plank meets the road
+static const float DIFF_TRACTION[3] = {0.95f, 1.0f, 1.04f}, DIFF_ENTRY[3] = {1.3f, 1.0f, 0.7f}, DIFF_POWER[3] = {0.75f, 1.0f, 1.3f};
+// tyre pressure: grip falls off away from the best hot pressure (+-0.06 bar is fine)
+static float pressGrip(float p) { return fmaxf(0.9f, 1 - 0.4f * fmaxf(0, fabsf(p - PRESS_BEST) - 0.06f)); }
+
 // tyre grip from temperature (as in tyreGrip): full between 80 and 105 deg C
 static inline float sqf(float x) { return x * x; }
 
@@ -199,7 +206,7 @@ bool Race::start(const RaceSettings& s0, Session ses, const std::vector<int>* gr
     for (auto& c : cars) { c.tyre = startTyre; c.fuel = 1; }
     {
         Car& me = cars[playerIdx];
-        me.su = s.setup;
+        me.su = s.setup; me.ch = playerChassis;
         if (startTyre == TY_MEDIUM && me.su.tyre <= TY_HARD) me.tyre = me.su.tyre;      // dry: the compound chosen in the garage
         if (me.su.tyre >= TY_INTER && ses != SES_RACE) me.tyre = me.su.tyre;          // practice / qualifying: inters or wets by choice
         me.fuel = clampf(me.su.fuel / 100.0f, 0.1f, 1.0f);
@@ -332,12 +339,14 @@ void Race::bodyUpdate(Car& c, float dt, float gEff, float accLong, float accLat)
     float h = dt / n;
     float zsDot = (zs - b.zPrev) / dt, psDot = (ps - b.psPrev) / dt, rsDot = (rs - b.rsPrev) / dt;
     float F = 0;
+    const float plank = RIDE_PLANK[c.ch.ride < 0 || c.ch.ride > 2 ? 1 : c.ch.ride];
+    bool bottomed = false;
     for (int i = 0; i < n; i++) {
         float z0 = b.zPrev + zsDot * h * i, z1 = z0 + zsDot * h;
         float e = b.hOff, er = b.vz - zsDot;
         F = 0;
         if (e < E0) F = fmaxf(0, K * (E0 - e) - C * er);            // the tyres push, they never pull
-        if (e < -0.06f) F += 4 * K * (-0.06f - e);                    // bump stops / the plank
+        if (e < plank) { F += 4 * K * (plank - e); bottomed = true; }   // bump stops / the plank
         b.vz += (F - gEff) * h;
         float zw = z0 + e + b.vz * h;
         b.hOff = zw - z1;
@@ -357,6 +366,7 @@ void Race::bodyUpdate(Car& c, float dt, float gEff, float accLong, float accLat)
     float ratio = clampf(F / fmaxf(gEff, 1.0f), 0, 1.6f);
     b.load += (ratio - b.load) * (1 - expf(-dt / 0.10f));     // the tyres take ~0.1 s to answer
     b.zPrev = zs; b.psPrev = ps; b.rsPrev = rs;
+    if (bottomed && c.v > 25) { Handling& H = handOf(c); if (H.bottom <= 0) bottomEvents++; H.bottom = 0.15f; }
 }
 
 // A barrier hit (sg: +1 the left-hand barrier, -1 the right). The car keeps its speed along the
@@ -449,7 +459,9 @@ void Race::physics(Car& c, float dt) {
         else H.skirt = fmaxf(0, H.skirt - dt);
     }
     float aeroExtra = (H.skirt > 0 && !(hoff & 16) ? 0.30f : 0) + H.dirty * HE.dirty;   // downforce lost (skirts, turbulent air)
-    float aeroK = fminf(1 + (c.v / p.downforceV) * (c.v / p.downforceV) * (1 - aeroLoss) * (1 - aeroExtra) * (1 + wingD) * (c.drs ? 0.9f : 1.0f), p.aeroCap * (1 + wingD));
+    int ride = c.ch.ride < 0 || c.ch.ride > 2 ? 1 : c.ch.ride, diff = c.ch.diff < 0 || c.ch.diff > 2 ? 1 : c.ch.diff;
+    float aeroK = fminf(1 + (c.v / p.downforceV) * (c.v / p.downforceV) * (1 - aeroLoss) * (1 - aeroExtra) * (1 + wingD) * (c.drs ? 0.9f : 1.0f) * RIDE_DF[ride],
+                        p.aeroCap * (1 + wingD) * RIDE_DF[ride]);
     // suspension: soft rides kerbs and a wet track better, stiff is sharper on smooth dry tarmac
     static const float KERB[3] = {0.96f, 0.90f, 0.84f}, DRY[3] = {0.985f, 1.0f, 1.012f}, WETK[3] = {1.03f, 1.0f, 0.97f};
     float suspK = DRY[c.su.susp] + (WETK[c.su.susp] - DRY[c.su.susp]) * wet;
@@ -457,6 +469,31 @@ void Race::physics(Car& c, float dt) {
     float kerbK = c.def->era == ERA_GT3 ? 1 - (1 - KERB[c.su.susp]) * 0.5f : KERB[c.su.susp];
     float gripMul = (off ? (gravel ? 0.42f : 0.55f) : (onKerb ? kerbK : 1.0f)) * c.def->grip * tyreGrip(c) * (1 - 0.25f * c.dmg[DM_SUSP]) * suspK;
     if (!off) gripMul *= rubberGrip(c);
+    // sausage kerbs (chicanes): the inside wheels ride up the hump -- the car is thrown up and twitches,
+    // and the tyres barely grip for a moment. Flat kerbs are just the kerb's own (kerbK) loss.
+    {
+        bool sausSide = c.d > 0 ? tp.sausageL : tp.sausageR;
+        bool onSaus = sausSide && !pitLane && ad > hw + 0.35f && ad < hw + 1.3f + 0.35f + 0.95f;
+        if (onSaus && H.sausage <= 0 && c.v > 15) {
+            H.sausage = 0.45f; sausageHits++;
+            if (c.body.init) c.body.vz += 0.35f + 0.012f * c.v;                 // up off the hump
+            if (c.human && spinsOn) {                                            // the nose kicked away from the hump
+                float sg = c.d > 0 ? 1.0f : -1.0f;
+                float kick = -sg * clampf(c.v * 0.0012f, 0, 0.06f) * (steerHelp == 1 ? 0.5f : 1.0f);
+                c.drift = wrapPi(c.drift + kick); c.yaw = wrapPi(c.yaw + kick);
+            }
+            if (real.on(real.ground) && session == SES_RACE && realFor(c) && c.v > 30) addDamage(c, DM_SUSP, 0.004f * c.v / 50.0f);
+        }
+        H.sausage = fmaxf(0, H.sausage - dt);
+        if (H.sausage > 0) gripMul *= 0.75f;
+    }
+    // bottoming out: the plank on the road for a moment (low ride height, bumps, compressions)
+    H.bottom = fmaxf(0, H.bottom - dt);
+    if (H.bottom > 0) gripMul *= 0.88f;
+    // (and the plank drags on the road: see below)
+    // tyre pressures: each axle's hot pressure against the best (the car's balance shifts with it)
+    float pkF = pressGrip(0.5f * (tyrePressure(c, 0) + tyrePressure(c, 1))), pkR = pressGrip(0.5f * (tyrePressure(c, 2) + tyrePressure(c, 3)));
+    gripMul *= 0.5f * (pkF + pkR);
     if (c.rel.flat >= 0) gripMul *= 0.55f;               // running on a flat tyre
     // standing water: past a speed the tyre rides up on the water (wets clear far more than slicks)
     {
@@ -481,6 +518,12 @@ void Race::physics(Car& c, float dt) {
     float gAvg = tempGrip(c.tyreTemp());
     float frontK = (1 + HE.transfer * H.wt) * tempGrip((c.tyreT[0] + c.tyreT[1]) * 0.5f) / gAvg * (1 - 0.5f * H.dirty * HE.dirty);
     float rearK = (1 - HE.transfer * H.wt) * tempGrip((c.tyreT[2] + c.tyreT[3]) * 0.5f) / gAvg;
+    {   // the axles' own pressures and wear: worn fronts push, worn rears slide
+        float pkA = 0.5f * (pkF + pkR);
+        float wF = 0.5f * (c.tyreWear[0] + c.tyreWear[1]), wR = 0.5f * (c.tyreWear[2] + c.tyreWear[3]);
+        frontK *= pkF / pkA * (1 - 0.12f * (wF - c.wear));
+        rearK *= pkR / pkA * (1 - 0.12f * (wR - c.wear));
+    }
     if (c.player) playerLatMax = latMax;
 
     // ---- longitudinal
@@ -500,6 +543,11 @@ void Race::physics(Car& c, float dt) {
     float powerFrac = rpmFrac > 1.0f ? 0.0f : clampf(turboEng ? 0.72f + 0.38f * rpmFrac : 0.50f + 0.62f * rpmFrac, 0, 1);
     float force = c.throttle * P * powerFrac / fmaxf(c.v, 6.0f);
     float traction = 1.25f * mass * G * aeroK * gripMul * loadK * ((hoff & 4) ? 1.0f : clampf(rearK, 0.8f, 1.2f) * sqrtf(fmaxf(0.2f, 1 - sqf(0.6f * fminf(H.latUse, 1.0f)))));
+    traction *= DIFF_TRACTION[diff];
+    // the LMH's front motor drives the front wheels above 190 km/h (the regulations): four-wheel drive
+    // while it deploys, so more drive out of fast corners and far less of it slides the rear
+    bool frontDrive = c.def->type == TYPE_LMH && c.boosting && c.v >= 190 / 3.6f;
+    if (frontDrive) traction *= 1.35f;
     // gear changes: the 1980 lever box cuts the drive for a moment
     if (c.gear != H.lastGear) { if (c.gear > H.lastGear && !(hoff & 32)) H.cut = HE.shift; H.lastGear = c.gear; }
     if (H.cut > 0) { H.cut -= dt; force = 0; }
@@ -509,13 +557,18 @@ void Race::physics(Car& c, float dt) {
     float tcK = c.def->era == ERA_GT3 ? 0.92f : 0.97f;
     if (force > traction * tcK) force = traction * tcK;
     H.uT = traction > 0 ? fminf(force / traction, 1.0f) * c.throttle : 0;
-    float dragK = (1 + 0.12f * (c.dmg[DM_NOSE] + c.dmg[DM_LEFT] + c.dmg[DM_RIGHT]) - (c.wingOff ? 0.06f : 0)) * wingDrag * (c.drs ? 0.84f : 1.0f) * (1 - 0.32f * c.rel.tow);
+    float dragK = (1 + 0.12f * (c.dmg[DM_NOSE] + c.dmg[DM_LEFT] + c.dmg[DM_RIGHT]) - (c.wingOff ? 0.06f : 0)) * wingDrag * RIDE_DRAG[ride] * (c.drs ? 0.84f : 1.0f) * (1 - 0.32f * c.rel.tow);
     float drag = 0.5f * 1.2f * p.cdA * c.def->aero * dragK * c.v * c.v + 0.015f * mass * G;
     float grade = track.gradeAt(c.s);
     float slope = mass * G * grade / sqrtf(1 + grade * grade);
     float acc = (force - drag - slope) / mass;
     // brakes: the pressures set the strength; the best split is about 63 % front
     float bias = c.su.bias();
+    // regenerative braking: while the battery takes charge, the Hypercars' motors brake one axle too --
+    // the LMDh's on the rear axle (the balance moves back), the LMH's on the front (it moves forward).
+    // A full battery: no regen, and the brakes feel as set.
+    bool regen = c.def->cls == CLASS_HYPER && p.ersKW > 0 && !hybridOff && c.brake > 0.1f && c.v > 8 && c.ers < 0.99f && c.pit == PIT_NONE;
+    if (regen) bias += c.def->type == TYPE_LMH ? 0.025f : -0.035f;
     float brakeK = fminf(1.0f, (c.su.brakeF + c.su.brakeR) / 115.0f) * (1 - 1.4f * fabsf(bias - 0.63f));
     float brakeDec = c.brake * p.brakeG * G * fminf(aeroK, 2.6f) * (off ? 0.6f : 1.0f) * fminf(1.0f, tyreGrip(c) + 0.15f) * brakeK * fminf(loadK, 1.1f);
     {   // brake temperature (Realism): cold discs bite less, past their range they fade; a brake fault halves them
@@ -545,6 +598,9 @@ void Race::physics(Car& c, float dt) {
     }
     acc -= c.v > 0.1f ? brakeDec : 0;
     if (off) acc -= (gravel ? 4.0f + 0.05f * c.v : 1.2f + 0.012f * c.v) * (c.v > 1 ? 1 : 0);
+    if (H.bottom > 0) acc -= 6.0f;                           // the plank scraping along the road
+    // a low car that keeps bottoming wears the plank and knocks the suspension (Realism: ground contact)
+    if (H.bottom > 0.14f && real.on(real.ground) && session == SES_RACE && realFor(c)) addDamage(c, DM_SUSP, 0.0015f);
     c.v += acc * dt;
     if (c.v < 0) c.v = 0;
     float accLong = acc;
@@ -569,7 +625,12 @@ void Race::physics(Car& c, float dt) {
             want = sgW * maxRate; ex = 0;
         } else if (ex > 0) {
             c.slip = clampf(ex, 0, 1);
-            want = sgW * maxRate * (1 + 0.12f * c.slip);
+            // the tyre's curve: just past the limit it grips a touch more (the peak, at ~10 % over), then less
+            // and less as it slides -- overdriving a corner loses grip. (Steering help Strong and the AI:
+            // the old forgiving curve, which keeps giving a little more.)
+            float drop = !c.human || steerHelp >= 2 ? -1.0f : (steerHelp == 1 ? 0.20f : 0.35f);
+            float curve = drop < 0 ? 1 + 0.12f * c.slip : (ex < 0.1f ? 1 + 0.3f * ex : fmaxf(0.80f, 1.03f - drop * (ex - 0.1f)));
+            want = sgW * maxRate * curve;
             c.v -= c.slip * 4.0f * dt * (c.v > 5 ? 1 : 0);
         }
         // Steering much harder than the tyres can take makes the rear step out. A small slide can
@@ -597,8 +658,10 @@ void Race::physics(Car& c, float dt) {
                 float helpK = steerHelp >= 2 ? 0.0f : (steerHelp == 1 ? 0.6f : 1.0f);
                 float load2 = maxRate > 0 ? clampf((fabsf(want) / maxRate - 0.5f) * 2.5f, 0, 1) : 0;
                 float bal = frontK - rearK;
-                if (bal > 0.03f && c.v > 15) rot += sgW * (bal - 0.03f) * load2 * HE.rotate * helpK * dt;
-                float pw = clampf((H.uT - 0.8f) * 5, 0, 1) * load2 * clampf(c.throttle * 1.25f - 0.25f, 0, 1);
+                if (bal > 0.03f && c.v > 15) rot += sgW * (bal - 0.03f) * load2 * HE.rotate * DIFF_ENTRY[diff] * helpK * dt;
+                // brakes set (or pulled by regen) towards the rear: the tail comes round as you trail-brake
+                if (c.brake > 0.2f && bias < 0.6f && c.v > 15) rot += sgW * (0.6f - bias) * c.brake * load2 * 2.0f * helpK * dt;
+                float pw = clampf((H.uT - 0.8f) * 5, 0, 1) * load2 * clampf(c.throttle * 1.25f - 0.25f, 0, 1) * DIFF_POWER[diff] * (frontDrive ? 0.5f : 1.0f);
                 if (pw > 0 && c.v > 6) rot += sgW * pw * HE.power * 0.35f / clampf(rearK, 0.8f, 1.2f) * helpK * dt;
                 if ((H.rearLock > 0 || (H.lock > 0.3f && !H.frontLock)) && c.v > 10) rot += sgW * 0.7f * helpK * dt;
             }
@@ -657,7 +720,9 @@ void Race::physics(Car& c, float dt) {
     // ---- tyre temperatures: speed, cornering, braking (fronts) and wheelspin (rears) heat them; a wet
     // track cools slicks. They settle over ~25 s. Grip is best between 80 and 105 deg C (tyreGrip).
     {
-        float ambient = 24 - 8 * wet;
+        // the air and the tarmac (Race::trackTemp): hot afternoons warm the tyres, cool nights take longer
+        float mix = 0.35f * trackNow + 0.65f * airNow;
+        float ambient = 24 + 0.5f * (mix - 24) - 8 * wet;
         float lat = fabsf(c.yawRate * c.v);                       // sideways load, m/s^2
         float side = clampf(c.yawRate * c.v / 18.0f, -1, 1);       // turning left loads the right-hand tyres
         float base = ambient + 52 * powf(fminf(c.v, 90.0f) / 70.0f, 0.8f) + 22 * fminf(lat / 15.0f, 1.5f);
@@ -667,7 +732,8 @@ void Race::physics(Car& c, float dt) {
         for (int k = 0; k < 4; k++) {
             bool front = k < 2, leftSide = (k & 1) == 0;
             float tgt = base + comp - cool + (front ? 18 * c.brake * fminf(c.v / 50.0f, 1) : 12 * c.throttle + 45 * c.slip)
-                      + (leftSide ? -8 : 8) * side;
+                      + (leftSide ? -8 : 8) * side
+                      + (PRESS_COLD0 + 2 * PRESS_STEP - (PRESS_COLD0 + PRESS_STEP * c.ch.press)) * 80;   // soft tyres flex and run hotter
             if (c.pit == PIT_STOP || c.v < 1) tgt = fminf(tgt, c.tyreT[k]);   // standing: they only cool
             c.tyreT[k] += (tgt - c.tyreT[k]) * fminf(1.0f, dt / 25.0f);
         }
@@ -678,7 +744,29 @@ void Race::physics(Car& c, float dt) {
         float life = tyreKm[c.tyre] * 1000;
         bool slick = c.tyre <= TY_HARD;
         float abuse = 1 + c.slip * 1.5f + (slick ? 0 : fmaxf(0, 0.5f - wet) * (c.tyre == TY_WET ? 4 : 2)) + c.dmg[DM_SUSP];
-        if (real.on(real.tyres)) c.wear = fminf(1, c.wear + ds / life * consumeScale * abuse * (c.rel.flat >= 0 ? 3.0f : 1.0f));
+        abuse *= 1 + fmaxf(0, trackNow - 32) * 0.015f;          // hot tarmac eats tyres
+        if (real.on(real.tyres)) {
+            // each tyre its own share: the outside ones in corners, the fronts under braking, the rears
+            // under power and sliding; wrong pressures wear them faster. wear is their average.
+            float sum = 0; for (float w : c.tyreWear) sum += w;
+            float off2 = c.wear - sum * 0.25f;                          // (set elsewhere: a new set, an old save)
+            if (fabsf(off2) > 0.002f) for (float& w : c.tyreWear) w = clampf(w + off2, 0, 1);
+            float side = clampf(c.yawRate * c.v / 18.0f, -1, 1);
+            float wk[4], tot = 0;
+            for (int k = 0; k < 4; k++) {
+                bool front = k < 2, right = (k & 1) != 0;
+                wk[k] = (1 + 0.5f * (right ? side : -side)) + (front ? 0.6f * c.brake : 0.4f * c.throttle * H.uT + 0.8f * c.slip);
+                tot += wk[k];
+            }
+            float base = ds / life * consumeScale * abuse * (c.rel.flat >= 0 ? 3.0f : 1.0f);
+            float mean = 0;
+            for (int k = 0; k < 4; k++) {
+                float pk = 1 + 3 * fmaxf(0, fabsf(tyrePressure(c, k) - PRESS_BEST) - 0.06f);
+                c.tyreWear[k] = fminf(1, c.tyreWear[k] + base * wk[k] * 4 / tot * pk);
+                mean += c.tyreWear[k] * 0.25f;
+            }
+            c.wear = mean;
+        }
         // the tank is sized to the race (Race::start); a little more on the Attack map
         if (real.on(real.fuel)) c.fuel = fmaxf(0, c.fuel - ds / (tankKmOf(c) * 1000) * consumeScale * (0.6f + 0.4f * c.throttle) * MAP_FUEL[map] / 0.95f);
         c.stint += dt * consumeScale;          // driving time: same clock as fuel and tyres (a tank ~65 min)
@@ -923,6 +1011,7 @@ void Race::endSession() {
 
 void Race::update(float dt, float steer, float throttle, float brake, int shift, bool aiPlayer) {
     sfxEvents.clear();
+    airNow = airTemp(); trackNow = trackTemp();
     autoPlayer = aiPlayer;
     bool clutch = drsPress || shift > 0;          // the launch clutch (standing starts)
     if (launch.state == LS_REV || launch.state == LS_WAIT) { if (drsPress) drsPress = false; if (launch.state == LS_WAIT) shift = 0; }

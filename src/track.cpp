@@ -96,6 +96,23 @@ bool Track::load(const TrackDef* d, bool scenery) {
             pts[i].gravelL = pts[i].gravelR = false;
         }
     }
+    // sausage kerbs: the yellow humps behind the inside kerb of a chicane (a tight bend with the next
+    // one the other way within ~80 m), to stop the cars cutting it. Flat kerbs everywhere else.
+    {
+        int look = (int)(80.0f / step) + 1;
+        for (int i = 0; i < n; i++) {
+            float c = pts[i].curv;
+            pts[i].sausageL = pts[i].sausageR = false;
+            if (fabsf(c) < 1.0f / 75.0f || !pts[i].kerb) continue;
+            bool chicane = false;
+            for (int k = -look; k <= look && !chicane; k++) {
+                float o = pts[(i + k + n) % n].curv;
+                if (o * c < 0 && fabsf(o) > 1.0f / 140.0f) chicane = true;
+            }
+            if (!chicane) continue;
+            if (c > 0) pts[i].sausageL = true; else pts[i].sausageR = true;
+        }
+    }
     // smooth run-off widths so walls don't zig-zag
     for (int pass = 0; pass < 3; pass++) {
         std::vector<TrackPoint> c = pts;
@@ -510,6 +527,21 @@ void Track::buildMesh() {
                     kA = eA + nA * KERB_W; kB = eB + nB * KERB_W;
                     if (side == 0) addQuad(ch, MAT_KERB, kA + up, eA + up, eB + up, kB + up, 0, sA / 6.0f, 1, sB / 6.0f, 0xFFFFFFFF, bins);
                     else addQuad(ch, MAT_KERB, eA + up, kA + up, kB + up, eB + up, 0, sA / 6.0f, 1, sB / 6.0f, 0xFFFFFFFF, bins);
+                    // a sausage kerb: a yellow hump, 35 cm wide and 12 cm high, just behind the kerb
+                    bool saus = side == 0 ? (A.sausageL && B.sausageL) : (A.sausageR && B.sausageR);
+                    if (saus) {
+                        const float SW = 0.35f;
+                        V3 h(0, 0, 0.14f), lo(0, 0, 0.02f);
+                        V3 iA = kA, iB = kB, xA = kA + nA * SW, xB = kB + nB * SW;
+                        u32 yc = RGBA(250, 205, 30), ys = RGBA(200, 150, 20);
+                        if (side == 0) {
+                            addQuad(ch, MAT_LINE, xA + h, iA + h, iB + h, xB + h, 0, 0, 1, 1, yc, bins);       // top
+                            addQuad(ch, MAT_LINE, iA + h, iA + lo, iB + lo, iB + h, 0, 0, 1, 1, ys, bins);     // the face to the road
+                        } else {
+                            addQuad(ch, MAT_LINE, iA + h, xA + h, xB + h, iB + h, 0, 0, 1, 1, yc, bins);
+                            addQuad(ch, MAT_LINE, iA + lo, iA + h, iB + h, iB + lo, 0, 0, 1, 1, ys, bins);
+                        }
+                    }
                 }
                 float wA = side == 0 ? A.outL : A.outR, wB = side == 0 ? B.outL : B.outR;
                 bool gravel = side == 0 ? (A.gravelL || B.gravelL) : (A.gravelR || B.gravelR);

@@ -38,6 +38,11 @@ endurance racing of the original EMR put back. Not for distribution.
   Hypercars: ~500 kW, the hybrid's boost (the LMH's front motor only above 190 km/h), no ABS, a light
   traction control. The LMGT3s: heavier, less downforce, ABS and a firm traction control, steel brakes
   that fade sooner, more forgiving over kerbs. Turbo and naturally aspirated engines pull differently.
+  Since 2.8: a tyre curve that falls off past its peak, each tyre's own wear, tyre pressures that rise with
+  heat, air and track temperatures by the clock (`Race::airTemp` / `trackTemp`), ride height with
+  bottoming, a differential, the LMH's front-axle drive above 190 km/h, regen moving the brake balance,
+  and sausage kerbs at the chicanes. The ride height, differential and pressures (`Chassis`) are saved
+  with the setups (setups.sav EMSU2) and in race saves (version 10).
   AI on Normal against the 2025 poles (after Formula Legends' own per-circuit spread):
 
   | (2025 pole) | Qatar | Imola | Le Mans | Fuji | Bahrain |

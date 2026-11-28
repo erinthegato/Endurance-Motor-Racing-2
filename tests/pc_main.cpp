@@ -1168,6 +1168,12 @@ int main(int argc, char** argv) {
                 gfx::endFrame();
                 char b[96]; snprintf(b, sizeof b, "/vc_%02d_%s.ppm", idx, vw.name);
                 pc::saveShot((out + b).c_str());
+#ifdef EMR_HEADLESS
+                long calls = perfstat::calls, verts = perfstat::verts;
+#else
+                long calls = pc::drawCalls, verts = pc::vertsSent;
+#endif
+                fprintf(stderr, "vitacars %02d %-5s %s: %ld draw calls, %ld vertices\n", idx, vw.name, CARS[idx].id, calls, verts);
             }
         }
         return 0;

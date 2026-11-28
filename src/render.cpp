@@ -603,12 +603,93 @@ void Renderer::drawShadows(const Race& r, const Camera& cam) {
 
 // (the PC) the see-through glass of the cars in view: after everything solid, the farthest first, blended
 // over what's behind it (the cabin, the driver, the far side of the car)
+// ---- tinted glass (see Renderer::queueTintGlass)
+namespace {
+inline float sat(float x) { return x < 0 ? 0 : (x > 1 ? 1 : x); }
+// one glass corner: p camera-relative (the eye at the origin), n its surface's facing
+u32 tintGlassColour(const gfx::Lighting& L, const V3& p, V3 n, int cabin) {
+    float pl = len(p);
+    if (pl < 1e-4f) return RGBA(24, 28, 34);
+    V3 v = p * (1.0f / pl);
+    float nl = len(n);
+    n = nl > 1e-6f ? n * (1.0f / nl) : V3(0, 0, 1);
+    if (dot(n, v) > 0) n = n * -1.0f;                       // (the side we look at)
+    float c = sat(-dot(v, n));
+    float g = 1 - c;
+    float f = 0.16f + 0.64f * g * g;                       // a little straight on, a mirror at a glancing look
+    V3 r = v - n * (2 * dot(v, n));                         // what it reflects
+    V3 zen(L.zenith[0], L.zenith[1], L.zenith[2]);
+    V3 hor = (zen + V3(L.sky[0], L.sky[1], L.sky[2]) * 1.4f) * 0.5f;   // paler at the horizon
+    V3 gnd(L.ground[0] * 0.55f, L.ground[1] * 0.55f, L.ground[2] * 0.55f);
+    V3 sky = r.z >= 0 ? hor + (zen - hor) * sqrtf(sat(r.z * 1.5f)) : hor + (gnd - hor) * sat(-r.z * 5);
+    // the sun's glint
+    V3 s = norm(L.sun);
+    float sd = sat(dot(r, s));
+    float glint = sd * sd; glint *= glint; glint *= glint; glint *= glint;   // (^16)
+    sky = sky + V3(L.sunCol[0], L.sunCol[1], L.sunCol[2]) * (glint * 1.5f);
+    const V3 tint(0.075f, 0.09f, 0.105f);                   // a dark grey-blue cabin
+    float a;
+    V3 col;
+    if (cabin == Renderer::CABIN_FULL) {
+        a = 0.22f + 0.58f * g * g;                          // ~0.2 straight on: the cabin shows through
+        col = tint + (sky - tint) * sat(f / a);
+    } else if (cabin == Renderer::CABIN_HELMET) {
+        a = 0.72f + 0.28f * g * g;
+        col = tint + (sky - tint) * sat(f / a);
+    } else {
+        a = 1;
+        col = tint + (sky - tint) * f;
+    }
+    auto ch = [](float x) { int k = (int)(sat(x) * 255 + 0.5f); return k; };
+    return RGBA(ch(col.x), ch(col.y), ch(col.z), ch(a));
+}
+}
+
+void Renderer::queueTintGlass(const ModelVertex* v, int count, const M4& mm, float d, int cabin) {
+    count -= count % 3;
+    if (!v || count <= 0) return;
+    WorldVertex* w = (WorldVertex*)gfx::frameAlloc(count * (int)sizeof(WorldVertex));
+    if (!w) return;
+    const float k = 1.0f / 32768.0f;
+    for (int i = 0; i < count; i += 3) {
+        V3 p[3];
+        for (int j = 0; j < 3; j++) p[j] = mm.point(V3(v[i + j].x * k, v[i + j].y * k, v[i + j].z * k));
+        V3 n = cross(p[1] - p[0], p[2] - p[0]);            // (the models have no normals: the face's)
+        for (int j = 0; j < 3; j++) w[i + j] = WorldVertex{0, 0, tintGlassColour(glassLight, p[j], n, cabin), p[j].x, p[j].y, p[j].z};
+    }
+    GlassDraw g{nullptr, nullptr, count, M4::identity(), d};
+    g.wv = w;
+    glassQueue.push_back(g);
+}
+
+void Renderer::queueTintGlass(const CarMesh::GlassVert* v, int count, const M4& place, float d, int cabin) {
+    count -= count % 3;
+    if (!v || count <= 0) return;
+    WorldVertex* w = (WorldVertex*)gfx::frameAlloc(count * (int)sizeof(WorldVertex));
+    if (!w) return;
+    for (int i = 0; i < count; i++) {
+        V3 p = place.point(V3(v[i].x, v[i].y, v[i].z));
+        V3 n = place.dir(V3(v[i].nx, v[i].ny, v[i].nz));   // (smooth normals: the curve of the glass shows)
+        w[i] = WorldVertex{0, 0, tintGlassColour(glassLight, p, n, cabin), p.x, p.y, p.z};
+    }
+    GlassDraw g{nullptr, nullptr, count, M4::identity(), d};
+    g.wv = w;
+    glassQueue.push_back(g);
+}
+
 void Renderer::drawGlassQueue() {
     if (glassQueue.empty()) return;
-    std::sort(glassQueue.begin(), glassQueue.end(), [](const GlassDraw& a, const GlassDraw& b) { return a.d > b.d; });
+    std::stable_sort(glassQueue.begin(), glassQueue.end(), [](const GlassDraw& a, const GlassDraw& b) { return a.d > b.d; });
     gfx::setBlend(true); gfx::setDepthWrite(false); gfx::setGlass(true);
     gfx::setMaterial(1.0f, 600);
     for (const GlassDraw& g : glassQueue) {
+        if (g.wv) {
+            // tinted: the vertices' own colours, no picture (drawWorld is never lit)
+            gfx::setGlass(false); gfx::bindTexture(nullptr);
+            gfx::drawWorld(g.wv, g.count, PRIM_TRIANGLES, M4::identity());
+            gfx::setGlass(true);
+            continue;
+        }
         if (g.mesh) { gfx::drawMesh(g.mesh, g.mtex, g.first, g.count, g.mm); continue; }
         gfx::bindTexture(g.tex);
         gfx::drawModel(g.v, g.count, g.mm);
@@ -679,7 +760,8 @@ void Renderer::drawScene(const Race& r, const Camera& cam, bool hidePlayer) {
     gfx::setFog(true, (260 - r.rain * 200) * perf.distance, (FAR_TRACK + 150 - r.rain * 520) * perf.distance, haze);
     gfx::setDepthTest(true); gfx::setDepthWrite(true); gfx::setBlend(false);
     skyNow = skyColour(r);
-    gfx::setLighting(sceneLight(r));
+    glassLight = sceneLight(r);
+    gfx::setLighting(glassLight);
     gfx::setEye(cam.eye);
     if (!sceneLite && !sceneSide) drawShadows(r, cam);      // (the mirrors use the main view's)
     glassQueue.clear();
@@ -919,23 +1001,29 @@ void Renderer::drawCar(const Car& c, const V3& eye, const V3& fwd, float tanH, f
         if (!c.noseOff) part(ps.noseFirst, ps.noseCount);
         if (!c.wingOff) part(ps.wingFirst, ps.wingCount);
     }
+    // through the glass: the cabin -- tub, seat, dash, wheel -- seen from outside (the PC's see-through
+    // glass to 30 m; the tinted glass only standing by the car, 6 m -- the garage, the showroom, not the
+    // chase camera at ~8 m: the tub is ~6700 triangles on the Vita -- and without the steering wheel's 5300)
+    bool seeGlass = gfx::pcGlass() && lod < 2;
+    bool cabin = !inside && lod == 0 && !sceneLite && d < (seeGlass ? 30 : 6) && ps.glassCount;
     if (!inside && ps.glassCount) {
-        if (gfx::pcGlass() && lod < 2)      // (the PC) see-through: drawn after everything solid, far to near
+        if (seeGlass)                       // (the PC) see-through: drawn after everything solid, far to near
             glassQueue.push_back(GlassDraw{m.lod[lod].verts + ps.glassFirst, &m.lod[lod].tex, ps.glassCount, mm, d});
-        else { gfx::setMaterial(1.0f, 600); part(ps.glassFirst, ps.glassCount); }   // the glass: a near mirror
+        else                                // tinted, shaded by the view (also after the solid things)
+            queueTintGlass(m.lod[lod].verts + ps.glassFirst, ps.glassCount, mm, d,
+                           cabin ? CABIN_FULL : (lod < 2 && !sceneLite ? CABIN_HELMET : CABIN_NONE));
     }
     gfx::setMaterial(0.08f, 12);
     // (the PC) the side mirrors' live pictures on the player's car
     if (c.player && mirrorsLive)
         for (int i = 0; i < m.mirrorCount; i++) gfx::drawMirrorGlass(i, place, m.mirror[i]);
-    // (the PC) through the glass: the cabin -- tub, seat, dash, wheel -- seen from outside
-    if (gfx::pcGlass() && !inside && lod == 0 && !sceneLite && d < 30) {
+    if (cabin) {
         int cls = c.def->era % ERA_COUNT;
         const Model& ck = cockpit[cls];
         M4 cab = place * M4::translate(V3(m.cabX, 0, 0));
         if (ck.lodCount) { gfx::bindTexture(&ck.lod[0].tex); gfx::drawModel(ck.lod[0].verts, ck.lod[0].count, ck.matrix(cab)); }
         const Model& sw = steering[cls];
-        if (sw.lodCount) {
+        if (sw.lodCount && seeGlass) {
             M4 wm = cab * M4::translate(COCKPIT[cls].wheel) * M4::rotY(COCKPIT[cls].wheelTilt) * M4::rotX(c.steer * 1.4f);
             gfx::bindTexture(&sw.lod[0].tex); gfx::drawModel(sw.lod[0].verts, sw.lod[0].count, sw.matrix(wm));
         }
@@ -974,6 +1062,8 @@ void Renderer::drawMeshPart(const CarMesh& cm, int lod, int part, const M4& plac
         if (m.flags & CarMesh::MAT_GLASS) {
             if (shadow) continue;
             if (gfx::pcGlass()) { GlassDraw g{nullptr, nullptr, dr.count, place, d}; g.mesh = p.mesh; g.mtex = tex; g.first = dr.first; glassQueue.push_back(g); continue; }
+            // (the Vita) tinted, shaded by the view: the level's interior / helmet seen through it
+            if (dr.gv >= 0) { queueTintGlass(&cm.glassVerts[dr.gv], dr.count, place, d, cm.lod[lod].cabin ? CABIN_FULL : CABIN_NONE); continue; }
             gfx::setMaterial(1.0f, 600);
         } else gfx::setMaterial(m.spec, m.gloss);
         gfx::drawMesh(p.mesh, tex, dr.first, dr.count, place);
@@ -1708,10 +1798,18 @@ void Renderer::drawCarModel(int idx, const M4& place, bool withDriver) {
         const CarMesh& cm = carMesh[idx];
         drawMeshBody(cm, 0, place, CARS[idx].numbers[0], false, false, 5);
         drawMeshWheels(cm, 0, place, 0, 0, 1, CARS[idx].numbers[0], nullptr, nullptr, false);
+        drawGlassQueue();
         return;
     }
     gfx::bindTexture(&m.lod[0].tex);
-    clip::drawModel(m.lod[0].verts, m.lod[0].count, m.matrix(place));
+    const PartSplit& ps = split[idx][0];
+    if (!gfx::pcGlass() && ps.glassCount && ps.glassFirst + ps.glassCount == m.lod[0].count) {
+        // the body, then its glass tinted (a model car: no cabin, the reflection)
+        clip::drawModel(m.lod[0].verts, ps.glassFirst, m.matrix(place));
+        queueTintGlass(m.lod[0].verts + ps.glassFirst, ps.glassCount, m.matrix(place), 5, CABIN_NONE);
+        drawGlassQueue();
+        gfx::bindTexture(&m.lod[0].tex);
+    } else clip::drawModel(m.lod[0].verts, m.lod[0].count, m.matrix(place));
     Car c; c.def = &CARS[idx]; c.number = CARS[idx].numbers[0];
     drawFlap(c, place, true);
     if (withDriver) drawDriver(c, place, 0, true);
@@ -1747,7 +1845,7 @@ void Renderer::drawCarShowroom(int idx, float angle, float x0, float y0, float w
     L.zenith[0] = 0.92f; L.zenith[1] = 0.93f; L.zenith[2] = 0.96f;
     L.shadows = false;
     gfx::setEye(V3(0, 0, 0));
-    gfx::setLighting(L);
+    gfx::setLighting(L); glassLight = L;
     gfx::setLit(true);
     gfx::setMaterial(0.55f, 70);
     if (carMesh[idx].loaded()) {
@@ -1762,7 +1860,7 @@ void Renderer::drawCarShowroom(int idx, float angle, float x0, float y0, float w
     }
     gfx::bindTexture(&m.lod[0].tex);
     const PartSplit& ps = split[idx][0];
-    bool see = gfx::pcGlass() && ps.glassCount;
+    bool see = ps.glassCount > 0;            // (the PC's see-through glass, or the tinted)
     gfx::drawModel(m.lod[0].verts, see ? ps.glassFirst : m.lod[0].count, m.matrix(place));
     gfx::setMaterial(0.08f, 12);
     drawWheels(CARS[idx], place, 0, 0, 0);
@@ -1778,7 +1876,8 @@ void Renderer::drawCarShowroom(int idx, float angle, float x0, float y0, float w
             gfx::bindTexture(&sw.lod[0].tex); gfx::drawModel(sw.lod[0].verts, sw.lod[0].count, sw.matrix(wm));
         }
         glassQueue.clear();
-        glassQueue.push_back(GlassDraw{m.lod[0].verts + ps.glassFirst, &m.lod[0].tex, ps.glassCount, m.matrix(place), 0});
+        if (gfx::pcGlass()) glassQueue.push_back(GlassDraw{m.lod[0].verts + ps.glassFirst, &m.lod[0].tex, ps.glassCount, m.matrix(place), 0});
+        else queueTintGlass(m.lod[0].verts + ps.glassFirst, ps.glassCount, m.matrix(place), 0, CABIN_FULL);
         drawGlassQueue();
     }
     gfx::setLit(false);

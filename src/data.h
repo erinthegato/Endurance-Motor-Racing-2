@@ -111,9 +111,15 @@ struct CarMesh {
     enum { PART_BODY = 0, PART_FL, PART_FR, PART_RL, PART_RR, PART_DOOR_L, PART_DOOR_R, PART_COUNT };
     struct Mat { int tex = -1; float spec = 0.1f, gloss = 12; uint32_t flags = 0; };
     struct Tex { int id = 0; int role = TEX_PLAIN; int arg = 0; int kb = 0; };
-    struct Draw { int mat = 0, first = 0, count = 0; };
+    // gv: a glass group's own copy of its triangles in glassVerts (count of them, from gv), -1 for the rest
+    struct Draw { int mat = 0, first = 0, count = 0; int gv = -1; };
     struct Part { int mesh = 0; int tris = 0; int drawFirst = 0, drawCount = 0; };
-    struct Lod { Part part[PART_COUNT]; int tris = 0; };
+    // cabin: this level has an interior or the driver's helmet to see through the glass
+    struct Lod { Part part[PART_COUNT]; int tris = 0; bool cabin = false; };
+    // the glass's triangles kept in memory (a few hundred): where there is no see-through glass on the GPU
+    // (the Vita), the renderer tints and shades them by the view (Renderer::queueTintGlass)
+    struct GlassVert { float x, y, z; int8_t nx, ny, nz, pad; };
+    std::vector<GlassVert> glassVerts;
     int lodCount = 0;
     Lod lod[4];
     std::vector<Mat> mats;

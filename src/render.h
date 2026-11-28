@@ -19,8 +19,19 @@ struct Renderer {
     bool sceneSide = false;                          // drawScene for a side mirror (PC): the full scene, no new shadow map
     bool mirrorsLive = false;                        // (PC) the player's side mirrors have this frame's pictures
     // (mesh != 0: a Blender car's glass, indices [first, first + count) drawn with texture mtex)
-    struct GlassDraw { const ModelVertex* v; const Texture* tex; int count; M4 mm; float d; int mesh = 0, mtex = 0, first = 0; };
-    std::vector<GlassDraw> glassQueue;               // (PC) see-through glass, drawn after everything solid
+    // (wv: tinted glass, triangles of this frame's camera-relative coloured vertices, see queueTintGlass)
+    struct GlassDraw { const ModelVertex* v; const Texture* tex; int count; M4 mm; float d; int mesh = 0, mtex = 0, first = 0; const WorldVertex* wv = nullptr; };
+    std::vector<GlassDraw> glassQueue;               // see-through and tinted glass, drawn after everything solid
+    // Tinted glass, where the GPU has no see-through glass (the Vita) or the car's level is too plain for it
+    // (the PC's far / mirror cars): each triangle shaded on the CPU by how it faces the view -- the cabin's
+    // dark tint, the sky (or the ground) reflected more at a glancing look -- and blended over whatever is
+    // behind it. cabin: 2 an interior to see, 1 the driver's helmet only (mostly reflection), 0 nothing
+    // (no blending: a dark cabin with the reflection). Queued with the see-through glass: drawn after the
+    // solid things, far to near.
+    enum { CABIN_NONE = 0, CABIN_HELMET = 1, CABIN_FULL = 2 };
+    void queueTintGlass(const ModelVertex* v, int count, const M4& mm, float d, int cabin);
+    void queueTintGlass(const CarMesh::GlassVert* v, int count, const M4& place, float d, int cabin);
+    gfx::Lighting glassLight;                        // the sky the tinted glass reflects (the scene's, the showroom's)
     bool hudLight = false;                           // drawHUD -> drawRaceInfo: the light HUD (no car status panel)
     void drawTelemetry(const Race& r);               // the telemetry HUD's panel (Settings: HUD, or the HUD button)
     bool hudManage = false;                          // drawHUD: managing (the team panel and the controls take the bottom)
@@ -136,7 +147,7 @@ struct Renderer {
     void drawHUD(const Race& r, int mode);
     void drawCarShowroom(int carIdx, float angle, float x0, float y0, float w, float h);
     void drawMap(const Track& t, const Race* r, float x, float y, float size, u32 col);
-    void drawCarAt(const Car& c, const V3& eye, const V3& fwd, float tanH, float tanV) { drawCar(c, eye, fwd, tanH, tanV); }
+    void drawCarAt(const Car& c, const V3& eye, const V3& fwd, float tanH, float tanV) { drawCar(c, eye, fwd, tanH, tanV); drawGlassQueue(); }   // (its glass too)
     // a car at any placement, scaled too (the model cars on the headquarters desk): body, flap, wheels
     void drawCarModel(int idx, const M4& place, bool withDriver);   // (set camRight / camUp first)
     // render_fx.cpp

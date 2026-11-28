@@ -235,40 +235,105 @@ void Renderer::speedShake(const Race& r, const Car& c, float dt, float& sx, floa
     sy = (sinf(t * 27.1f + 0.7f) + 0.6f * sinf(t * 53.7f + 2.9f) + 0.4f * sinf(t * 81.3f + 0.4f)) * 0.5f * shakeAmp;
 }
 
+// Look to apex: the angle (radians, + = left) from the car's heading to the apex of the corner coming
+// up -- the tightest point of the bend within the next couple of seconds, a little inside the line --
+// weighted by how sharp the bend is (nothing on the straights, full by a ~70 m radius) and faded in
+// with speed (no head-turning while crawling in the pits).
+float Renderer::apexTarget(const Race& r, const Car& c, const V3& eye) const {
+    const Track& t = r.track;
+    if (t.n < 4 || t.step <= 0 || c.v < 6) return 0;
+    float look = clampf(c.v * 1.6f + 25, 35, 160);         // how far ahead the driver looks (m)
+    int i0 = (int)(t.wrap(c.s) / t.step), nAhead = (int)(look / t.step);
+    int best = -1; float bc = 0;
+    for (int k = 2; k <= nAhead; k++) {
+        const TrackPoint& p = t.pts[(i0 + k) % t.n];
+        if (fabsf(p.curv) > fabsf(bc)) { bc = p.curv; best = (i0 + k) % t.n; }
+    }
+    if (best < 0 || fabsf(bc) < 1.0f / 600) return 0;
+    const TrackPoint& A = t.pts[best];
+    V3 apex = A.p + A.n * (bc > 0 ? 0.55f * A.hw : -0.55f * A.hw);      // (n points left: + curv = left bend)
+    V3 to = apex - eye; to.z = 0;
+    if (dot(to, to) < 1) return 0;
+    float ang = atan2f(to.y, to.x) - atan2f(c.fwd.y, c.fwd.x);
+    while (ang > 3.14159f) ang -= 6.28318f;
+    while (ang < -3.14159f) ang += 6.28318f;
+    float sharp = clampf((fabsf(bc) - 1.0f / 600) / (1.0f / 70 - 1.0f / 600), 0, 1);
+    float slow = clampf((c.v - 6) / 14, 0, 1);
+    return clampf(ang * 0.55f, -0.33f, 0.33f) * sharp * slow;        // (~19 degrees at most)
+}
+
+// smooth 1-D value noise (cubic between random values on whole numbers): -1..1
+static float vnoise(float x) {
+    auto h = [](int i) { unsigned u = (unsigned)i * 747796405u + 2891336453u; u = ((u >> ((u >> 28) + 4)) ^ u) * 277803737u; u = (u >> 22) ^ u; return (u & 0xFFFF) / 32767.5f - 1; };
+    int i = (int)floorf(x); float f = x - i, w = f * f * (3 - 2 * f);
+    return h(i) + (h(i + 1) - h(i)) * w;
+}
+
 Camera Renderer::camera(const Race& r, int mode, float dt, bool lookBack) {
     const Car& c = r.cars[r.playerIdx];
     Camera cam;
     cam.up = V3(0, 0, 1);
+    if (dt > 0.1f) dt = 0.1f;
     float sx = 0, sy = 0;
     speedShake(r, c, dt, sx, sy);
+    // look to apex (smoothed: a head turning, not a snap)
+    float apexWant = lookApex && !lookBack ? apexTarget(r, c, c.pos) : 0;
+    apexYaw += (apexWant - apexYaw) * (1 - expf(-dt * 3.0f));
     if (mode == CAM_COCKPIT) {
         const CockpitLayout& L = COCKPIT[c.def->era % ERA_COUNT];
         M4 place = M4::basis(c.fwd, c.left, c.up, c.pos);
-        cam.eye = place.point(L.eye + V3(carModel[c.def - CARS].cabX, 0, 0)) + c.up * (sy * 0.006f);
+        // high-speed rumble: a fine buzz through the seat (smooth noise ~14-22 Hz), barely there below
+        // 150 km/h and clear near the top speed, plus the kerbs and the grass
+        float kmh = c.v * 3.6f, hi = clampf((kmh - 140) / 190, 0, 1);
+        float want = rumble ? (0.12f + 0.88f * hi * hi) * clampf(kmh / 140, 0, 1) * (hi > 0 ? 1 : 0.15f) : 0;
+        if (rumble && c.offTrack) want += 0.6f * clampf(c.v / 40, 0, 1);
+        if (rumble) want += clampf((fabsf(c.body.pitchV) + fabsf(c.body.rollV)) * 0.5f, 0, 0.6f) * clampf(c.v / 30, 0, 1);
+        rumbleAmp += (want - rumbleAmp) * (1 - expf(-dt * (want > rumbleAmp ? 12.0f : 4.0f)));
+        float tt = r.time;
+        float ry = vnoise(tt * 17.0f) * 0.6f + vnoise(tt * 23.0f + 40) * 0.4f;
+        float rz = vnoise(tt * 19.0f + 90) * 0.6f + vnoise(tt * 29.0f + 7) * 0.4f;
+        V3 eyeC = place.point(L.eye + V3(carModel[c.def - CARS].cabX, 0, 0));
+        cam.eye = eyeC + c.up * (sy * 0.006f + rz * rumbleAmp * 0.0045f) + c.left * (ry * rumbleAmp * 0.0030f);
         // the head shakes with the car: a small turn of the view (the wheel and dash shake with it)
-        cam.fwd = lookBack ? c.fwd * -1.0f : norm(c.fwd + c.up * (-0.10f + sy * 0.010f) + c.left * (sx * 0.007f));
+        V3 base = lookBack ? c.fwd * -1.0f : norm(c.fwd + c.up * (-0.10f + sy * 0.010f + rz * rumbleAmp * 0.006f) + c.left * (sx * 0.007f + ry * rumbleAmp * 0.004f));
+        // turned toward the apex round the car's up axis
+        float yaw = lookBack ? 0 : apexYaw, cy = cosf(yaw), syw = sinf(yaw);
+        V3 side = cross(c.up, base);
+        V3 f = base * cy + side * syw;
+        cam.fwd = norm(f);
         cam.up = c.up;
         cam.fov = 64 + speedFeel * 9;
         camInit = false;
         return cam;
     }
-    // at speed the camera drops back a little and the view widens (the world rushes past at the edges)
-    float back = (mode == CAM_FAR ? 11.5f : 7.6f) + speedFeel * 1.3f, height = (mode == CAM_FAR ? 3.6f : 2.3f) + speedFeel * 0.2f;
-    V3 flat = norm(V3(c.fwd.x, c.fwd.y, 0));
-    if (lookBack) flat = flat * -1.0f;
-    V3 want = c.pos - flat * back + V3(0, 0, height);
-    if (!camInit || dt <= 0) { camPos = want; camFwd = flat; camInit = true; }
-    float k = 1 - expf(-dt * 9.0f);
-    camPos = camPos + (want - camPos) * k;
-    camFwd = norm(camFwd + (flat - camFwd) * (1 - expf(-dt * 6.0f)));
-    // keep the camera above the ground
-    float gz = c.pos.z + 0.8f;
+    // Chase / far: the camera sits at a fixed distance and height behind the car, on the car's heading
+    // smoothed (frame-rate independent), so it never drops back or loses the car however fast it goes.
+    // Only the heading and the height are smoothed -- never the position itself (a smoothed position
+    // trails the car by speed / rate: ~10 m at 300 km/h, which read as the camera zooming out).
+    float back = mode == CAM_FAR ? 11.5f : 7.6f, height = mode == CAM_FAR ? 3.6f : 2.3f;
+    float carYaw = atan2f(c.fwd.y, c.fwd.x);
+    if (lookBack) carYaw += 3.14159f;
+    bool jump = camInit && (dot(c.pos - camCarLast, c.pos - camCarLast) > 30.0f * 30.0f);   // a reset / the garage / pit exit
+    if (!camInit || dt <= 0 || jump) { camYaw = carYaw; camZ = c.pos.z; camInit = true; }
+    float dyaw = carYaw - camYaw;
+    while (dyaw > 3.14159f) dyaw -= 6.28318f;
+    while (dyaw < -3.14159f) dyaw += 6.28318f;
+    // spinning: follow round slowly (the car spins in front of the camera instead of whipping it round)
+    float ky = c.spinning ? 1.8f : (lookBack ? 30.0f : 7.5f);
+    camYaw += dyaw * (1 - expf(-dt * ky));
+    camZ += (c.pos.z - camZ) * (1 - expf(-dt * 10.0f));
+    camCarLast = c.pos;
+    float yaw = camYaw + apexYaw * 0.3f;
+    V3 dir(cosf(yaw), sinf(yaw), 0);
+    camPos = V3(c.pos.x, c.pos.y, camZ) - dir * back + V3(0, 0, height);
+    camFwd = dir;
+    float gz = c.pos.z + 0.8f;                        // keep the camera above the ground
     if (camPos.z < gz) camPos.z = gz;
-    V3 target = c.pos + flat * 6.0f + V3(0, 0, 0.9f);
-    V3 side = norm(cross(V3(0, 0, 1), flat));
+    V3 target = V3(c.pos.x, c.pos.y, camZ) + dir * 5.0f + V3(0, 0, 0.9f);
+    V3 side = norm(cross(V3(0, 0, 1), dir));
     cam.eye = camPos + side * (sx * 0.035f) + V3(0, 0, sy * 0.030f);
     cam.fwd = norm(target - camPos + V3(0, 0, sy * 0.05f));
-    cam.fov = 56 + speedFeel * 13;
+    cam.fov = 56 + speedFeel * 5;                     // (a touch wider at speed: no zoom-out effect)
     return cam;
 }
 

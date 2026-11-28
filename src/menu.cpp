@@ -1153,7 +1153,7 @@ void Game::screenOptions(Panel& P) {
     header(P, "SETTINGS");
     static const char* PRESET[4] = {"Quality", "Balanced", "Performance", "Custom"};
     static const char* DISTN[3] = {"Far", "Medium", "Near"};
-    char v[22][56];
+    char v[25][56];
     auto vol = [](char* o, const char* name, int x) {
         char bar[12]; for (int i = 0; i < 10; i++) bar[i] = i < x ? '|' : '.'; bar[10] = 0;
         snprintf(o, 56, "%-9s < %s >  %d", name, bar, x);
@@ -1178,10 +1178,12 @@ void Game::screenOptions(Panel& P) {
     snprintf(v[21], 56, "HUD:  < %s >", HUDN[cfg.hudMode]);
     snprintf(v[19], 56, "Rear-view mirror:  < %s >", cfg.mirror ? "On" : "Off");
     snprintf(v[20], 56, "Engineer on a bad day:  < %s >", cfg.swearing ? "Swears" : "Clean");
+    snprintf(v[22], 56, "Look to apex:  < %s >", cfg.lookApex ? "On" : "Off");
+    snprintf(v[23], 56, "Cockpit rumble:  < %s >", cfg.rumble ? "On" : "Off");
     if (optCat < 0) {
         // the categories
         static const char* SUB[OPT_CATS] = {"Volumes, and how the engineer talks on a bad day",
-            "Optimisation, frame rate, draw distance, scenery, effects", "Menus, pit stop camera, steering wheel, HUD, mirror",
+            "Optimisation, frame rate, draw distance, scenery, effects", "Menus, cameras, look to apex, rumble, HUD, mirror",
             "Buttons, steering help, tilt steering", "Temperatures, slipstream, damage, mechanical problems", ""};
         for (int i = 0; i < OPT_CATS; i++) {
             float y = 46 + i * 33;
@@ -1252,7 +1254,7 @@ void Game::screenControls(Panel& P) {
         id == CR_TILTDIR ? "Reversed if turning right steers left" :
         "";
     P.textC(240, 224, tip, DIM, 0.66f);
-    P.textC(240, 238, input::hasTouch() ? "Always: left stick steers, right stick gas / brake, R gas, L brake" : "Always: stick / D-pad steer, R gas, L brake, START pause", DIM, 0.6f);
+    P.textC(240, 238, input::hasTouch() ? "Always: left stick steers, R gas, L brake" : "Always: stick / D-pad steer, R gas, L brake, START pause", DIM, 0.6f);
     P.textC(240, 255, rebinding >= 0 ? "Press the new button for this action" : "X  change     O  back", DIM, 0.72f);
 }
 

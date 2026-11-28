@@ -754,7 +754,7 @@ void Game::update(float dt, const Pad& p) {
             int id = updateWalkHub(dt, p);
             dy = 0; ok = id >= 0; back = id == -2;
             if (ok) sel = id;
-            if (!ok && !back) { if (idle > cfg.attract && !aiDrivesPlayer) { idle = 0; introBegin(1); } break; }
+            if (!ok && !back) { if (cfg.attractOn && idle > cfg.attract && !aiDrivesPlayer) { idle = 0; introBegin(1); } break; }
         } else if (walkMenus && back) { walkList = false; break; }
         if (dy) {
             // TIME TRIAL (id 6) is shown second; the other items keep their ids
@@ -762,7 +762,7 @@ void Game::update(float dt, const Pad& p) {
             sel = TITLE_ORDER[(pos + dy + TITLE_N) % TITLE_N];
         }
         if (back) { screen = SCR_HQ; hqSel = era; t = 0; break; }
-        if (idle > cfg.attract && !aiDrivesPlayer) { idle = 0; introBegin(1); break; }
+        if (cfg.attractOn && idle > cfg.attract && !aiDrivesPlayer) { idle = 0; introBegin(1); break; }
         if (ok || (pressed(p, &Pad::start) && !(walkMenus && !walkList))) {
             t = 0;
             ttMode = sel == 6;
@@ -793,7 +793,7 @@ void Game::update(float dt, const Pad& p) {
         if (walkMenus) { updateWalkHQ(dt, p); break; }      // [walk] the office on foot (walk.cpp)
         // team headquarters: the four eras' cars on the desk
         if (dx) hqSel = (hqSel + dx + ERA_COUNT) % ERA_COUNT;
-        if (idle > cfg.attract && !aiDrivesPlayer) { idle = 0; introBegin(1); break; }
+        if (cfg.attractOn && idle > cfg.attract && !aiDrivesPlayer) { idle = 0; introBegin(1); break; }
         if ((ok || pressed(p, &Pad::start)) && t > 0.3f) { chooseEra(hqSel); screen = SCR_TITLE; sel = 0; t = 0; }   // X picks the class
         else if (back && t > 0.3f) { hqSel = era; screen = SCR_TITLE; sel = 0; t = 0; }                           // O: the main menu, class unchanged
         break;
@@ -1553,7 +1553,10 @@ void Game::updateOptions(const Pad& p, int dx, int dy, bool ok, bool back) {
             case 12: cfg.autoQuality = !cfg.autoQuality; if (!cfg.autoQuality) autoLevel = 0; break;
             case 14: cfg.pitCam ^= 1; break;
             case 20: cfg.swearing = !cfg.swearing; break;
-            case 13: cfg.attract += dx * 5; if (cfg.attract < 5) cfg.attract = 5; if (cfg.attract > 30) cfg.attract = 30; break;
+            case 13:                                       // Off, then on after 5 .. 30 s
+                if (!cfg.attractOn) { if (dx > 0) { cfg.attractOn = true; cfg.attract = 5; } }
+                else { cfg.attract += dx * 5; if (cfg.attract < 5) { cfg.attract = 5; cfg.attractOn = false; } if (cfg.attract > 30) cfg.attract = 30; }
+                break;
         }
         if (custom) { cfg.preset = 3; autoLevel = 0; }      // the player's own choice: start again from it
         if (id == 5) autoLevel = 0;

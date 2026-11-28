@@ -1269,7 +1269,8 @@ void Game::screenOptions(Panel& P) {
     snprintf(v[10], 56, "Smoke, spray, rain:  < %s >", cfg.effects3d ? "Full" : "Reduced");
     snprintf(v[11], 56, "Show frame rate:  < %s >", cfg.showFps ? "On" : "Off");
     snprintf(v[12], 56, "Auto quality:  < %s >", cfg.autoQuality ? (autoLevel ? "On (lowered)" : "On") : "Off");
-    snprintf(v[13], 56, "Attract screen after:  < %d s >", cfg.attract);
+    if (cfg.attractOn) snprintf(v[13], 56, "Attract screen:  < On, after %d s >", cfg.attract);
+    else snprintf(v[13], 56, "Attract screen:  < Off >");
     snprintf(v[14], 56, "Pit stop camera:  < %s >", cfg.pitCam ? "Your camera" : "Cinematic");
     snprintf(v[15], 56, "Controls...");   // (not a row now: a category)
     snprintf(v[16], 56, "Back");

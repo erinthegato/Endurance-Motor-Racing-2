@@ -400,7 +400,7 @@ void Game::updateWalkHQ(float dt, const Pad& p) {
         return;
     }
     if (pressed(p, &Pad::circle) && hqChosen) { screen = SCR_TITLE; sel = 0; t = 0; walkList = false; walker.scene = -1; return; }
-    if (idle > cfg.attract && !aiDrivesPlayer) { idle = 0; introBegin(1); }
+    if (cfg.attractOn && idle > cfg.attract && !aiDrivesPlayer) { idle = 0; introBegin(1); }
 }
 
 void Game::drawWalkHQ(const V3& eye, const V3& fwd) {

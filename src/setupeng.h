@@ -43,7 +43,31 @@ struct Lap {
     float braking = 0;
     float kerbHop = 0;        // light over the kerbs and bumps (lost load at speed)
     float tyreT = 0;          // average tyre temperature, deg C
+    // for the strategy (the race model's own terms, measured over the lap's distance):
+    float fuelK = 1;          // fuel use against flat-out-everywhere: 0.6 + 0.4 x throttle, x the engine map
+    float abuseK = 1;         // tyre wear factor: 1 + 1.5 x sliding, x hot tarmac
+    int tyre = TY_MEDIUM;     // the compound the lap was driven on
 };
+
+// The race strategy she works out from the practice / qualifying laps (or from the car and the circuit
+// before there are any): how long a stint lasts on a tank, what the tyres take, how many stops, when
+// the drivers must change; and the four pit plans filled in to match
+struct Strategy {
+    int dataLaps = 0;         // clean laps it is based on (0: the defaults)
+    float lapTime = 0;        // s
+    float raceLaps = 0;       // laps the race will run (about)
+    float fuelLap = 0;        // tank fraction per lap in the race
+    int stintLaps = 0;        // laps on a full tank
+    float stintMin = 0;       // real minutes of a stint
+    int stops = 0;
+    int dryTyre = TY_MEDIUM;  // the softest dry compound that does a full stint
+    bool doubleOk = false;    // its tyres last two stints
+    int changeEvery = 1;      // a driver change every this many stints (the 4 h stint limit)
+    float pitLoss = 0;        // s lost by a stop (lane + work)
+    PitPlan plan[4];          // 1 standard stop, 2 double stint (fuel only), 3 driver change, 4 wet
+    char line[3][72] = {"", "", ""};   // the summary on the monitor (and what she says)
+};
+Strategy strategy(const Race& r);
 
 struct Report {
     int laps = 0;             // clean laps the report is based on
@@ -63,6 +87,7 @@ const char* clip(Sug s);
 const char* obsText(Obs o);
 const char* obsClip(Obs o);
 int cleanLaps();
+bool lapClean();          // the lap being driven still counts (no pit, spin or running wide)
 
 // the conversation in the garage
 struct Ui {
@@ -76,7 +101,10 @@ struct Ui {
     float gap = 0, holdT = 0;
     bool closing = false;
     float lineT = 0;          // seconds into the line being said
-    void ask(const CarSetup& su, int tyre, bool sealed = false);
+    char own[2][96] = {"", ""};   // her lines with numbers in them (subtitles only: no clip says them)
+    void ask(const CarSetup& su, int tyre, bool sealed = false, const Strategy* st = nullptr);
+    void tell(const char* subtitle);   // a subtitle-only line, after what is queued
+    void announce(const char* subtitle);   // a new conversation of one subtitle-only line
     void update(float dt);
     bool pending() const { return offer; }
     bool accept(CarSetup& su);    // X: apply the suggestion; false if nothing applied

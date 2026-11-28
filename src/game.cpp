@@ -1471,9 +1471,10 @@ void Game::draw() {
                 char b[96], tm[24], best[16];
                 formatTime(best, c.bestLap);
                 if (race.session != SES_RACE) {
-                    if (c.bestLap <= 0) strcpy(tm, "no time");
+                    if (c.bestLap <= 0) strcpy(tm, c.pit == PIT_STOP ? "garage" : "no time");
                     else if (&c == lead) formatTime(tm, c.bestLap);
                     else snprintf(tm, sizeof tm, "+%.3f", c.bestLap - lead->bestLap);
+                    if (c.bestLap > 0 && c.pit == PIT_STOP) { size_t l = strlen(tm); snprintf(tm + l, sizeof tm - l, " gar"); }
                 } else if (c.rel.retired) snprintf(tm, sizeof tm, "DNF %s", RETIRE_SHORT[c.rel.cause < 0 ? MF_COUNT : c.rel.cause]);
                 else if (&c == lead) formatTime(tm, c.finishTime - race.greenTime);
                 else if (c.finished && c.lap == lead->lap) { float g = c.finishTime + c.penalty - lead->finishTime - lead->penalty; snprintf(tm, sizeof tm, "+%.3f", g); }

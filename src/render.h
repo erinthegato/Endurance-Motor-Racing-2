@@ -82,6 +82,8 @@ struct Renderer {
     int carsDrawn = 0;            // (perf) car bodies drawn this frame
     int carsLoadedCount() const { int n = 0; for (int i = 0; i < 48; i++) n += carLoaded[i] ? 1 : 0; return n; }
     void freeCarsExcept(int keep);   // the menus: one car only
+    bool carHasDoors(int idx) const { return idx >= 0 && idx < 48 && carLoaded[idx] && carMesh[idx].loaded() && carMesh[idx].doorCount > 0; }
+    void prewarmCars(const Race& r); // every car's textures up to the GPU now (behind a title card), not on the first frame it is seen
     std::vector<WorldVertex> pitVerts; V3 pitOrigin;
     int scModel = -1;
     Texture puff;                    // soft round blob for smoke, spray and lights

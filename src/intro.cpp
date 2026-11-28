@@ -104,6 +104,7 @@ void Game::introBegin(int script) {
     // level 3) -- it is a show reel, it must hold 60 fps; the player's settings come back at the end
     if (introLite) cfg.apply(autoLevel > 3 ? autoLevel : 3);
     introShot = -1; introBlock = -1; introPendingBlock = -1; introCardFrames = 0;
+    introWarmBlock = -1;
     introLoadBlock(sc.shots[0].block);           // the first circuit loads before the music starts
     // the attract movie loops with its music (the file plays round again without a gap)
     sound::musicFile(sc.music, !sc.loop);
@@ -447,10 +448,24 @@ static void bigText(Renderer& R, float cx, float y, const char* s, u32 col, floa
 void Game::drawIntro() {
     float p = introPos;
     const u32 BLACK = RGBA(0, 0, 0);
+    // The first frame drawn on a newly loaded circuit uploads its textures and vertex copies (the
+    // Vita unswizzles every car texture and builds its mipmaps then): a long frame, the lag at each cut.
+    // Done here instead, behind a title card (which then covers it): the card holds still meanwhile.
+    auto warm = [&]() {
+        if (!raceLoaded || introPendingBlock >= 0 || introWarmBlock == introBlock) return;
+        introWarmBlock = introBlock;
+        R.prewarmCars(race);
+        const Car& me = race.player();
+        Camera c; c.eye = me.pos - me.fwd * 9.0f + V3(0, 0, 3.0f); c.fwd = me.fwd; c.up = V3(0, 0, 1); c.fov = 60;
+        R.drawScene(race, c, false);
+        gfx::setDepthTest(false); gfx::setBlend(false);
+        gfx::drawFill2D(0, 0, SCREEN_W, SCREEN_H, BLACK);
+    };
     // ---- 0 .. first big hit: CODE 4 STUDIOS, flashing on the opening beats
     if ((p < introBeat0 - 0.02f || introShot < 0) && !SCRIPTS[curScript].logo) { gfx::beginFrame(BLACK); finishFrame(); return; }
     if (p < introBeat0 - 0.02f || introShot < 0) {
         gfx::beginFrame(BLACK);
+        warm();                                   // (the boot intro: its first circuit, behind the logo)
         gfx::setDepthTest(false); gfx::setBlend(true);
         // a strobe on the music's beats (0.24 s + n x 0.482 s) that quickens: bars, half bars, then every
         // beat into the first big hit, where the name holds and burns out to white
@@ -477,6 +492,7 @@ void Game::drawIntro() {
     // ---- a text card (the attract movie's opening)
     if (S.type == SH_TEXT) {
         gfx::beginFrame(BLACK);
+        warm();
         gfx::setDepthTest(false); gfx::setBlend(true);
         float in = sstep(0, 0.6f, st);
         float beatPh = fmodf(fmaxf(st, 0), introPeriod) / introPeriod;
@@ -493,6 +509,7 @@ void Game::drawIntro() {
     if (S.type == SH_CARD || introPendingBlock >= 0) {
         const Block& B = BLOCKS[S.block];
         gfx::beginFrame(BLACK);
+        warm();
         gfx::setDepthTest(false); gfx::setBlend(true);
         float beatPh = fmodf(st, introPeriod) / introPeriod;
         int bg = (int)(60 * (1 - beatPh));

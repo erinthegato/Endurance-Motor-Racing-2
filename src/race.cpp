@@ -1177,6 +1177,7 @@ void Race::update(float dt, float steer, float throttle, float brake, int shift,
             }
             c.lapStart = time;
             c.lap = lapsAfter;
+            if (!c.player && session != SES_RACE) practiceRunLap(c);
             if (c.driveThrough && --c.dtLaps <= 0 && c.pit == PIT_NONE) {
                 c.driveThrough = false; c.penalty += 30;
                 if (c.player) message("Drive-through not served: +30 s", RGBA(255, 90, 60), RADIO_PENALTY);

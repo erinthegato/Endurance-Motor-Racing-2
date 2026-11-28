@@ -208,12 +208,14 @@ struct Game {
     void pitPlanApply();                           // at the box: the chosen plan, the car released
     void radioTick();
     void walkPitBegin(bool climbOut);    // [walk] on foot in our garage (public for the tests)
+    int walkSightBlocked() const;        // (tests) sight lines to our garage's monitors through furniture
     void leaveRace();                    // back to the menus: the race and its cars go (public for the tests)
 #if PLATFORM_VITA
     bool introLite = true;               // the attract movie: six cars, reduced detail (the tests can turn it on)
 #else
     bool introLite = false;
 #endif
+    int introWarmBlock = -1;             // the attract movie's circuit whose textures are already on the GPU
 private:
     void update(float dt, const Pad& pad);
     void updateRace(float dt, const Pad& p);

@@ -300,7 +300,7 @@ void Game::drawGarageDesk(int which, const V3& pos, const V3& facing, const V3& 
             p.textC(bx + 32, by + 2, b, i == planEdit ? INK : WHITE, 0.8f);
         }
         const PitPlan& q = pitPlans[planEdit];
-        char v[7][64];
+        char v[8][64];
         snprintf(v[0], 64, "Plan %d  (the %s corner)", planEdit + 1, PLAN_CORNER[planEdit]);
         snprintf(v[1], 64, "Tyres  < %s >", q.tyres ? TYRE_NAME[q.tyre] : "stay on");
         if (raceLoaded && !race.ep().refuel) snprintf(v[2], 64, "Fuel  (no refuelling)");
@@ -309,14 +309,24 @@ void Game::drawGarageDesk(int which, const V3& pos, const V3& facing, const V3& 
         if (q.swapDriver && raceLoaded) { char dn[24]; Race::driverName(race.player(), q.nextDriver, dn, sizeof dn); snprintf(v[4], 64, "Driver  < change to %s >", dn); }
         else snprintf(v[4], 64, "Driver  < stay in >");
         snprintf(v[5], 64, "In use  < %s >", pitPlanSet[planEdit] ? "yes" : "no (empty)");
-        snprintf(v[6], 64, "Done");
-        for (int r = 0; r < 7; r++) {
-            float y = 56 + r * 19;
-            if (r == planRow) p.fill(10, y - 2, p.vw - 20, 16, RGBA(255, 150, 40, 230));
-            p.textC(p.vw / 2, y, v[r], r == planRow ? INK : (r >= 1 && r <= 4 && !pitPlanSet[planEdit] ? DIM : WHITE), 0.7f);
+        snprintf(v[6], 64, "Let the engineer decide");
+        snprintf(v[7], 64, "Done");
+        for (int r = 0; r < 8; r++) {
+            float y = 52 + r * 16;
+            if (r == planRow) p.fill(10, y - 2, p.vw - 20, 15, RGBA(255, 150, 40, 230));
+            u32 col = r == planRow ? INK : (r >= 1 && r <= 4 && !pitPlanSet[planEdit] ? DIM : (r == 6 ? RGBA(150, 210, 255) : WHITE));
+            p.textC(p.vw / 2, y, v[r], col, 0.66f);
         }
-        p.textC(p.vw / 2, 192, "In the race: touch a corner to call that plan, again to call it off", DIM, 0.5f);
-        p.textC(p.vw / 2, 210, "UP/DOWN  row   LEFT/RIGHT  change   X  select   O  back", DIM, 0.56f);
+        // the setup engineer's strategy (from the laps so far, or her estimate)
+        if (raceLoaded) {
+            setupeng::Strategy st = setupeng::strategy(race);
+            p.fill(10, 179, p.vw - 20, 1, RGBA(60, 70, 90));
+            p.textC(p.vw / 2, 182, st.line[0], RGBA(150, 210, 255), 0.52f);
+            char l2[150]; snprintf(l2, sizeof l2, "%s  |  %s", st.line[1], st.line[2]);
+            p.textC(p.vw / 2, 193, l2, RGBA(150, 210, 255), 0.46f);
+        }
+        p.textC(p.vw / 2, 205, "In the race: touch a corner to call that plan, again to call it off", DIM, 0.44f);
+        p.textC(p.vw / 2, 216, "UP/DOWN  row   LEFT/RIGHT  change   X  select   O  back", DIM, 0.5f);
     } else if (!live || which == 2) {
         p.textC(p.vw / 2, p.vh / 2 - 34, TITLE[which], WHITE, 1.3f);
         if (which == 2) {
@@ -806,6 +816,7 @@ void Game::screenTiming(Panel& P) {
                        else snprintf(b, sizeof b, "+%.1f", gap); }
                 P.textR(tx + 158, yy - 1, c->pit != PIT_NONE ? "PIT" : b, c->pit != PIT_NONE ? DIM : col, 0.5f);
             } else if (c->bestLap > 0) {
+                if (c->pit != PIT_NONE) P.textR(tx + 112, yy, c->pit == PIT_STOP ? "garage" : "pit", DIM, 0.42f);
                 if (k == 0 || lead <= 0) { formatTime(t2, c->bestLap); P.textR(tx + 158, yy - 1, t2, col, 0.5f); }
                 else { snprintf(b, sizeof b, "+%.3f", c->bestLap - lead); P.textR(tx + 158, yy - 1, b, col, 0.5f); }
             } else P.textR(tx + 158, yy - 1, c->pit == PIT_STOP ? "garage" : "no time", DIM, 0.5f);
@@ -838,6 +849,7 @@ void Game::screenTiming(Panel& P) {
         snprintf(b, sizeof b, "%d", pos); P.textR(tx + 12, yy - 1, b, DIM, 0.5f);
         snprintf(b, sizeof b, "#%d %s", c->number, c->def->make); P.text(tx + 16, yy - 1, b, col, 0.5f);
         if (c->bestLap > 0) {
+            if (c->pit != PIT_NONE) P.textR(tx + 112, yy, c->pit == PIT_STOP ? "garage" : "pit", DIM, 0.42f);
             if (pos == 1 || leadBest[cls] <= 0) { formatTime(t2, c->bestLap); P.textR(tx + 158, yy - 1, t2, col, 0.5f); }
             else { snprintf(b, sizeof b, "+%.3f", c->bestLap - leadBest[cls]); P.textR(tx + 158, yy - 1, b, col, 0.5f); }
         } else P.textR(tx + 158, yy - 1, c->pit == PIT_STOP ? "garage" : "no time", DIM, 0.5f);
@@ -856,7 +868,7 @@ int Game::updateSetup(int dx, int dy, bool ok, bool back, bool trackGarage) {
     Chassis& ch = race.playerChassis;
     bool pf = parcFerme();
     // the setup engineer (practice / qualifying): X asks; her suggestion waits for X apply / O ignore (Game::update)
-    if (ok && trackGarage && setupSel == SR_ASK && !engUi.pending()) { engUi.ask(su, su.tyre, pf); return 0; }
+    if (ok && trackGarage && setupSel == SR_ASK && !engUi.pending()) { setupeng::Strategy st = setupeng::strategy(race); engUi.ask(su, su.tyre, pf, &st); return 0; }
     if (dx) {
         auto step = [&](int& v, int d, int lo, int hi) { v += d; if (v < lo) v = lo; if (v > hi) v = hi; };
         switch (setupSel) {

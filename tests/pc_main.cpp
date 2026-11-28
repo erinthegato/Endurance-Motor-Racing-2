@@ -512,6 +512,7 @@ int main(int argc, char** argv) {
             if (pc::mixFn) { std::vector<int16_t> b(735 * 2); pc::mixFn(b.data(), 735); }
             if (g.introBlock != lastBlock) { loads++; lastBlock = g.introBlock; loadMs += g.lastUpdMs; loadMax = std::max(loadMax, g.lastUpdMs); continue; }
             if (g.lastUpdMs > 16.7) slow++;
+            if (g.lastDrawMs > 400) printf("attractperf: long frame %d: draw %.0f ms, update %.0f ms, shot %d, music %.2f s\n", f, g.lastDrawMs, g.lastUpdMs, g.introShot, g.introPos);
             if (f < 10) continue;
             up += g.lastUpdMs; dr += g.lastDrawMs; upMax = std::max(upMax, g.lastUpdMs); drMax = std::max(drMax, g.lastDrawMs);
             calls += perfstat::calls; verts += perfstat::verts; cars += g.R.carsDrawn; held += g.R.carsLoadedCount(); heldMax = std::max(heldMax, g.R.carsLoadedCount()); n++;
@@ -520,6 +521,81 @@ int main(int argc, char** argv) {
         printf("attractperf: %d frames: update %.2f ms (max %.2f), draw %.2f ms (max %.2f), calls %.0f, verts %.0f, cars drawn %.1f, cars loaded %.1f (max %d), circuit loads %d (%.0f ms, longest %.0f ms), updates over 16.7 ms %d, field %d cars, heap %.1f MB\n",
                n, up / n, upMax, dr / n, drMax, calls / n, verts / n, cars / n, held / n, heldMax, loads, loadMs, loadMax, slow, (int)g.race.cars.size(), sys::memUsedKB() / 1024.0);
         return 0;
+    }
+    if (mode == "garagesight") {   // garagesight: our garage on every circuit and class: the monitors' sight lines clear
+        int bad = 0;
+        for (int tr = 0; tr < TRACK_COUNT; tr++) for (int era = 0; era < ERA_COUNT; era++) {
+            g.set.track = tr; g.set.car = eraFirstCar(era) + (tr % TEAMS_PER_ERA); g.set.weekend = true; g.set.sessionMin = 30; g.walkMenus = true;
+            g.startRace();
+            for (int i = 0; i < 10; i++) { Pad q{}; g.frame(1.0f / 30, q); }
+            if (g.screen != SCR_WALK) { printf("garagesight: %s era %d not on foot (screen %d)\n", TRACKS[tr].id, era, (int)g.screen); bad++; continue; }
+            int b = g.walkSightBlocked();
+            if (b) { printf("garagesight: FAIL %s era %d: %d blocked\n", TRACKS[tr].id, era, b); bad++; }
+            g.leaveRace(); g.screen = SCR_TITLE;
+        }
+        printf("garagesight: %s\n", bad ? "FAIL" : "ok");
+        return bad ? 1 : 0;
+    }
+    if (mode == "practiceruns") {
+        // practiceruns <track id> [outdir]: practice then qualifying (30 min each), the player in the garage.
+        // The AI must come and go: runs of an out lap, 2-5 flying laps (some long runs in practice), an
+        // in lap, minutes in the garage; qualifying few out early, a rush late. Screenshots of the timing.
+        std::string tid = argc > 2 ? argv[2] : "spa";
+        std::string out = argc > 3 ? argv[3] : "";
+        for (int i = 0; i < TRACK_COUNT; i++) if (tid == TRACKS[i].id) g.set.track = i;
+        g.set.car = 0; g.set.opponents = 19; g.set.weekend = true; g.set.sessionMin = 30; g.walkMenus = true;
+        int bad = 0;
+        for (int ses = 0; ses < 2; ses++) {
+            if (ses == 0) g.startRace(); else { g.leaveRace(); g.startSession(SES_QUALI); }
+            for (int i = 0; i < 10; i++) { Pad q{}; g.frame(1.0f / 30, q); }
+            Race& r = g.race;
+            int n = (int)r.cars.size();
+            std::vector<int> runs(n, 0), wasStop(n, 1); std::vector<int> lapsAtOut(n, 0); std::vector<std::vector<int>> runLaps(n);
+            int samples = 0, minOut = 99, maxOut = 0, outEarly = 0, outLate = 0, nEarly = 0, nLate = 0; double outSum = 0;
+            bool shotTaken = false;
+            float L = r.sessionLength;
+            for (float t = 0; t < L - 5; t += 1.0f / 30) {
+                r.update(1.0f / 30, 0, 0, 0, 0, false); r.sfxEvents.clear();
+                for (int k = 0; k < n; k++) {
+                    const Car& c = r.cars[k]; if (c.player) continue;
+                    int st = c.pit == PIT_STOP ? 1 : 0;
+                    if (wasStop[k] && !st) { runs[k]++; lapsAtOut[k] = c.lap; }
+                    if (!wasStop[k] && st) runLaps[k].push_back(c.lap - lapsAtOut[k]);
+                    wasStop[k] = st;
+                }
+                if (fmodf(t, 10.0f) < 1.0f / 30) {
+                    int outN = 0; for (const Car& c : r.cars) if (!c.player && c.pit != PIT_STOP) outN++;
+                    if (t > 300) { samples++; outSum += outN; minOut = std::min(minOut, outN); maxOut = std::max(maxOut, outN); }
+                    if (t < L * 0.3f) { outEarly += outN; nEarly++; } else if (t > L * 0.7f) { outLate += outN; nLate++; }
+                }
+                if (!shotTaken && !out.empty() && t > L * (ses == 0 ? 0.45f : 0.8f)) {
+                    shotTaken = true;
+                    // the timing on the session monitor (at its desk)
+                    for (auto& s2 : g.walker.stations) if (s2.id == WST_SESSION) { g.walker.x = s2.x; g.walker.y = s2.y; }
+                    g.screen = SCR_WALK;
+                    for (int i = 0; i < 3; i++) { Pad q{}; g.frame(1.0f / 30, q); }
+                    press(g, &Pad::cross);
+                    for (int i = 0; i < 25; i++) { Pad q{}; g.frame(1.0f / 30, q); }
+                    press(g, &Pad::right);                         // the TIMING tab
+                    for (int i = 0; i < 5; i++) { Pad q{}; g.frame(1.0f / 30, q); }
+                    shot(g, out + (ses == 0 ? "/g_timing_practice.ppm" : "/g_timing_quali.ppm"));
+                    press(g, &Pad::circle);
+                    for (int i = 0; i < 10; i++) { Pad q{}; g.frame(1.0f / 30, q); }
+                }
+            }
+            int totalRuns = 0, noRun = 0, lapsN = 0; double lapsSum = 0; int longRuns = 0;
+            for (int k = 0; k < n; k++) { if (r.cars[k].player) continue; totalRuns += runs[k]; if (!runs[k]) noRun++;
+                for (int l : runLaps[k]) { lapsSum += l; lapsN++; if (l >= 7) longRuns++; } }
+            float avgOut = samples ? (float)(outSum / samples) : 0, early = nEarly ? (float)outEarly / nEarly : 0, late = nLate ? (float)outLate / nLate : 0;
+            printf("practiceruns %s %s: %d AI cars, runs %d (%d cars never out), laps per run %.1f (long runs %d), cars out after 5 min: avg %.1f min %d max %d; first 30%% %.1f, last 30%% %.1f\n",
+                   tid.c_str(), ses ? "quali" : "practice", n - 1, totalRuns, noRun, lapsN ? lapsSum / lapsN : 0, longRuns, avgOut, minOut, maxOut, early, late);
+            int ai = n - 1;
+            if (ses == 0 && (totalRuns < ai * 1.4f || avgOut > ai * 0.75f || minOut >= ai || noRun > 0)) { bad++; printf("practiceruns: FAIL practice\n"); }
+            if (ses == 1 && !(late > early * 1.3f)) { bad++; printf("practiceruns: FAIL qualifying has no late rush\n"); }
+            if (lapsN && (lapsSum / lapsN < 3 || lapsSum / lapsN > 9)) { bad++; printf("practiceruns: FAIL run length\n"); }
+        }
+        printf("practiceruns: %s\n", bad ? "FAIL" : "ok");
+        return bad ? 1 : 0;
     }
     if (mode == "memcycle") {
         // memcycle [rounds]: menu -> attract -> menu -> race -> menu, many times. The heap must come
@@ -631,6 +707,29 @@ int main(int argc, char** argv) {
         press(g, &Pad::cross); settle(40);
         fprintf(stderr, "careereng: focus %d open %d sub \"%s\" pending %d\n", g.walkFocus, (int)g.engUi.open, g.engUi.sub, (int)g.engUi.pending());
         shot(g, out + "/careereng_talk.ppm");
+        press(g, &Pad::circle);
+        for (int i = 0; i < 30 * 20 && (g.engUi.open || g.walkFocus >= 0); i++) { Pad q{}; if (i % 60 == 59) q.circle = true; g.frame(1.0f / 30, q); }
+        // the PIT PLANS desk: walking up to it (nothing in the way), then the engineer decides the plans
+        for (auto& s2 : g.walker.stations) if (s2.id == WST_PLANS && s2.labelZ < 3) { g.walker.place(s2.x - 0.6f, s2.y - 3.0f, 0); g.walker.camYaw = 1.5708f; }
+        settle(10); shot(g, out + "/g_pitplans_approach.ppm");
+        for (auto& s2 : g.walker.stations) if (s2.id == WST_PLANS && s2.labelZ < 3) { g.walker.place(s2.x, s2.y, 0); g.walker.camYaw = 1.5708f; }
+        settle(5); press(g, &Pad::cross); settle(30);
+        for (int i = 0; i < 6; i++) press(g, &Pad::down);
+        press(g, &Pad::cross); settle(20);
+        fprintf(stderr, "careereng: plans focus %d, plan 1: tyre %d tyres %d fuel %.2f; plan 3 swap %d; engineer says \"%s\"\n", g.walkFocus,
+                g.pitPlans[0].tyre, (int)g.pitPlans[0].tyres, g.pitPlans[0].fuel, (int)g.pitPlans[2].swapDriver, g.engUi.sub);
+        shot(g, out + "/g_pitplans_strategy.ppm");
+        bool plansOk = g.pitPlanSet[0] && g.pitPlanSet[3] && g.pitPlans[3].tyre == TY_INTER && !g.pitPlans[1].tyres && g.pitPlans[2].swapDriver;
+        if (!plansOk) fprintf(stdout, "careereng: FAIL the engineer's plans\n");
+        press(g, &Pad::circle); settle(20);
+        // out of the garage: the 10 s handover countdown
+        for (auto& s2 : g.walker.stations) if (s2.id == WST_CAR) { g.walker.place(s2.x, s2.y, 0); }
+        settle(5); press(g, &Pad::cross);
+        for (int i = 0; i < 30 * 6 && !(g.screen == SCR_RACE && g.race.handing() && g.race.handover < 7.5f); i++) { Pad q{}; g.frame(1.0f / 30, q); }
+        fprintf(stderr, "careereng: screen %d handing %d countdown %.1f\n", (int)g.screen, (int)g.race.handing(), g.race.handover);
+        shot(g, out + "/g_countdown.ppm");
+        if (!g.race.handing()) { fprintf(stdout, "careereng: FAIL no handover countdown\n"); plansOk = false; }
+        if (!plansOk) return 1;
         fprintf(stdout, "careereng: %s (%d clean laps, first: %s)\n", rp.laps >= 2 ? "ok" : "FAIL", rp.laps, setupeng::text(rp.sug[0]));
         return rp.laps >= 2 ? 0 : 1;
     }
@@ -895,6 +994,9 @@ int main(int argc, char** argv) {
         settle(40);
         fprintf(stderr, "practice: screen %d (on foot %d)\n", (int)g.screen, (int)SCR_WALK);
         if (g.screen != SCR_WALK) return 1;
+        {   int blocked = g.walkSightBlocked();
+            fprintf(stderr, "garage sight lines: %d blocked (%s)\n", blocked, blocked ? "FAIL" : "ok");
+            if (blocked) return 1; }
         shot(g, out + "/walk_garage_start.ppm");
         auto st = [&](int id) { for (auto& s2 : g.walker.stations) if (s2.id == id) return s2; return g.walker.stations[0]; };
         WalkStation su = st(WST_SETUP), pl = st(WST_PLANS), car = st(WST_CAR), se = st(WST_SETUPENG);

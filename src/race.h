@@ -125,6 +125,7 @@ struct Car {
     bool finished = false; float finishTime = 0;
     int position = 0, lastPos = 0;
     float startDelay = 0;         // Le Mans start: driver running to the car
+    int runLaps = 0, runPlan = 0; // practice / qualifying (the AI): laps done on this run, flying laps it will do
     // tyres, fuel, drivers
     int tyre = TY_MEDIUM; float wear = 0;
     void coldTyres() { for (float& t : tyreT) t = 45; for (float& w : tyreWear) w = 0; rel.flat = -1; }   // a fresh set straight from the rack
@@ -413,6 +414,9 @@ struct Race {
     void toGarage();                            // put the player's car straight back in its garage
     void leaveGarage(const CarSetup& su);       // ... and send it out (pushed out, then the pit lane)
     void flyingLap(const CarSetup& su);         // ... or straight onto a flying lap
+    void practiceRunLap(Car& c);                // (the AI, practice / qualifying) a lap done: in to the garage after its run?
+    float garageSpell(const Car& c) const;      // how long the AI sits in its garage between runs (s)
+    void planRun(Car& c);                       // the flying laps of the AI's next run
     void garageCar(Car& c, int phase, float delay);
     float garageD() const { return boxD + 9.0f; }
     bool inGarage() const { return session != SES_RACE && player().pit == PIT_STOP && player().pitPhase == -2; }

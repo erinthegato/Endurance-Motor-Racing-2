@@ -240,6 +240,16 @@ void Renderer::freeCarsExcept(int keep) {
     if (ghostFor >= 0 && ghostFor != keep) { ghostFor = -1; std::vector<ModelVertex>().swap(ghostVerts); }
 }
 
+void Renderer::prewarmCars(const Race& r) {
+    for (const Car& c : r.cars) {
+        int idx = (int)(c.def - CARS);
+        if (idx < 0 || idx >= CAR_COUNT || !carLoaded[idx]) continue;
+        const Model& m = carModel[idx];
+        for (int i = 0; i < m.lodCount; i++) gfx::bindTexture(&m.lod[i].tex);
+    }
+    gfx::bindTexture(nullptr);
+}
+
 void Renderer::freeCars() {
     ghostFor = -1; std::vector<ModelVertex>().swap(ghostVerts);
     crewPalCount = 0;                             // the team / compound palettes are made again as needed

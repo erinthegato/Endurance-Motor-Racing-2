@@ -536,6 +536,34 @@ void Race::flyingLap(const CarSetup& su) {
     handover = HANDOVER_S; handBlend = 0;
 }
 
+// practice / qualifying runs (the AI): an out lap, 2-5 flying laps (some teams do long runs in practice),
+// an in lap to the garage, a spell there (changes to the car), then out again
+void Race::planRun(Car& c) {
+    uint32_t h = (uint32_t)c.number * 2654435761u + (uint32_t)(time * 7);
+    float u = ((h >> 8) & 1023) / 1023.0f;
+    if (session == SES_QUALI) c.runPlan = 2 + (int)(u * 2.0f);                    // 2-3 flying laps
+    else c.runPlan = u < 0.12f ? 6 + (int)(u * 30) : 2 + (int)((u - 0.12f) / 0.88f * 3.99f);  // a long run, or 2-5
+    c.runLaps = 0;
+}
+
+float Race::garageSpell(const Car& c) const {
+    // a few minutes, each team its own habit (by its number), varied a little each time
+    uint32_t h = (uint32_t)c.number * 2246822519u;
+    float team = 0.7f + ((h >> 10) & 255) / 255.0f * 0.8f;            // 0.7 .. 1.5
+    float base = session == SES_QUALI ? 150 : 480;
+    float s = base * team * (0.75f + rnd() * 0.5f);
+    // qualifying: the last run comes late, in the rush at the end
+    if (session == SES_QUALI && time < sessionLength * 0.55f) s = fmaxf(s, sessionLength * 0.6f - time + rnd() * 120);
+    return s;
+}
+
+void Race::practiceRunLap(Car& c) {
+    if (c.player || session == SES_RACE || c.pit != PIT_NONE || chequered) return;
+    c.runLaps++;
+    // laps done this run: the out lap (it counts as one) plus the planned flying laps -> in this lap
+    if (c.runLaps >= c.runPlan + 1) c.wantPit = true;
+}
+
 // garage moves: in from the box, and out: off the jacks, engine on, pushed to the box
 static bool garageMove(Race& r, Car& c, float dt, std::vector<int>& sfx) {
     if (c.pitPhase == -2) { c.lift = 0.12f; c.engineOn = false; c.rpm = 0; return true; }
@@ -548,13 +576,16 @@ static bool garageMove(Race& r, Car& c, float dt, std::vector<int>& sfx) {
             c.engineOn = false; c.lift = 0.12f;
             if (c.player) sfx.push_back(SFX_AIRJACK);
             c.pitPhase = c.player && !r.autoPlayer ? -2 : -3; c.pitTimer = -5;
+            if (!c.player) { c.pitTimer = -r.garageSpell(c); r.planRun(c); c.wantPit = false; }   // a spell in the garage: the crew at work
         }
         return true;
     }
     if (c.pitPhase != -3) return false;
     c.pitTimer += dt;
     float t = c.pitTimer;
-    if (t < 0) { c.lift = 0.12f; return true; }                    // waiting for its turn
+    // the AI's spell in the garage: its doors open while the crew work on it, shut a few seconds before it goes
+    if (!c.player) c.doorHold = (t < -4 && c.pitTimer > -1e5f) || r.chequered ? 1.0f : -1.0f;
+    if (t < 0 || (!c.player && r.chequered)) { c.lift = 0.12f; if (t >= 0) c.pitTimer = 0; return true; }   // waiting for its turn (no new run after the flag)
     if (t < 1.0f) {                                                // down off the jacks
         if (t - dt < 0 && c.player) sfx.push_back(SFX_JACKDROP);
         c.lift = 0.12f * (1 - t);
@@ -596,7 +627,20 @@ void Race::setupStart() {
         // practice / qualifying: every car starts in its garage and the crews push them out in turn
         std::swap(cars[0], cars[playerIdx]);
         playerIdx = 0;
-        for (int k = 0; k < n; k++) { cars[k].total = 0; garageCar(cars[k], -3, k == 0 ? 0 : 3 + rnd() * (session == SES_QUALI ? 40 : 70)); }
+        // when each AI car first goes out: practice spread over the first minutes (a few wait longer);
+        // qualifying: a few early runs, most cars wait for the track to rubber in and go late
+        for (int k = 0; k < n; k++) {
+            Car& c = cars[k];
+            c.total = 0;
+            float delay = 0;
+            if (k != 0) {
+                float L = fmaxf(sessionLength, 600);
+                if (session == SES_QUALI) delay = rnd() < 0.3f ? 3 + rnd() * 90 : L * (0.35f + rnd() * 0.3f);
+                else delay = rnd() < 0.7f ? 3 + rnd() * 120 : 120 + rnd() * L * 0.25f;
+            }
+            garageCar(c, -3, delay);
+            c.runLaps = 0; planRun(c);
+        }
         return;
     }
     int type = set.startType;

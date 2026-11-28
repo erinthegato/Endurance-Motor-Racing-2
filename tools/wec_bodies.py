@@ -456,7 +456,7 @@ GT = {
     #                 layout   nose  bonnet tail  lights   wing_h  bulge
     'ardenza296':    ('mid',   0.50, 0.66, 0.88, 'slim',  1.30, 0.00),
     'zuffen911':     ('rear',  0.52, 0.70, 0.84, 'round', 1.28, 0.00),
-    'isarm4':        ('front', 0.60, 0.82, 0.92, 'slim',  1.34, 0.03),
+    'isarm4':        ('front', 0.68, 0.84, 0.90, 'slim',  1.28, 0.03),
     'kentuckyz6':    ('mid',   0.52, 0.68, 0.90, 'slim',  1.30, 0.00),
     'ashcombevanguard':('front',0.60, 0.80, 0.92, 'round', 1.24, 0.03),
     'woking720':     ('mid',   0.50, 0.66, 0.85, 'eye',   1.20, 0.00),
@@ -491,6 +491,11 @@ GT_X = {
     #  a roof scoop, twin exhausts high in the middle of an open tail, the wing hung out behind on swan necks)
     # (the Vantage-like car: a 2.70 m wheelbase, a long bonnet with two big vents, outlined exits behind the front
     #  wheels, slatted vents at the tail's corners, side-exit pipes, a swan-neck wing with big end plates)
+    # (the M4-like car: a 2.86 m wheelbase, a long bonnet with two vents, an upright boxy glass house well back,
+    #  exits behind the front wheels and ahead of the rear ones, a tall swan-neck wing with big end plates)
+    'isarm4': dict(wheelbase=2.86, axle_shift=0.1375, cab_shift=0.30, gt_nose_w=0.78, twin_hood_vents=True,
+                   fender_exit=True, rear_vent=True, side_glass=(1, 4), wing_back=0.10, endplate_drop=0.28,
+                   cabin=((0.62, 1.16), (0.20, 1.26), (-0.30, 1.27), (-0.80, 1.24), (-1.30, 1.12), (-1.80, None))),
     'ashcombevanguard': dict(wheelbase=2.70, axle_shift=0.0, twin_hood_vents=True, fender_exit=True, corner_vents=True,
                              side_exhaust=True, exhaust=False, wing_back=0.08, endplate_drop=0.25, gt_nose_w=0.76),
     'woking720': dict(wheelbase=2.67, axle_shift=-0.135, cab_shift=-0.18, wedge=True, fender_rise=0.08, gt_nose_w=0.62,
@@ -595,6 +600,10 @@ def gt_cabin(spec, fns):
     ws_x = cab + 0.98                                            # the windscreen's base
     if spec.get('bubble') and lay == 'rear':
         return _bubble_cabin(spec, fns, ws_x)
+    if spec.get('cabin'):                     # (the make's own glass house: (offset from cab, roof z) per station,
+        xs = [ws_x] + [cab + dx for dx, _ in spec['cabin']]          #  None: just above the deck)
+        roof = [top(ws_x) + 0.02] + [rz if rz is not None else top(cab + dx) + 0.04 for dx, rz in spec['cabin']]
+        return xs, roof
     if spec.get('wedge'):                     # (one long raked screen to a header 0.61 m back, a low crown, then
         spec['ws_top'] = cab + 0.37            #  the roof falling in a straight line onto the engine cover)
         xs = [ws_x, cab + 0.66, cab + 0.37, cab + 0.05, cab - 0.30, cab - 0.70, cab - 1.12]
@@ -921,6 +930,13 @@ def _gt_extras(m, spec, fns):
                 x0 = fa - 0.46 - k * 0.045
                 ya, yb = s * (_flank_y(spec, fns, x0, 0.30) + 0.006), s * (_flank_y(spec, fns, x0 - 0.08, 0.68) + 0.006)
                 m.quad((x0, ya, 0.30), (x0 - 0.025, ya, 0.30), (x0 - 0.105, yb, 0.68), (x0 - 0.08, yb, 0.68), uv='carbon', shade=0.15)
+    if spec.get('rear_vent'):                   # (an upright vent in the flank just ahead of each rear wheel)
+        fa, ra = spec['axles']
+        for s in (-1, 1):
+            for k in range(3):
+                x0 = ra + 0.62 - k * 0.045
+                y = s * (_flank_y(spec, fns, x0, 0.45) + 0.006)
+                m.quad((x0, y, 0.30), (x0 - 0.025, y, 0.30), (x0 - 0.025, y, 0.62), (x0, y, 0.62), uv='carbon', shade=0.15)
     if spec.get('corner_vents'):                # (upright slats at the tail's corners, behind the rear wheels)
         for s in (-1, 1):
             for k in range(4):

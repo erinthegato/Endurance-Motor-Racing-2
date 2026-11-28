@@ -191,7 +191,7 @@ struct RaceSettings {
     int startPos = 1;       // 0 pole, 1 middle, 2 back
     bool manualGears = false;
     bool weekend = false;   // practice + qualifying before the race
-    int sessionMin = 5;     // practice / qualifying length (minutes)
+    int sessionMin = 30;    // practice / qualifying / time trial length (minutes; the game keeps it 30..60, Config::sessionMin)
     int startType = START_EVENT;
     int weather = WX_SIMULATED;
     float eventHours = 0;   // real race hours this event stands for (0 = the event's own)

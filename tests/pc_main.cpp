@@ -675,7 +675,7 @@ int main(int argc, char** argv) {
     if (mode == "garage") {
         std::string out = argv[2];
         auto settle = [&](int n) { for (int i = 0; i < n; i++) { Pad q{}; g.frame(1.0f / 30, q); } };
-        g.set.track = 4; g.set.car = getenv("EMR_CAR") ? atoi(getenv("EMR_CAR")) : 9; g.set.weekend = true; g.set.sessionMin = 10; g.set.opponents = 11;
+        g.set.track = 4; g.set.car = getenv("EMR_CAR") ? atoi(getenv("EMR_CAR")) : 9; g.set.weekend = true; g.set.sessionMin = 10; g.sessionClamp = false; g.set.opponents = 11;
         g.startRace();
         settle(40); shot(g, out + "/g_1_garage.ppm");
         g.setupTab = 1; settle(2); shot(g, out + "/g_1w_weather.ppm");
@@ -983,7 +983,7 @@ int main(int argc, char** argv) {
         for (int i = 0; i < TRACK_COUNT; i++) if (tid == TRACKS[i].id) g.set.track = i;
         g.set.car = atoi(argv[3]); g.set.laps = atoi(argv[4]); g.set.opponents = atoi(argv[5]);
         std::string out = argv[6];
-        g.set.weekend = true; g.set.sessionMin = getenv("EMR_SESS") ? atoi(getenv("EMR_SESS")) : 1;
+        g.set.weekend = true; g.set.sessionMin = getenv("EMR_SESS") ? atoi(getenv("EMR_SESS")) : 1; g.sessionClamp = false;
         g.aiDrivesPlayer = true;
         g.startRace();
         const char* names[3] = {"practice", "qualifying", "race"};

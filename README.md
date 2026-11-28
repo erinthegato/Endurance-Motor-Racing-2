@@ -51,6 +51,9 @@ endurance racing of the original EMR put back. Not for distribution.
 * **Race lengths**: laps, the real distance, timed races (10 min to 6 h standing for the event's real
   length), or **Full length (real time)**: the real 6 / 8 / 24 hours (Qatar's 1812 km in up to 10 h),
   in the championship too (save and resume).
+* **Session lengths**: practice, qualifying and time trial sessions run at least 30 minutes; choose 30 / 40 /
+  50 / 60 min in the race settings (Sessions). The choice is remembered and used in every mode (quick race,
+  championship, career, time trial).
 * **The garage computer** (practice and qualifying): three tabs, L / R to switch
   * SETUP: wing, springs, gearing, brakes, engine map, fuel, tyres (inters and wets as well)
   * WEATHER: the forecast strip (now and the next hour: an icon, the time, the chance of rain), the

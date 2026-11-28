@@ -41,6 +41,7 @@ struct Game {
     Career career;
     bool careerMode = false;
     bool ttMode = false;          // time trial (its own mode on the title menu)
+    bool sessionClamp = true;     // practice / qualifying / time trial kept to 30..60 min (tests switch it off for short sessions)
     float weekendRubber = 0.1f;   // the track rubber carried from practice to qualifying to the race
     void ghostPath(char* out, int n) const;
     int careerPage = 0;           // team screen page: 0 main, 1 sponsors, 2 drivers, 3 upgrades, 5 standings

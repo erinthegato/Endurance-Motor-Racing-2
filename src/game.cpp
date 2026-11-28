@@ -47,6 +47,7 @@ bool Game::init() {
     { FILE* f = fopen("bench.txt", "r"); if (f) { fclose(f); bench = true; remove("perf.log"); } }
     sound::init();
     cfg.load(); cfg.apply();
+    set.sessionMin = cfg.sessionMin;
     trophies.load();
     setups.load();
     migrateSaves();
@@ -87,6 +88,7 @@ void Game::startSession(Session ses) {
     if (ses == SES_RACE && set.weekend && !ttMode) grid = qualiGrid;
     RaceSettings s = set;
     s.timeTrial = ttMode;
+    if (sessionClamp) s.sessionMin = std::max(SESSION_MIN_MIN, std::min(SESSION_MIN_MAX, s.sessionMin));   // every mode: 30 min .. 1 h
     // track rubber: green for practice, carried on through the weekend; a race without a weekend
     // starts part rubbered (support races ran before), a time trial on a well-used track
     if (ttMode) s.rubber = 0.6f;
@@ -866,7 +868,10 @@ void Game::update(float dt, const Pad& p) {
             if (sel == 8) set.manualGears = !set.manualGears;
             if (sel == 9) cam = cyc(cam, CAM_COUNT);
             if (sel == 10) set.weekend = !set.weekend;
-            if (sel == 11) { static const int M[4] = {3, 5, 10, 20}; int mi = 0; for (int i = 0; i < 4; i++) if (M[i] == set.sessionMin) mi = i; set.sessionMin = M[cyc(mi, 4)]; }
+            if (sel == 11) {     // practice / qualifying / time trial length: 30 (the minimum) to 60 min, remembered
+                static const int M[4] = {30, 40, 50, 60}; int mi = 0; for (int i = 0; i < 4; i++) if (M[i] == set.sessionMin) mi = i;
+                set.sessionMin = M[cyc(mi, 4)]; cfg.sessionMin = set.sessionMin; cfg.save();
+            }
         }
         if (ok && sel == 13) {
             if (champMode && !champ.active) {

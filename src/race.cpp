@@ -94,7 +94,7 @@ bool Race::start(const RaceSettings& s0, Session ses, const std::vector<int>* gr
     set = s;
     session = ses;
     chequered = false;
-    sessionLength = s.timeTrial ? 1e8f : s.sessionMin * 60.0f;
+    sessionLength = s.sessionMin * 60.0f;   // (a time trial too: a session of its own length)
     ghost.clear(); ghostRec.clear(); ghostLap = 0; lapInvalid = false; newRecord = false; ttDeltaOn = false;
     if (!track.load(&TRACKS[s.track])) return false;
     era = CARS[s.car].era;

@@ -1,4 +1,5 @@
 #include "career.h"
+#include "settings.h"
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
@@ -130,7 +131,7 @@ RaceSettings Career::roundSettings() const {
     // every round is a full race weekend, like a quick race: practice, qualifying (sets the grid), race
     // (older careers were saved with race-only rounds)
     s.weekend = true;
-    s.sessionMin = 5;
+    s.sessionMin = cfg.sessionMin;      // the player's session length (race settings), 30..60 min
     return s;
 }
 

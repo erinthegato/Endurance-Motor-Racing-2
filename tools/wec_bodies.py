@@ -463,7 +463,7 @@ GT = {
     'sterneamg':     ('front', 0.62, 0.84, 0.94, 'slim',  1.34, 0.05),
     'kotobukigr':    ('front', 0.58, 0.80, 0.90, 'eye',   1.31, 0.02),
     'dearbornstallion':('front',0.64, 0.84, 0.92, 'bar',  1.33, 0.05),
-    'torotgt':       ('mid',   0.48, 0.64, 0.86, 'eye',   1.28, 0.00),
+    'torotgt':       ('mid',   0.34, 0.68, 0.90, 'eye',   1.20, 0.00),
     'careergt3':     ('front', 0.58, 0.80, 0.90, 'slim',  1.32, 0.02),
 }
 
@@ -477,12 +477,20 @@ GT_X = {
                       axle_shift=0.15, cab_shift=0.12, gt_nose_w=0.56, round_nose=True, chin=0.07, bubble=True),
     # (the AMG-like car: one flat bonnet sloping evenly down to the nose, no wing humps or arch flares in front)
     'sterneamg': dict(fender_rise=0.0, front_flare=0.0, bulge=0.0, flat_bonnet=True, cab_shift=-0.22),
+    # (the Huracan-like car: a 2.62 m wheelbase set back -- long front overhang, short tail -- the cabin well
+    #  forward with one long windscreen, the roof running straight down to a high, squared-off tail; a roof
+    #  scoop, hexagonal intakes behind the doors, twin exhausts high in the middle of an open mesh tail and a
+    #  wing hung out behind the bodywork on swan necks)
+    'torotgt': dict(wheelbase=2.62, axle_shift=-0.16, cab_shift=-0.30, wedge=True, fender_rise=0.07, gt_nose_w=0.66,
+                    wing_back=0.30, exhaust=(0.26, 0.44, 0.058), hex_intake=True, roof_scoop=True, mesh_tail=True, deck_vents=True),
 }
 
 
 def gt_axles(spec):
     """the GT car's axles: the common split of its length, moved forward by the make's axle_shift"""
     fa, ra = G.gt_axles(spec['L'])
+    if spec.get('wheelbase'):                 # (the make's own wheelbase, centred before the shift)
+        fa, ra = spec['wheelbase'] / 2, -spec['wheelbase'] / 2
     sh = spec.get('axle_shift', 0.0)
     return (fa + sh, ra + sh)
 
@@ -528,6 +536,11 @@ def gt_fns(spec):
             front_t = [(xf, nose - nd), (xf - 0.10, nose + 0.06 - nd), (fa, spec['bonnet'] - nd)]
         top = curve(front_t + [(cab + 0.80, belt - 0.03), (cab + 0.4, belt),
                      (cab - 1.0, belt + 0.02), (ra + 0.10, tail + 0.04), (xr + 0.12, tail), (xr, tail - 0.08)])
+    elif spec.get('wedge'):                    # (a low wedge: the nose, a flat bonnet climbing into one long screen,
+        xw = cab + 0.98                        #  the deck behind the cabin high and level out to a squared-off tail)
+        top = curve([(xf, nose), (xf - 0.10, nose + 0.07), (fa + 0.45, spec['bonnet'] - 0.05), (fa, spec['bonnet']),
+                     (xw, belt - 0.02), (cab + 0.40, belt), (cab - 0.55, belt + 0.06), (cab - 1.15, belt + 0.14),
+                     (xr + 0.70, tail + 0.08), (xr + 0.12, tail + 0.02), (xr, tail - 0.04)])
     elif spec.get('flat_bonnet'):              # (one even slope from the windscreen's foot down to the nose)
         xw, zw = cab + 0.80, belt - 0.02
         slope = [(xf + (xw - xf) * k, nose + (zw - nose) * k) for k in (0.0, 0.25, 0.5, 0.75)]
@@ -567,6 +580,11 @@ def gt_cabin(spec, fns):
     ws_x = cab + 0.98                                            # the windscreen's base
     if spec.get('bubble') and lay == 'rear':
         return _bubble_cabin(spec, fns, ws_x)
+    if spec.get('wedge'):                     # (one long raked screen to a header 0.61 m back, a low crown, then
+        spec['ws_top'] = cab + 0.37            #  the roof falling in a straight line onto the engine cover)
+        xs = [ws_x, cab + 0.66, cab + 0.37, cab + 0.05, cab - 0.30, cab - 0.70, cab - 1.12]
+        roof = [top(ws_x) + 0.02, 1.03, 1.15, 1.20, 1.19, 1.12, top(cab - 1.12) + 0.04]
+        return xs, roof
     if lay == 'mid':
         xs = [ws_x, cab + 0.60, cab + 0.20, cab - 0.25, cab - 0.60, cab - 0.95]
         roof = [top(ws_x) + 0.02, 1.17, 1.26, 1.27, 1.19, top(cab - 0.95) + 0.10]
@@ -716,6 +734,16 @@ def build_gt(spec, lod):
         return k in (0, 1, 6, 7)                    # the side windows
     if spec.get('bubble') and spec['layout'] == 'rear':
         glass = _bubble_glass(spec, cxs)
+    if spec.get('wedge'):
+        def glass(i, k):
+            if k == 8:
+                return False
+            xm = 0.5 * (cxs[i] + cxs[i + 1])
+            if xm > spec['ws_top']:
+                return True                         # the long windscreen
+            if xm < spec['cab'] - 0.45:
+                return False                        # (painted buttress / engine cover)
+            return k in (0, 1, 6, 7)
     m.loft(rings, cap_front=False, cap_back=spec['layout'] == 'mid', glass=glass)
     if lod < 2:
         _gt_pillars(m, spec, rings, glass)
@@ -785,12 +813,15 @@ def build_gt(spec, lod):
         m.box((xr - 0.03, -0.03, 0.30), (xr + 0.01, 0.03, 0.34), uv='yellow')
         rz = max(gt_cabin(spec, fns)[1])
         m.box((spec['cab'] - 0.35, -0.004, rz), (spec['cab'] - 0.29, 0.004, rz + 0.12), uv='carbon')    # antenna
+    if lod < 2:
+        _gt_extras(m, spec, fns)
     if lod < 0 and PCSET:
         # the PC's close-up details: twin exhausts under the tail, the refuelling coupling in the rear
         # side window, the roof's position lights, the front tow eye
+        ey, ez, er = spec.get('exhaust', (0.36, 0.20, 0.048))
         for s in (-1, 1):
-            m.cyl((xr + 0.22, s * 0.36, 0.20), (xr + 0.002, s * 0.36, 0.20), 0.048, sides=12, uv='grey', shade=1.1)
-            m.cyl((xr + 0.004, s * 0.36, 0.20), (xr + 0.24, s * 0.36, 0.20), 0.036, sides=12, uv='carbon', shade=0.3, caps=False)   # the dark inside
+            m.cyl((xr + 0.22, s * ey, ez), (xr - 0.03, s * ey, ez), er, sides=12, uv='grey', shade=1.1)
+            m.cyl((xr - 0.026, s * ey, ez), (xr + 0.24, s * ey, ez), er * 0.75, sides=12, uv='carbon', shade=0.3, caps=False)   # the dark inside
         xs_, roof = gt_cabin(spec, fns)
         xfc = spec['cab'] - 0.55; zfc = top(xfc) + 0.12
         m.cyl((xfc, W(xfc) * 0.80, zfc), (xfc, W(xfc) * 0.80 + 0.03, zfc), 0.04, sides=12, uv='grey', shade=1.1)
@@ -804,7 +835,8 @@ def _gt_wing(m, spec, fns, lod):
     L = spec['L']; xr = -L / 2
     W, top, fend = fns
     wz = spec['wing_z']; ws = spec['wing_span']
-    x0 = xr + 0.10
+    wb = spec.get('wing_back', 0.0)            # (hung out behind the tail on long swan necks)
+    x0 = xr + 0.10 - wb
     m.box((x0, -ws, wz), (x0 + 0.30, ws, wz + 0.03), uv='carbon')
     if lod < 2:
         m.box((x0 - 0.04, -ws, wz + 0.035), (x0 + 0.10, ws, wz + 0.055), uv='carbon')
@@ -812,7 +844,70 @@ def _gt_wing(m, spec, fns, lod):
             m.box((x0 - 0.05, s * ws - 0.008, wz - 0.12), (x0 + 0.34, s * ws + 0.008, wz + 0.08), uv='second')
             # swan-neck uprights from the boot lid
             yb = s * 0.42
-            m.tube([(x0 + 0.40, yb, top(x0 + 0.40)), (x0 + 0.28, yb, wz + 0.07), (x0 + 0.16, yb, wz + 0.07)], 0.012, uv='carbon')
+            if wb:                                   # (a swan neck: from the deck, up and back, curling onto the wing's top)
+                xm = x0 + 0.40 + wb * 1.6
+                m.tube([(xm, yb, top(xm) - 0.01), (xm - 0.22, yb, wz + 0.06), (x0 + 0.30, yb, wz + 0.09),
+                        (x0 + 0.16, yb, wz + 0.035)], 0.016, uv='carbon')
+            else:
+                m.tube([(x0 + 0.40, yb, top(x0 + 0.40)), (x0 + 0.28, yb, wz + 0.07), (x0 + 0.16, yb, wz + 0.07)], 0.012, uv='carbon')
+
+
+def _flank_y(spec, fns, x, z):
+    """the body's half width at (x, z) on the flank, from the section's own outline (as gt_ring)"""
+    W, top, fend = fns
+    w = W(x); f = fend(x)
+    pts = [(0.20, w * 0.97), (0.50, w), (f - 0.12, w * 0.985), (f - 0.025, w * 0.93), (f, w * 0.84)]
+    if z <= pts[0][0]:
+        return pts[0][1]
+    for (z0, y0), (z1, y1) in zip(pts[:-1], pts[1:]):
+        if z <= z1:
+            return y0 + (y1 - y0) * (z - z0) / max(z1 - z0, 1e-6)
+    return pts[-1][1]
+
+
+def _gt_extras(m, spec, fns):
+    """per-make details: hexagonal side intakes behind the doors, a roof scoop, an open mesh tail"""
+    W, top, fend = fns
+    L = spec['L']; xr = -L / 2; cab = spec['cab']
+    if spec.get('hex_intake'):
+        xc, zc = cab - 0.78, 0.56
+        hx = [(0.26, 0.0), (0.14, 0.17), (-0.20, 0.17), (-0.26, -0.02), (-0.14, -0.17), (0.18, -0.15)]
+        for s in (-1, 1):
+            pts = [(xc + dx, s * (_flank_y(spec, fns, xc + dx, zc + dz) + 0.004), zc + dz) for dx, dz in hx]
+            V = [(xc, s * (_flank_y(spec, fns, xc, zc) + 0.004), zc)] + pts
+            F = [[0, 1 + i, 1 + (i + 1) % 6] if s > 0 else [0, 1 + (i + 1) % 6, 1 + i] for i in range(6)]
+            m.part(V, F, uv='carbon', flat=True, shade=0.25)
+            # (the intake's dark inner mesh: a smaller hexagon set just proud of the outer one)
+            Vi = [(xc, s * (_flank_y(spec, fns, xc, zc) + 0.007), zc)] + [
+                (xc + dx * 0.72, s * (_flank_y(spec, fns, xc + dx * 0.72, zc + dz * 0.72) + 0.006), zc + dz * 0.72) for dx, dz in hx]
+            m.part(Vi, F, uv='carbon', flat=True, shade=0.08)
+    if spec.get('roof_scoop'):
+        rz = max(gt_cabin(spec, fns)[1])
+        x1, x0 = cab - 0.02, cab - 0.62
+        def ramp(V):                            # (narrow and flush at the back, the open mouth at the front)
+            V = V.copy(); t = (V[:, 0] - x0) / (x1 - x0)
+            V[:, 1] *= 0.55 + 0.45 * t
+            up = V[:, 2] > rz
+            V[up, 2] = rz - 0.02 + 0.06 * t[up]
+            return V
+        m.box((x0, -0.15, rz - 0.03), (x1, 0.15, rz + 0.04), uv='second', taper=ramp)
+        m.quad((x1 + 0.002, -0.12, rz), (x1 + 0.002, 0.12, rz), (x1 + 0.002, 0.12, rz + 0.035), (x1 + 0.002, -0.12, rz + 0.035), uv='carbon', shade=0.15)
+    if spec.get('deck_vents'):                  # (two louvred openings in the engine cover)
+        for s in (-1, 1):
+            xa, xb = cab - 1.20, xr + 0.45
+            x = xa
+            while x > xb:
+                y0, y1 = s * 0.10, s * 0.42
+                z0, z1 = top(x) + 0.006, top(x - 0.04) + 0.006
+                m.quad((x, y0, z0), (x, y1, z0), (x - 0.04, y1, z1), (x - 0.04, y0, z1), uv='carbon', shade=0.15)
+                x -= 0.07
+    if spec.get('mesh_tail'):
+        za, zb = 0.36, top(xr + 0.05) - 0.16
+        m.quad((xr - 0.008, -0.74, za), (xr - 0.008, 0.74, za), (xr - 0.008, 0.74, zb), (xr - 0.008, -0.74, zb), uv='carbon', shade=0.18)
+        z = za + 0.03
+        while z < zb - 0.01:
+            m.quad((xr - 0.012, -0.74, z), (xr - 0.012, 0.74, z), (xr - 0.012, 0.74, z + 0.008), (xr - 0.012, -0.74, z + 0.008), uv='carbon', shade=0.55)
+            z += 0.045
 
 
 def _gt_lights(m, spec, fns, s):

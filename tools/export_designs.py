@@ -77,7 +77,7 @@ for c in G.read_cars():
     spec = G.car_spec(dict(c, id=G.REF_ALIAS.get(c['id'], c['id'])) if c['id'] in G.REF_ALIAS else c)
     spec = W.apply_rules(spec, rule)
     spec = B.proto_spec(c['id'], spec, rule) if c['hyper'] else B.gt_spec(c['id'], spec)
-    target = c['L']
+    target = c['L'] + max(0.0, spec.get('wing_back', 0.0) - 0.10)   # (a wing hung out behind the tail is not body length)
     for it in range(3):
         if rule != 'GT3': G.HY_AXLES = W.proto_axles(spec['L'], rule)
         spec['axles'] = G.HY_AXLES if c['hyper'] else B.gt_axles(spec)

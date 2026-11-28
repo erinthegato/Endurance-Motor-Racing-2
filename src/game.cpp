@@ -753,9 +753,9 @@ void Game::update(float dt, const Pad& p) {
         float turn = fabsf(p.rstickX) > 0.1f ? p.rstickX : 0;            // the right stick walks the camera round
         if (turn != 0) { showSpin = false; showYaw += turn * dt * 1.6f; }
         else if (showSpin) showYaw += dt * 0.22f;
-        float mx, my; nav::move(p, mx, my);                                // up / down (d-pad or left stick): closer / further
-        if (fabsf(my) > fabsf(mx) && fabsf(my) > 0.3f) showDist = clampf(showDist + my * dt * 2.5f, 3.4f, 6.4f);
-        if (pressed(p, &Pad::triangle) || ok) showSpin = !showSpin;
+        if (p.up) showDist = fmaxf(3.4f, showDist - dt * 2.5f);
+        if (p.down) showDist = fminf(6.4f, showDist + dt * 2.5f);
+        if (pressed(p, &Pad::triangle)) showSpin = !showSpin;
         if (back) { screen = SCR_TITLE; sel = 8; t = 0; }
         break;
     }
@@ -846,7 +846,6 @@ void Game::update(float dt, const Pad& p) {
         const int ROWS = 15;
         sel = (sel + dy + ROWS) % ROWS;
         if (ok && sel == 14) { setupPage = true; setupSel = 0; break; }
-        if (ok && sel <= 11 && !dx) dx = 1;                 // X on a value row: the next value
         auto cyc = [&](int v, int n) { return (v + dx + n) % n; };
         int li = 0, oi = 0, ei = 0;
         for (int i = 0; i < LENGTH_N; i++) if ((set.raceMin > 0 && LENGTHS[i] == -set.raceMin) || (set.raceMin <= 0 && LENGTHS[i] == set.laps)) li = i;
@@ -918,7 +917,6 @@ void Game::update(float dt, const Pad& p) {
         int tr = tapRow(p, 12, 254, 48, 22, 7);
         if (tr >= 0) { if (tr != sel) { sel = tr; dy = 0; } else if (tr <= 4) dx = p.tx[0] < 133 ? -1 : 1; else ok = true; }
         sel = (sel + dy + 7) % 7;
-        if (ok && sel <= 3 && !dx) dx = 1;               // X on a value row: the next value
         if (dx) {
             if (sel == 0) { int v = pl.tyres ? pl.tyre + 1 : 0; v = (v + dx + TY_COUNT + 1) % (TY_COUNT + 1); pl.tyres = v > 0; if (v) pl.tyre = v - 1; }
             if (sel == 1 && race.ep().refuel) pl.fuel = clampf(pl.fuel + dx * 0.1f, fmaxf(me.fuel, 0.1f), 1.0f);
@@ -956,7 +954,6 @@ void Game::update(float dt, const Pad& p) {
         sel = PAUSE_ORDER[(pos + dy + 9) % 9];
         if (ok && sel == 7) { replayStart(); break; }
         if (ok && sel == 8) { phFrom = SCR_PAUSE; phYaw = 2.4f; phPitch = 0.25f; phDist = 7; phFov = 50; phHelp = true; screen = SCR_PHOTO; break; }
-        if (ok && sel == 2 && !dx) dx = 1;               // X on the camera row: the next camera
         if (dx && sel == 2) cam = (cam + dx + CAM_COUNT) % CAM_COUNT;
         if (pressed(p, &Pad::start) || back || (ok && sel == 0)) { screen = SCR_RACE; }   // START / O: back to the race
         else if (ok && sel == 1) startSession(race.session);
@@ -1326,7 +1323,7 @@ void Game::drawTeam() {
     }
     if (pl.aiDrives) R.font.draw(274, y + 2, "Team-mate in: you go to the pit wall", RGBA(120, 200, 255), 0.62f);
     if (noteT > 0) R.font.drawCentre(SCREEN_W / 2, 230, note, GOLD, 0.8f);
-    R.font.drawCentre(SCREEN_W / 2, SCREEN_H - 18, "UP/DOWN choose   LEFT/RIGHT or X change   X select   O release the car", DIM, 0.75f);
+    R.font.drawCentre(SCREEN_W / 2, SCREEN_H - 18, "UP/DOWN choose   LEFT/RIGHT change   X select   O release the car", DIM, 0.75f);
 }
 
 
@@ -1472,10 +1469,8 @@ void Game::updateOptions(const Pad& p, int dx, int dy, bool ok, bool back) {
     if ((dx || ok) && id == 21) { cfg.hudMode = (cfg.hudMode + (dx ? dx : 1) + 3) % 3; cfg.save(); return; }
     if ((dx || ok) && id == 22) { cfg.lookApex = !cfg.lookApex; cfg.save(); return; }
     if ((dx || ok) && id == 23) { cfg.rumble = !cfg.rumble; cfg.save(); return; }
-    bool wrap = false;
-    if (ok && !dx && id != 16) { dx = 1; wrap = true; }        // X on a value row: the next value (round to the start)
     if (dx) {
-        auto step = [&](int& v, int lo, int hi) { v += dx; if (v > hi) v = wrap ? lo : hi; if (v < lo) v = lo; };
+        auto step = [&](int& v, int lo, int hi) { v += dx; if (v < lo) v = lo; if (v > hi) v = hi; };
         bool custom = false;
         switch (id) {
             case 0: step(cfg.master, 0, 10); break;
@@ -1493,7 +1488,7 @@ void Game::updateOptions(const Pad& p, int dx, int dy, bool ok, bool back) {
             case 12: cfg.autoQuality = !cfg.autoQuality; if (!cfg.autoQuality) autoLevel = 0; break;
             case 14: cfg.pitCam ^= 1; break;
             case 20: cfg.swearing = !cfg.swearing; break;
-            case 13: cfg.attract += dx * 5; if (cfg.attract < 5) cfg.attract = 5; if (cfg.attract > 30) cfg.attract = wrap ? 5 : 30; break;
+            case 13: cfg.attract += dx * 5; if (cfg.attract < 5) cfg.attract = 5; if (cfg.attract > 30) cfg.attract = 30; break;
         }
         if (custom) { cfg.preset = 3; autoLevel = 0; }      // the player's own choice: start again from it
         if (id == 5) autoLevel = 0;
@@ -1533,7 +1528,6 @@ void Game::updateCareer(int dx, int dy, bool ok, bool back, bool square) {
         newCls = era;                                    // the era picked at headquarters
         sel = (sel + dy + 6) % 6;
         if (sel == 1) sel = dy < 0 ? 0 : 2;              // (the era row is only shown)
-        if (ok && sel <= 3 && !dx) dx = 1;               // X on a value row: the next value
         if (dx) {
             if (sel == 0) newName = cyc(newName, TEAM_NAME_COUNT);
             if (sel == 2) newDiff = cyc(newDiff, 3);
@@ -1550,7 +1544,6 @@ void Game::updateCareer(int dx, int dy, bool ok, bool back, bool square) {
     }
     if (screen == SCR_LIVERY) {
         sel = (sel + dy + 6) % 6;
-        if (ok && sel <= 4 && !dx) dx = 1;               // X on a value row: the next value
         if (dx) {
             if (sel == 0) career.style = cyc(career.style, LIVERY_STYLES);
             if (sel == 1) career.colA = cyc(career.colA, LIVERY_COLOURS_N);

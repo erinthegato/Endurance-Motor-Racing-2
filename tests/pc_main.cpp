@@ -635,7 +635,7 @@ int main(int argc, char** argv) {
     if (mode == "walk") {
         // walk <outdir> [track]: the main menu garage, headquarters and a race pit stop on foot
         std::string out = argv[2];
-        auto settle = [&](int n) { for (int i = 0; i < n; i++) { Pad q{}; g.frame(1.0f / 30, q); } };
+        auto settle = [&](int n) { for (int i = 0; i < n; i++) { Pad q{}; if (i < n - 2) g.step(1.0f / 30, q); else g.frame(1.0f / 30, q); } };
         // walk (or run) the person towards a point of the local frame for up to `secs`, a shot every `every` s
         auto walkTo = [&](float tx, float ty, float secs, bool runIt, const char* name, float every) {
             if (runIt != g.walker.run) press(g, &Pad::l);
@@ -649,7 +649,7 @@ int main(int argc, char** argv) {
                     q.stickY = -(dx * fx + dy * fy); q.stickX = dx * sinf(g.walker.camYaw) - dy * cosf(g.walker.camYaw);
                     float m = fmaxf(fabsf(q.stickX), fabsf(q.stickY)); q.stickX /= m; q.stickY /= m;
                 }
-                g.frame(1.0f / 30, q);
+                g.step(1.0f / 30, q);      // (no drawing on the way: the shots draw)
                 if (name && tt >= nextShot) { char b[96]; snprintf(b, sizeof b, "/%s_%02d.ppm", name, k++); shot(g, out + b, 0); nextShot += every; }
                 if (d <= 0.5f) break;
             }
@@ -707,6 +707,10 @@ int main(int argc, char** argv) {
         press(g, &Pad::circle); settle(10);
         fprintf(stderr, "plans: O -> focus %d screen %d\n", g.walkFocus, (int)g.screen);
         walkTo(se.x, se.y, 10, false, nullptr, 9); settle(3); shot(g, out + "/walk_garage_engineer.ppm");
+        press(g, &Pad::cross); settle(20); shot(g, out + "/walk_garage_engineer_talk.ppm");
+        fprintf(stderr, "setup engineer: focus %d open %d sub \"%s\" pending %d\n", g.walkFocus, g.engUi.open, g.engUi.sub, g.engUi.pending());
+        for (int i = 0; i < 400 && g.walkFocus >= 0; i++) { if (g.engUi.pending()) press(g, &Pad::circle); else { Pad z{}; g.step(1.0f / 30, z); } }
+        fprintf(stderr, "setup engineer: done, focus %d\n", g.walkFocus);
         // out to the pit lane and back, then in the car
         { const WalkStation& w2 = st(WST_PLANS); (void)w2; }
         walkTo(g.walker.x, g.walker.minY + 3.0f, 12, true, "walk_pit_go", 1.5f); settle(3); shot(g, out + "/walk_pit_lane.ppm");
@@ -728,8 +732,10 @@ int main(int argc, char** argv) {
         bool applied = false;
         for (int step = 0; step < 60 * 600 && !applied; step++) {
             Pad q{};
+            if (!g.aiDrivesPlayer && g.race.player().pit == PIT_IN) q.trigR = 0.4f;     // (creeping the last metre in)
             g.step(1.0f / 60, q);
             const Car& me = g.race.player();
+            if (!g.aiDrivesPlayer && (step % 20) == 0 && me.pit == PIT_IN) fprintf(stderr, "  creeping: to box %.2f m, v %.2f d %.2f (box d %.2f)\n", g.race.pitRel(g.race.boxS(me)) - g.race.pitRel(me.s), me.v, me.d, g.race.boxD);
             // (the AI brings the car down the lane; ours from just short of the box, so the stop is the player's)
             if (g.aiDrivesPlayer && me.pit == PIT_IN && g.race.pitRel(g.race.boxS(me)) - g.race.pitRel(me.s) < 1.2f) g.aiDrivesPlayer = false;
             if (me.pit == PIT_STOP && me.pitPhase >= 0) applied = true;

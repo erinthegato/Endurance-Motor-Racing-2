@@ -83,7 +83,7 @@ void Game::ghostPath(char* out, int n) const { snprintf(out, n, "tt_%s_%s.gst", 
 
 void Game::startSession(Session ses) {
     if (raceLoaded) race.end();
-    pitPlanSel = -1; radioQ.clear();      // [walk] no pit plan called yet in this session
+    pitPlanSel = -1; pitPlanArm = false; radioQ.clear();      // [walk] no pit plan called yet in this session
     if (!ttMode && (ses == SES_PRACTICE || (ses == SES_RACE && !set.weekend))) setups.get(set.track, CARS[set.car].era, set.setup);   // a new weekend: the remembered setup
     std::vector<int> grid;
     if (ses == SES_RACE && set.weekend && !ttMode) grid = qualiGrid;

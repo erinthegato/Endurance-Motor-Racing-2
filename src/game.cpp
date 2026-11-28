@@ -66,12 +66,18 @@ void Game::startRace() { startSession(set.weekend ? SES_PRACTICE : SES_RACE); }
 
 void Game::afterLoad() {
     // the cars the menus loaded go; the field loads its 256 px liveries, your car the 512 px one
+    afterLoadBegin();
+    for (auto& c : race.cars) R.loadCar((int)(c.def - CARS));
+    afterLoadEnd();
+}
+
+void Game::afterLoadBegin() {
     R.freeCars();
     R.hdAll = false; R.hdCar = (int)(race.player().def - CARS);
-    for (auto& c : race.cars) {
-        R.loadCar((int)(c.def - CARS));
-        sound::setVoice(1, c.def, c.def->idleRpm, 0, 0, false);
-    }
+}
+
+void Game::afterLoadEnd() {
+    for (auto& c : race.cars) sound::setVoice(1, c.def, c.def->idleRpm, 0, 0, false);
     R.buildPit(race);
     sound::silence();
     R.camInit = false; R.tvInit = false;
@@ -82,12 +88,30 @@ void Game::afterLoad() {
 void Game::ghostPath(char* out, int n) const { snprintf(out, n, "tt_%s_%s.gst", TRACKS[set.track].id, CARS[set.car].id); }
 
 void Game::startSession(Session ses) {
+    if (asyncLoad) {
+        // in steps behind the loading slideshow (loading.cpp)
+        ld = LoadState(); ld.active = true; ld.ses = ses; ld.t0 = sys::timeSec();
+        ld.slide = (int)(ld.t0 * 3) % 7;
+        screen = SCR_LOADING;
+        return;
+    }
+    RaceSettings s; std::vector<int> grid;
+    ses = sessionPrep(ses, s, grid);
+    raceLoaded = race.start(s, ses, grid.empty() ? nullptr : &grid);
+    if (!raceLoaded) { screen = SCR_TRACK; return; }
+    afterLoad();
+    sessionFinish(ses);
+}
+
+// the settings for the session (and the end of the last one); returns the session (a time trial: practice)
+Session Game::sessionPrep(Session ses, RaceSettings& s, std::vector<int>& grid) {
     if (raceLoaded) race.end();
+    raceLoaded = false;
     pitPlanSel = -1; pitPlanArm = false; radioQ.clear();      // [walk] no pit plan called yet in this session
     if (!ttMode && (ses == SES_PRACTICE || (ses == SES_RACE && !set.weekend))) setups.get(set.track, CARS[set.car].era, set.setup, race.playerChassis);   // a new weekend: the remembered setup
-    std::vector<int> grid;
+    grid.clear();
     if (ses == SES_RACE && set.weekend && !ttMode) grid = qualiGrid;
-    RaceSettings s = set;
+    s = set;
     s.timeTrial = ttMode;
     if (sessionClamp) s.sessionMin = std::max(SESSION_MIN_MIN, std::min(SESSION_MIN_MAX, s.sessionMin));   // every mode: 30 min .. 1 h
     // track rubber: green for practice, carried on through the weekend; a race without a weekend
@@ -96,9 +120,11 @@ void Game::startSession(Session ses) {
     else if (ses == SES_PRACTICE) s.rubber = 0.1f;
     else s.rubber = set.weekend ? weekendRubber : 0.35f;
     if (ttMode) { s.career = false; ses = SES_PRACTICE; }
-    raceLoaded = race.start(s, ses, grid.empty() ? nullptr : &grid);
-    if (!raceLoaded) { screen = SCR_TRACK; return; }
-    afterLoad();
+    return ses;
+}
+
+// the session is loaded: the ghost, the manager, into the garage or onto the grid
+void Game::sessionFinish(Session ses) {
     if (ttMode) { char gp[64]; ghostPath(gp, sizeof gp); race.loadGhost(gp); }
     // team manager: the race starts with our drivers in both cars, seen from the pit wall
     if (mgrMode && ses == SES_RACE && !ttMode && !aiDrivesPlayer) { race.startManager(); mgrCam = 0; mgrSel = 0; mgrRow = 0; }
@@ -320,7 +346,7 @@ void Game::benchUpdate(float dt) {
     set = s; champMode = false; careerMode = false;
     aiDrivesPlayer = strcmp(w, "santerno pitwall") != 0;
     cam = CAM_CHASE;
-    startRace();
+    { bool a = asyncLoad; asyncLoad = false; startRace(); asyncLoad = a; }   // (the benchmark: at once, its scenes go on from here)
     if (!strcmp(w, "sablons night")) race.startHour = 22.5f;                      // the sun is down
     if (!strcmp(w, "santerno pitwall")) { race.player().plan.aiDrives = true; wallView = true; }   // a team-mate drives, we watch from the pit wall
     if (!aiDrivesPlayer) {}
@@ -709,6 +735,9 @@ void Game::update(float dt, const Pad& p) {
     switch (screen) {
     case SCR_INTRO:
         introUpdate(dt, any && t > 0.6f && !(prev.cross || prev.circle || prev.start));
+        break;
+    case SCR_LOADING:
+        loadStep();
         break;
     case SCR_TITLE:
         // [walk] the main menu is walked round: each item at its station in the garage (walk.cpp);
@@ -1355,6 +1384,7 @@ void Game::drawTeam() {
 
 void Game::draw() {
     if (screen == SCR_INTRO) { drawIntro(); return; }
+    if (screen == SCR_LOADING) { drawLoading(); return; }
     if (screen == SCR_PODIUM) { if (raceLoaded) drawPodium(); else { gfx::beginFrame(0); finishFrame(); } return; }
     if (screen == SCR_GARAGE) { if (raceLoaded) drawGarageView(); else { gfx::beginFrame(0); finishFrame(); } return; }
     if (screen == SCR_WALK) { if (raceLoaded) drawWalkPit(); else { gfx::beginFrame(0); finishFrame(); } return; }   // [walk]

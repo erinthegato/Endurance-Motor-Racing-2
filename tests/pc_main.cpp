@@ -96,6 +96,7 @@ int main(int argc, char** argv) {
     if (!g.init()) { fprintf(stderr, "init failed (run from the folder that holds DATA/)\n"); return 1; }
     g.autoAllowed = false;          // fixed time steps here: the automatic quality would react to them
     std::string mode = argv[1];
+    g.asyncLoad = mode == "loading";   // (the tests load a session at once; "loading" tries the slideshow)
     if (mode == "swapcheck") return swapCheck(argc, argv);
     if (mode != "intro") { sound::musicFile(nullptr); g.screen = SCR_TITLE; }
     g.walkMenus = mode == "walk";   // (the old menus everywhere else: the scripts below press through the lists)
@@ -1060,6 +1061,34 @@ int main(int argc, char** argv) {
             pc::saveShot((out + b).c_str());
         }
         return 0;
+    }
+    if (mode == "loading") {
+        // loading <outdir> [track]: a weekend's practice loaded behind the slideshow; the steps' times, and
+        // pictures of the slideshow mid-load (held on screen by moving its start back)
+        std::string out = argv[2];
+        g.set.track = 0;
+        if (argc > 3) for (int i = 0; i < TRACK_COUNT; i++) if (!strcmp(TRACKS[i].id, argv[3])) g.set.track = i;
+        g.set.car = 3; g.set.weekend = true; g.set.opponents = 38;
+        g.startSession(SES_PRACTICE);
+        Pad none{};
+        int shots = 0, frames = 0;
+        double t0 = sys::timeSec();
+        while (g.screen == SCR_LOADING && frames < 600) {
+            int stepBefore = g.ld.step;
+            double a = sys::timeSec();
+            g.ld.t0 = sys::timeSec() - 2.0;              // (keep the slideshow showing for the pictures)
+            if (frames % 3 == 0) g.ld.slideT = 1.5f;     // (a picture fully in)
+            g.frame(1.0f / 30, none);
+            fprintf(stderr, "loading: frame %d step %d -> %d  %.0f ms  progress %.2f\n", frames, stepBefore, g.ld.step, (sys::timeSec() - a) * 1000, g.ld.prog);
+            if (shots < 6 && (frames == 1 || frames == 2 || stepBefore == 2)) {
+                char b[64]; snprintf(b, sizeof b, "/loading_%d.ppm", shots++);
+                pc::saveShot((out + b).c_str());
+                g.ld.slide++;
+            }
+            frames++;
+        }
+        fprintf(stderr, "loading: done in %d frames, %.2f s, screen %d (walk %d garage %d)\n", frames, sys::timeSec() - t0, g.screen, SCR_WALK, SCR_GARAGE);
+        return g.screen == SCR_WALK || g.screen == SCR_GARAGE ? 0 : 1;
     }
     if (mode == "art") {
         // art <outdir> <car id> <yaw> ...: cars on magenta, to be cut out for the LiveArea pictures

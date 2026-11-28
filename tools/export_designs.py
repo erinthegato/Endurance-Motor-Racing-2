@@ -133,6 +133,12 @@ for c in G.read_cars():
     Pi = mi.arrays()[0]
     ti = getattr(mi, 'tags', [])
     ti = (ti + ['carbon'] * len(mi.tris))[:len(mi.tris)]
+    # the steering wheel (the game's own, drawn on its own in the cockpit view) at its place in the cabin
+    ms = G.hd_steering(c['hyper'])
+    Ps = ms.arrays()[0] + np.array(B.PROTO_WHEEL if c['hyper'] else B.GT_WHEEL)
+    ts = getattr(ms, 'tags', [])
+    ts = (ts + ['carbon'] * len(ms.tris))[:len(ms.tris)]
+    Pi = np.concatenate([Pi, Ps]); ti = ti + ts
     ti = [t if isinstance(t, str) else 'carbon' for t in ti]
     keep_i = np.array([t != 'cage' for t in ti])
     # the cockpit was made for the game's generic canopy: drop whatever pokes out through this car's bodywork

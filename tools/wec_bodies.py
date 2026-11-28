@@ -370,8 +370,16 @@ GT = {
 }
 
 
+# per make, extra shape (default: none): front fender peaks over the bonnet (m), the rear haunches' flare
+# (x the base), and which cabin stations carry side glass (the 911-like car: small windows, painted quarters)
+GT_X = {
+    'zuffen911': dict(fender_rise=0.15, rear_flare=1.13, gt_waist=0.84, side_glass=(1, 3), nose_drop=0.07),
+}
+
+
 def gt_spec(cid, spec):
     lay, nose, bonnet, tail, lights, wing_h, bulge = GT.get(cid, GT['careergt3'])
+    spec.update(GT_X.get(cid, {}))
     L = spec['L']
     cab = dict(front=-0.32, mid=0.14, rear=-0.10)[lay]
     spec.update(layout=lay, nose=nose, bonnet=bonnet, tail=tail, lights=lights, wing_z=wing_h, bulge=bulge, cab=cab,
@@ -384,17 +392,22 @@ def gt_fns(spec):
     L = spec['L']; xf = L / 2; xr = -L / 2
     fa, ra = spec['axles']
     cab = spec['cab']; nose = spec['nose']; belt = 0.88; tail = spec['tail']; lay = spec['layout']
-    flare = lambda x: 0.07 * (np.exp(-((x - fa) / 0.36) ** 2) + 1.15 * np.exp(-((x - ra) / 0.40) ** 2))
-    Wb = curve([(xf, 0.72), (xf - 0.12, 0.88), (xf - 0.45, 0.92), (xr + 0.35, 0.92), (xr, 0.86)])
+    rf = spec.get('rear_flare', 1.15)
+    flare = lambda x: 0.07 * (np.exp(-((x - fa) / 0.36) ** 2) + rf * np.exp(-((x - ra) / 0.40) ** 2))
+    gw = spec.get('gt_waist', 0.92)           # (the doors drawn in between the arches: the haunches stand out)
+    Wb = curve([(xf, 0.72), (xf - 0.12, 0.88), (xf - 0.45, 0.92), (fa - 0.75, (0.92 + gw) / 2), (0.5 * (fa + ra), gw),
+                (ra + 0.75, (0.92 + gw) / 2), (xr + 0.35, 0.92), (xr, 0.86)])
     W = lambda x: float(Wb(x) + flare(x))
     # the top of the body (bonnet, the belt along the cabin, the rear deck)
     if lay == 'rear':
-        top = curve([(xf, nose), (xf - 0.10, nose + 0.06), (fa, spec['bonnet']), (cab + 0.80, belt - 0.03), (cab + 0.4, belt),
+        nd = spec.get('nose_drop', 0.0)        # (a bonnet that falls away between the wings, 911 fashion)
+        top = curve([(xf, nose - nd), (xf - 0.10, nose + 0.06 - nd), (fa, spec['bonnet'] - nd), (cab + 0.80, belt - 0.03), (cab + 0.4, belt),
                      (cab - 1.0, belt + 0.02), (ra + 0.10, tail + 0.04), (xr + 0.12, tail), (xr, tail - 0.08)])
     else:
         top = curve([(xf, nose), (xf - 0.10, nose + 0.05), (fa, spec['bonnet']), (cab + 0.80, belt - 0.02), (cab + 0.4, belt),
                      (cab - 1.0, belt + 0.01), (cab - 1.75, tail + 0.02), (xr + 0.12, tail), (xr, tail - 0.05)])
-    fend = lambda x: float(top(x) + 0.05 * (np.exp(-((x - fa) / 0.40) ** 2) + np.exp(-((x - ra) / 0.42) ** 2)))
+    fr = spec.get('fender_rise', 0.05)
+    fend = lambda x: float(top(x) + fr * np.exp(-((x - fa) / 0.45) ** 2) + 0.05 * np.exp(-((x - ra) / 0.42) ** 2))
     return W, top, fend
 
 
@@ -460,6 +473,9 @@ def build_gt(spec, lod):
             return True                             # the windscreen
         if i == len(cxs) - 2 and spec['layout'] != 'mid':
             return True                             # the rear glass
+        sg = spec.get('side_glass')
+        if sg and not (sg[0] <= i <= sg[1]):
+            return False                            # (painted rear quarters)
         return k in (0, 1, 6, 7)                    # the side windows
     m.loft(rings, cap_front=False, cap_back=spec['layout'] == 'mid', glass=glass)
     # the headliner: a dark lining just under the roof, so from the seat the roof is black, not the livery

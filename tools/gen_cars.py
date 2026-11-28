@@ -385,7 +385,7 @@ class Paint:
             self.d.rectangle([k * S / SW_DIV, TOP_V[1] * S + 2, (k + 1) * S / SW_DIV, S], fill=rgb(col))
 
 
-STYLES = ['stripe', 'twotone', 'slash', 'band', 'split', 'arrow', 'sweep', 'pixel', 'camo', 'torn']
+STYLES = ['stripe', 'twotone', 'slash', 'band', 'split', 'arrow', 'sweep', 'pixel', 'camo', 'torn', 'arrows']
 
 
 def livery(p, cdef, spec, hyper):
@@ -423,6 +423,20 @@ def livery(p, cdef, spec, hyper):
                     (fa - 0.35, 0.72)], B)
         p.top_poly([(ra + 0.70, 0.62), (ra + 0.70, 0.84), (xr + 0.05, 0.95), (xr + 0.05, 0.70)], B)
         p.side_poly([(xf, 0.0), (xf, 0.16), (fa - 0.45, 0.20), (ra + 0.45, 0.20), (xr, 0.18), (xr, 0.0)], C)
+    elif st == 'arrows':      # GT: a black roof and bonnet centre, white arrows streaming back along the flanks
+        fa, ra = spec['axles']
+        cab = spec.get('cab', 0.0)
+        p.top_poly([(xf - 0.25, 0.0), (xf - 0.25, 0.22), (fa - 0.20, 0.32), (cab + 0.75, 0.58), (cab - 1.25, 0.58),
+                    (cab - 1.60, 0.40), (cab - 1.60, 0.0)], B)
+        for k in range(9):
+            x0 = xf - 0.55 - k * 0.42
+            z0 = 0.30 + 0.18 * np.sin(k * 1.3)
+            w_ = 0.30 + 0.12 * (k % 3)
+            p.side_poly([(x0, z0 - 0.03), (x0 - w_, z0 - 0.03), (x0 - w_, z0 - 0.07), (x0 - w_ - 0.10, z0),
+                         (x0 - w_, z0 + 0.07), (x0 - w_, z0 + 0.03), (x0, z0 + 0.03)], C)
+            p.top_poly([(x0, 0.80 - 0.02), (x0 - w_, 0.80 - 0.02), (x0 - w_, 0.80 - 0.05), (x0 - w_ - 0.08, 0.80),
+                        (x0 - w_, 0.80 + 0.05), (x0 - w_, 0.80 + 0.02), (x0, 0.80 + 0.02)], C)
+        p.side_poly([(xf, 0.0), (xf, 0.12), (xr, 0.14), (xr, 0.0)], (0.06, 0.06, 0.07))
     elif st == 'torn':        # ragged white strips torn across the base colour, a dark lower body with a hooked
         fa, ra = spec['axles']   # swoosh over the rear wheel, a silver-grey roof
         rng = np.random.RandomState(10)
@@ -1068,7 +1082,7 @@ LOOK = {
     'lionne9x9':        ('slash',   (0.75, 0.95, 0.10), (0.50, 0.50, 0.55)),
     'ashcombevalkyr':   ('camo',    (0.72, 0.95, 0.12), (0.06, 0.06, 0.07)),
     'ardenza296':       ('stripe',  (0.98, 0.98, 0.98), (0.05, 0.40, 0.10)),
-    'zuffen911':        ('twotone', (0.10, 0.10, 0.12), (0.90, 0.10, 0.50)),
+    'zuffen911':        ('arrows',  (0.06, 0.06, 0.07), (0.96, 0.97, 0.99)),
     'isarm4':           ('slash',   (0.20, 0.55, 0.95), (0.90, 0.12, 0.12)),
     'sterneamg':        ('band',    (0.08, 0.08, 0.10), (0.10, 0.80, 0.75)),
     'ashcombevanguard': ('arrow',   (0.80, 0.95, 0.20), (0.05, 0.05, 0.05)),

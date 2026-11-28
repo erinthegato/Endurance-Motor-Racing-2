@@ -85,13 +85,13 @@ def mirror_ring(x, half):
 # ====================================================================== prototypes
 PROTO = {
     #                nose  fend  rfend  pod    canopy scoop  fin    wing     lights
-    'ardenza499':    (0.24, 0.84, 0.86, 0.74, 1.00, False, True,  'swan',  'claw'),
+    'ardenza499':    (0.24, 0.84, 0.86, 0.74, 1.00, True,  True,  'swan',  'bar'),
     'kaizen10':      (0.27, 0.86, 0.88, 0.80, 1.00, True,  True,  'end',   'bar'),
     'lionne9x9':     (0.25, 0.88, 0.90, 0.76, 0.98, False, False, 'swan',  'claw'),
     'ashcombevalkyr':(0.22, 0.90, 0.92, 0.70, 1.00, True,  True,  'pylon', 'twin'),
     'regalvr8':      (0.28, 0.80, 0.84, 0.82, 1.00, True,  True,  'end',   'bar'),
     'isarmh8':       (0.26, 0.82, 0.84, 0.80, 1.00, True,  True,  'swan',  'twin'),
-    'montagne27':    (0.25, 0.81, 0.85, 0.78, 1.00, False, True,  'swan',  'claw'),
+    'montagne27':    (0.25, 0.81, 0.85, 0.78, 1.00, True,  True,  'swan',  'line'),
     'origingx01':    (0.27, 0.80, 0.83, 0.80, 1.00, True,  True,  'end',   'bar'),
     'wokingw1':      (0.24, 0.83, 0.86, 0.76, 1.00, True,  True,  'swan',  'twin'),
     'dearbornlmdh':  (0.28, 0.82, 0.85, 0.82, 1.00, True,  True,  'end',   'bar'),
@@ -99,8 +99,17 @@ PROTO = {
 }
 
 
+# per make, the plan view: the nose's half width at the tip and the waist's (between the axles), metres
+PROTO_PLAN = {
+    'ardenza499': (0.55, 0.86), 'kaizen10': (0.62, 0.90), 'lionne9x9': (0.48, 0.82), 'ashcombevalkyr': (0.44, 0.80),
+    'regalvr8': (0.64, 0.92), 'isarmh8': (0.58, 0.88), 'montagne27': (0.50, 0.84), 'origingx01': (0.60, 0.90),
+    'wokingw1': (0.52, 0.83), 'dearbornlmdh': (0.66, 0.91), 'careerhyper': (0.56, 0.87),
+}
+
+
 def proto_spec(cid, spec, rule):
     nose, fend, rfend, pod, can, scoop, fin, wing, lights = PROTO.get(cid, PROTO['careerhyper'])
+    spec['nose_w'], spec['waist'] = PROTO_PLAN.get(cid, PROTO_PLAN['careerhyper'])
     r = dict(rule=rule, nose_h=nose, fend_h=fend, rfend_h=rfend, pod=pod, canopy_k=can, scoop=scoop, fin=fin,
              wing_mount=wing, lights=lights)
     if rule == 'LMDh':
@@ -117,14 +126,15 @@ def proto_fns(spec):
     fa, ra = spec['axles']
     nh, fh, rh, pod = spec['nose_h'], spec['fend_h'], spec['rfend_h'], spec['pod']
     # plan view: the full width at the axles, the nose pinched, the waist (above the sidepods) pulled in
-    W = curve([(xf, 0.55), (xf - 0.10, 0.80), (fa + 0.42, 0.97), (fa + 0.2, 1.0), (fa - 0.45, 1.0), (fa - 0.95, 0.90),
-               (0.0, 0.86), (ra + 0.85, 0.94), (ra + 0.40, 1.0), (ra - 0.35, 1.0), (xr + 0.06, 0.96), (xr, 0.92)])
+    nw, wa = spec.get('nose_w', 0.55), spec.get('waist', 0.86)      # (per make: the nose's width, the waist pinch)
+    W = curve([(xf, nw), (xf - 0.10, min(0.80 + (nw - 0.55) * 0.6, 0.92)), (fa + 0.42, 0.97), (fa + 0.2, 1.0), (fa - 0.45, 1.0), (fa - 0.95, wa + 0.04),
+               (0.0, wa), (ra + 0.85, 0.94), (ra + 0.40, 1.0), (ra - 0.35, 1.0), (xr + 0.06, 0.96), (xr, 0.92)])
     # the middle: the nose rising to the cockpit, the engine deck behind it
     deck = curve([(xf, nh - 0.08), (xf - 0.20, nh), (fa + 0.25, nh + 0.12), (fa - 0.20, 0.44), (1.05, 0.50), (0.0, 0.56),
                   (ra + 0.40, 0.62), (ra - 0.20, 0.62), (xr, 0.56)])
     # the fender pods' crest: up over the front wheels, down along the sidepods, up again over the rears
     fend = curve([(xf, nh), (xf - 0.30, nh + 0.22), (fa + 0.42, fh - 0.10), (fa + 0.05, fh), (fa - 0.40, fh - 0.05),
-                  (fa - 0.95, 0.58), (0.20, 0.52), (ra + 0.95, 0.56), (ra + 0.40, rh - 0.04), (ra - 0.05, rh), (xr + 0.10, rh - 0.06), (xr, rh - 0.14)])
+                  (fa - 0.95, 0.68), (0.20, 0.66), (ra + 0.95, 0.68), (ra + 0.40, rh - 0.04), (ra - 0.05, rh), (xr + 0.10, rh - 0.06), (xr, rh - 0.14)])
     # the sidepod undercut (the lower side drawn in between the axles)
     under = curve([(xf, 1.0), (fa - 0.45, 1.0), (fa - 0.90, pod), (ra + 0.90, pod), (ra + 0.45, 1.0), (xr, 1.0)])
     return W, deck, fend, under
@@ -134,7 +144,8 @@ def proto_ring(x, spec, fns, lod):
     W, deck, fend, under = fns
     fa, ra = spec['axles']
     w = W(x); d = deck(x); f = fend(x); u = under(x)
-    zb = 0.05 + (0.08 if x > spec['L'] / 2 - 0.25 else 0)
+    # the floor's edge: sat on the splitter at the nose (no step up, no gap above the splitter)
+    zb = 0.05 + 0.01 * float(sstep(spec['L'] / 2 - 0.45, spec['L'] / 2 - 0.25, x))
     arch = in_arch(x, (fa, ra))
     za = arch_z(x, (fa, ra), 0.24) if arch else 0.24
     yi = 0.58 if arch else w * u * 0.92                # the floor's edge (inside the wheel in an arch)
@@ -142,6 +153,14 @@ def proto_ring(x, spec, fns, lod):
     half = [(0.0, zb), (yi, zb), (yi, za if arch else zb + 0.02), (ws, za if arch else 0.24),
             (w, max(za + 0.02, 0.44) if arch else 0.44), (w * 0.97, f - 0.10), (w * 0.88, f - 0.015), (w * 0.79, f),
             (w * 0.69, f - 0.04), (w * 0.60, max(d + 0.05, f - 0.16)), (w * 0.52, d + 0.025), (w * 0.28, d + 0.008), (0.0, d)]
+    # ahead of the front arches the fender crest drops below the side's fixed heights: keep the side under the
+    # crest (else the side stands up as a flap above a sunken, hollow-looking fender top)
+    lim = half[5][1] - 0.01
+    z4 = max(min(half[4][1], lim), zb + 0.04)
+    z3 = max(min(half[3][1], z4 - 0.01), zb + 0.03)
+    z2 = max(min(half[2][1], z3 - 0.005), zb + 0.01)
+    half[2], half[3], half[4] = (half[2][0], z2), (half[3][0], z3), (half[4][0], z4)
+    half[5] = (half[5][0], max(half[5][1], z4 + 0.01))
     if lod >= 2:
         half = [half[i] for i in (0, 1, 2, 3, 4, 6, 8, 10, 12)]
     elif PCSET and lod < 0:
@@ -192,15 +211,32 @@ def build_proto(spec, lod):
         m.quad((x0 + 0.002, 0.09, z0 + 0.06), (x0 + 0.002, -0.09, z0 + 0.06), (x0 + 0.002, -0.09, z0), (x0 + 0.002, 0.09, z0), uv='carbon', shade=0.4)
     # the fin: from the canopy's tail to the rear wing
     if spec['fin']:
-        x0, x1 = -1.30, xr + 0.38
+        # (a tall carbon shark fin from just behind the driver's head to the wing)
+        x0, x1 = -1.05, xr + 0.30
         top = spec['fin_top']
-        P = np.array([[x0, 0.0, ct(x0)], [x1, 0.0, deck(x1)], [x1, 0.0, top], [x0 - 0.05, 0.0, ct(x0) + 0.03]])
-        for s in (0.010, -0.010):
+        P = np.array([[x0, 0.0, ct(x0) - 0.01], [x1, 0.0, deck(x1)], [x1, 0.0, top], [x0 - 0.08, 0.0, min(ct(x0) + 0.07, top)]])
+        for s in (0.012, -0.012):
             Q = P.copy(); Q[:, 1] = s
-            m.part(Q, [[0, 1, 2], [0, 2, 3]], uv='second', flat=True)
+            m.part(Q, [[0, 1, 2], [0, 2, 3]], uv='carbon', flat=True)
     _proto_wing(m, spec, lod)
     # splitter, dive planes, headlights, mirrors, louvres, diffuser, tail lights
-    m.box((xf - 0.40, -0.86, 0.035), (xf + 0.03, 0.86, 0.06), uv='carbon')
+    # the splitter: a thin plate following the nose's plan (inside the body's outline, 10 mm proud at the
+    # tip), its front edge chamfered down to a blade
+    xs_ = np.linspace(xf - 0.40, xf - 0.01, 7)
+    hw_ = [min(W(x), 0.98) * 0.97 for x in xs_]
+    out_ = [(x, -h) for x, h in zip(xs_, hw_)] + [(xf + 0.01, -hw_[-1] * 0.55), (xf + 0.01, hw_[-1] * 0.55)] + [(x, h) for x, h in zip(xs_[::-1], hw_[::-1])]
+    V_ = []
+    for (x, y) in out_:
+        tip = x > xf - 0.06
+        V_.append((x, y, 0.047 if tip else 0.052)); V_.append((x, y, 0.035))
+    n_ = len(out_)
+    V_.append((xf - 0.20, 0.0, 0.052)); V_.append((xf - 0.20, 0.0, 0.035))
+    ct_, cb_ = 2 * n_, 2 * n_ + 1
+    F_ = []
+    for i in range(n_):
+        j = (i + 1) % n_
+        F_ += [[ct_, 2 * i, 2 * j], [cb_, 2 * j + 1, 2 * i + 1], [2 * i, 2 * i + 1, 2 * j + 1], [2 * i, 2 * j + 1, 2 * j]]
+    m.part(V_, F_, uv='carbon')
     for s in (-1, 1):
         # dive planes on the nose corners
         x0 = xf - 0.22
@@ -253,7 +289,7 @@ def build_proto(spec, lod):
             xc = -0.55; yc = s * W(xc) * 0.70
             m.cyl((xc, yc, fend(xc) - 0.01), (xc, yc, fend(xc) + 0.025), 0.035, sides=12, uv='grey', shade=1.1)
             m.cyl((xc, yc, fend(xc) + 0.025), (xc, yc, fend(xc) + 0.03), 0.022, sides=10, uv='red', shade=1.2)
-        m.tube([(xf - 0.02, 0.0, 0.10), (xf + 0.015, 0.0, 0.10), (xf + 0.015, 0.0, 0.14)], 0.009, sides=6, uv='yellow')     # tow eye
+        m.tube([(xf - 0.02, 0.0, 0.075), (xf + 0.008, 0.0, 0.075), (xf + 0.008, 0.0, 0.095)], 0.006, sides=6, uv='yellow')     # tow eye (small, tucked under the nose)
     return m
 
 
@@ -261,13 +297,15 @@ def _proto_wing(m, spec, lod):
     L = spec['L']; xr = -L / 2
     wz = spec['wing_z']; ws = spec['wing_span']
     x0 = xr + 0.02
+    if spec.get('rule') == 'LMDh':
+        x0 = spec['axles'][1] - 0.81           # Art. 3.1.3: the wing (its end plates) <= 850 mm behind the rear axle
     # main plane and a flap above its trailing edge (a gurney on the HD car)
     m.box((x0 + 0.06, -ws, wz), (x0 + 0.36, ws, wz + 0.03), uv='carbon')
     if lod < 2:
         m.box((x0, -ws, wz + 0.035), (x0 + 0.16, ws, wz + 0.06), uv='second')
         for s in (-1, 1):
             # end plates
-            m.box((x0 - 0.02, s * ws - 0.010, wz - 0.22), (x0 + 0.40, s * ws + 0.010, wz + 0.095), uv='second')
+            m.box((x0 - 0.04, s * ws - 0.012, wz - 0.32), (x0 + 0.46, s * ws + 0.012, wz + 0.095), uv='carbon')
         mount = spec['wing_mount']
         if mount == 'swan':
             for s in (-0.30, 0.30):

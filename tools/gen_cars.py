@@ -385,7 +385,7 @@ class Paint:
             self.d.rectangle([k * S / SW_DIV, TOP_V[1] * S + 2, (k + 1) * S / SW_DIV, S], fill=rgb(col))
 
 
-STYLES = ['stripe', 'twotone', 'slash', 'band', 'split', 'arrow']
+STYLES = ['stripe', 'twotone', 'slash', 'band', 'split', 'arrow', 'sweep', 'pixel', 'camo', 'torn']
 
 
 def livery(p, cdef, spec, hyper):
@@ -414,6 +414,68 @@ def livery(p, cdef, spec, hyper):
         p.side_poly([(-0.2, 0), (0.5, ZMAX), (xr, ZMAX), (xr, 0)], B)
         p.top_poly([(0.1, 0), (0.6, YMAX), (xr, YMAX), (xr, 0)], B)
         p.side_poly([(-0.2, 0), (0.5, ZMAX), (0.62, ZMAX), (-0.08, 0)], C)
+    elif st == 'sweep':       # a band along the front fender crests that sweeps down the flank behind the front
+        fa, ra = spec['axles']   # wheels and back up over the rear fenders; dark lower body
+        p.side_poly([(xf - 0.15, 0.56), (xf - 0.15, 0.70), (fa - 0.35, 0.86), (0.25, 0.58), (ra + 0.55, 0.50),
+                     (ra - 0.10, 0.92), (xr + 0.05, 0.92), (xr + 0.05, 0.78), (ra + 0.30, 0.40), (0.20, 0.44),
+                     (fa - 0.45, 0.70)], B)
+        p.top_poly([(xf - 0.15, 0.58), (xf - 0.15, 0.80), (fa - 0.35, 0.92), (0.35, 0.86), (0.35, 0.70),
+                    (fa - 0.35, 0.72)], B)
+        p.top_poly([(ra + 0.70, 0.62), (ra + 0.70, 0.84), (xr + 0.05, 0.95), (xr + 0.05, 0.70)], B)
+        p.side_poly([(xf, 0.0), (xf, 0.16), (fa - 0.45, 0.20), (ra + 0.45, 0.20), (xr, 0.18), (xr, 0.0)], C)
+    elif st == 'torn':        # ragged white strips torn across the base colour, a dark lower body with a hooked
+        fa, ra = spec['axles']   # swoosh over the rear wheel, a silver-grey roof
+        rng = np.random.RandomState(10)
+        def ragged(x0, x1, z0, h, n=14):
+            xs = np.linspace(x0, x1, n)
+            top = [(x, z0 + h * (0.5 + 0.5 * rng.rand())) for x in xs]
+            bot = [(x, z0 - h * (0.2 + 0.5 * rng.rand())) for x in xs[::-1]]
+            return top + bot
+        for k in range(14):
+            x0 = xr + rng.rand() * (L - 0.6); w_ = 0.4 + rng.rand() * 0.9
+            p.side_poly(ragged(x0, x0 + w_, 0.25 + rng.rand() * 0.6, 0.05 + rng.rand() * 0.06), B)
+            y0 = 0.15 + rng.rand() * 0.85
+            p.top_poly(ragged(x0, x0 + w_, y0, 0.04 + rng.rand() * 0.05), B)
+        p.top_poly([(1.10, 0.0), (1.10, 0.25), (0.40, 0.48), (-1.80, 0.42), (-1.80, 0.0)], (0.72, 0.73, 0.76))
+        p.side_poly([(fa - 0.45, 0.06), (fa - 0.45, 0.36), (0.30, 0.30), (ra + 0.95, 0.40), (ra + 0.95, 0.06)], C)
+        p.side_poly([(ra + 0.95, 0.40), (ra + 0.50, 0.70), (ra - 0.05, 0.72), (ra - 0.05, 0.60), (ra + 0.40, 0.58), (ra + 0.70, 0.30)], C)
+    elif st == 'camo':        # big triangles in lighter / darker shades of the base colour, lime pinstripes
+        fa, ra = spec['axles']   # along the flanks and the fender crests, a dark carbon panel between the wheels
+        rng = np.random.RandomState(7)
+        for k in range(60):
+            x0 = xr + rng.rand() * L; z0 = rng.rand() * 1.0; s_ = 0.25 + rng.rand() * 0.45
+            sh = mix(A, (1, 1, 1), 0.12) if rng.rand() < 0.5 else mix(A, (0, 0, 0), 0.25)
+            a = rng.rand() * np.pi * 2
+            pts = [(x0 + s_ * np.cos(a + q), z0 + s_ * 0.6 * np.sin(a + q)) for q in (0, 2.1, 4.2)]
+            p.side_poly(pts, sh)
+            y0 = rng.rand() * YMAX
+            p.top_poly([(x0 + s_ * np.cos(a + q), y0 + s_ * 0.6 * np.sin(a + q)) for q in (0, 2.1, 4.2)], sh)
+        p.side_poly([(fa - 0.48, 0.06), (fa - 0.48, 0.40), (ra + 0.60, 0.34), (ra + 0.60, 0.06)], C)
+        lw = 0.022
+        p.side_poly([(fa - 0.30, 0.58), (fa - 0.30, 0.58 + lw), (ra + 0.40, 0.66 + lw), (ra + 0.40, 0.66)], B)
+        p.top_poly([(xf - 0.10, 0.50), (xf - 0.10, 0.50 + lw), (fa - 0.60, 0.60 + lw), (fa - 0.60, 0.60)], B)
+        p.top_poly([(xf - 0.10, 0.50), (xf - 0.10 - lw, 0.50), (xf - 0.40, 0.20), (xf - 0.40 + lw, 0.20)], B)
+    elif st == 'pixel':       # dark carbon lower body rising behind the front wheels, a grey roof and a
+        fa, ra = spec['axles']   # tail broken up into tilted squares (light blue, white, red) toward the back
+        p.side_poly([(xf, 0.0), (xf, 0.20), (fa - 0.42, 0.20), (fa - 0.42, 0.34), (fa - 0.80, 0.24), (ra + 0.30, 0.24),
+                     (ra - 0.10, 0.20), (xr, 0.20), (xr, 0.0)], C)
+        p.top_poly([(1.10, 0.0), (1.10, 0.20), (0.40, 0.46), (-1.80, 0.40), (-1.80, 0.0)], (0.20, 0.21, 0.23))
+        rng = np.random.RandomState(35)
+        white, red = (0.96, 0.96, 0.97), (0.86, 0.10, 0.16)
+        s_ = 0.075
+        for i in range(30):
+            x = ra + 1.05 - i * s_ * 1.4
+            t = min(max((ra + 1.05 - x) / 1.6, 0.0), 1.0)          # 0 at the start of the pattern, 1 at the tail
+            for j in range(10):
+                z = 0.24 + j * s_ * 1.4 + (i % 2) * s_ * 0.7
+                if z > 0.95 or x < xr or rng.rand() < 0.35 - 0.2 * t:
+                    continue
+                r_ = rng.rand()
+                col = red if r_ < 0.55 * t else (white if r_ < 0.55 * t + 0.25 else B)
+                p.side_poly([(x, z - s_), (x + s_, z), (x, z + s_), (x - s_, z)], col)
+                if z < 0.62:
+                    yy = 0.62 + (z - 0.24) * 0.95
+                    p.top_poly([(x, yy - s_), (x + s_, yy), (x, yy + s_), (x - s_, yy)], col)
     elif st == 'arrow':       # a pointed centre panel running back from the nose
         p.top_poly([(xf, 0), (xf - 0.4, 0.42), (xr, 0.30), (xr, 0)], B)
         p.side_poly([(xf, 0.18), (xf - 0.5, 0.34), (xr, 0.44), (xr, 0.30)], C)
@@ -425,11 +487,13 @@ def livery(p, cdef, spec, hyper):
     # class number panel (the digits are drawn by the game) with three position lights
     panel = (0.85, 0.07, 0.07) if hyper else (0.95, 0.45, 0.05)
     px, pz = spec['panel']
-    p.side_poly([(px - 0.26, pz - 0.17), (px + 0.26, pz - 0.17), (px + 0.26, pz + 0.17), (px - 0.26, pz + 0.17)], panel)
+    if not spec.get('no_panel'):      # (the Blender cars carry real number boards instead)
+        p.side_poly([(px - 0.26, pz - 0.17), (px + 0.26, pz - 0.17), (px + 0.26, pz + 0.17), (px - 0.26, pz + 0.17)], panel)
     for k in range(3):
         p.side_disc(px + 0.36 + k * 0.09, pz + 0.12, 0.03, (0.2, 1.0, 0.3))
     tx = spec['top_panel']
-    p.top_poly([(tx - 0.22, -0.20), (tx + 0.22, -0.20), (tx + 0.22, 0.20), (tx - 0.22, 0.20)], panel, mirror=False)
+    if not spec.get('no_panel'):
+        p.top_poly([(tx - 0.22, -0.20), (tx + 0.22, -0.20), (tx + 0.22, 0.20), (tx - 0.22, 0.20)], panel, mirror=False)
     if hyper:
         # louvres over the front wheels, cooling exits beside the cockpit
         fa = spec['axles'][0]
@@ -995,14 +1059,14 @@ def read_cars():
 
 # per-car character: (livery style, second colour, accent) and shape choices
 LOOK = {
-    'ardenza499':       ('arrow',   (0.98, 0.85, 0.10), (0.05, 0.05, 0.05)),
-    'kaizen10':         ('band',    (0.90, 0.10, 0.10), (0.95, 0.95, 0.95)),
+    'ardenza499':       ('sweep',   (0.98, 0.80, 0.06), (0.05, 0.05, 0.05)),
+    'kaizen10':         ('torn',    (0.93, 0.93, 0.95), (0.07, 0.07, 0.08)),
     'regalvr8':         ('twotone', (0.08, 0.10, 0.30), (0.95, 0.95, 0.95)),
     'isarmh8':          ('slash',   (0.10, 0.25, 0.75), (0.85, 0.10, 0.12)),
     'origingx01':       ('stripe',  (0.95, 0.55, 0.10), (0.95, 0.55, 0.10)),
-    'montagne26':       ('split',   (0.95, 0.95, 0.97), (0.90, 0.12, 0.12)),
+    'montagne26':       ('pixel',   (0.45, 0.68, 0.98), (0.06, 0.06, 0.07)),
     'lionne9x9':        ('slash',   (0.75, 0.95, 0.10), (0.50, 0.50, 0.55)),
-    'ashcombevalkyr':   ('stripe',  (0.80, 0.95, 0.20), (0.80, 0.95, 0.20)),
+    'ashcombevalkyr':   ('camo',    (0.72, 0.95, 0.12), (0.06, 0.06, 0.07)),
     'ardenza296':       ('stripe',  (0.98, 0.98, 0.98), (0.05, 0.40, 0.10)),
     'zuffen911':        ('twotone', (0.10, 0.10, 0.12), (0.90, 0.10, 0.50)),
     'isarm4':           ('slash',   (0.20, 0.55, 0.95), (0.90, 0.12, 0.12)),

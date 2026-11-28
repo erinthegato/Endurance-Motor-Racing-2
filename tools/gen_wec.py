@@ -76,6 +76,10 @@ def proto_axles(L, rule):
     # (the splitter sticks out ~3.7 cm past the body, the endplates and tow strap ~3 cm)
     front = min(r['oh_f'] - 0.042, L - r['wb'] - 0.70, (L - r['wb']) * 0.56)
     front = max(front, L - r['wb'] - (r['oh_r'] - 0.035))       # (the diffuser, end plates and tow strap ~3 cm)
+    if rule == 'LMDh':
+        # LMDh Art. 3.1.3: bodywork <= 750 mm behind the rear wheel centre line (the wing alone may reach 850 mm,
+        # see wec_bodies._proto_wing); the diffuser and tow strap stand ~3 cm behind the body's tail
+        front = max(min(r['oh_f'] - 0.042, L - r['wb'] - 0.70, (L - r['wb']) * 0.56), L - r['wb'] - 0.72)
     rear = L - r['wb'] - front
     return L / 2 - front, L / 2 - front - r['wb']
 

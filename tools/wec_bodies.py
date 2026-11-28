@@ -376,7 +376,7 @@ GT_X = {
     # (the 911-like car: axles 0.15 m forward -- a short nose, the engine hung out behind the rear axle -- the cabin
     #  0.12 m forward, a rounded nose in plan and profile with a lifted chin, a short bonnet falling steeply)
     'zuffen911': dict(fender_rise=0.20, rear_flare=1.13, gt_waist=0.84, side_glass=(1, 3), nose_drop=0.05,
-                      axle_shift=0.15, cab_shift=0.12, gt_nose_w=0.56, round_nose=True, chin=0.07),
+                      axle_shift=0.15, cab_shift=0.12, gt_nose_w=0.56, round_nose=True, chin=0.07, bubble=True),
     # (the AMG-like car: one flat bonnet sloping evenly down to the nose, no wing humps or arch flares in front)
     'sterneamg': dict(fender_rise=0.0, front_flare=0.0, bulge=0.0, flat_bonnet=True, cab_shift=-0.22),
 }
@@ -467,6 +467,8 @@ def gt_cabin(spec, fns):
     cab = spec['cab']; lay = spec['layout']; L = spec['L']; xr = -L / 2
     W, top, fend = fns
     ws_x = cab + 0.98                                            # the windscreen's base
+    if spec.get('bubble') and lay == 'rear':
+        return _bubble_cabin(spec, fns, ws_x)
     if lay == 'mid':
         xs = [ws_x, cab + 0.60, cab + 0.20, cab - 0.25, cab - 0.60, cab - 0.95]
         roof = [top(ws_x) + 0.02, 1.17, 1.26, 1.27, 1.19, top(cab - 0.95) + 0.10]
@@ -477,6 +479,45 @@ def gt_cabin(spec, fns):
         xs = [ws_x, cab + 0.60, cab + 0.20, cab - 0.25, cab - 0.75, cab - 1.25, cab - 1.62]
         roof = [top(ws_x) + 0.02, 1.17, 1.27, 1.28, 1.22, 1.07, top(cab - 1.62) + 0.04]
     return xs, roof
+
+
+def _bez(P, t):
+    P = np.asarray(P, float); u = 1.0 - t
+    return (u ** 3) * P[0] + 3 * (u * u * t) * P[1] + 3 * (u * t * t) * P[2] + (t ** 3) * P[3]
+
+
+def _bubble_cabin(spec, fns, ws_x):
+    """the 911-like glass house: one continuous arc from the windscreen's foot over a domed roof and down the
+    fastback -- two cubic curves meeting level at the crown (same crown height and ends as the plain cabin)"""
+    cab = spec['cab']; W, top, fend = fns
+    z0 = top(ws_x) + 0.02
+    xp, zp = cab - 0.12, 1.28                                 # the crown, over the driver's head
+    xe = cab - 1.95; ze = top(xe) + 0.03                      # the fastback's foot on the engine lid
+    # the screen: leaves the bonnet raked (~ 36 deg) and bows outward into the roof
+    rake = np.array([-np.cos(np.radians(36)), np.sin(np.radians(36))])
+    front = [(ws_x, z0), (ws_x + rake[0] * 0.24, z0 + rake[1] * 0.24), (xp + 0.66, zp), (xp, zp)]
+    # the fastback: level off the crown, then a long convex fall to the engine lid
+    back = [(xp, zp), (xp - 0.55, zp), (xe + 0.55, ze + 0.16), (xe, ze)]
+    pts = [_bez(front, t) for t in np.linspace(0, 1, 7)] + [_bez(back, t) for t in np.linspace(0, 1, 8)[1:]]
+    return [float(p[0]) for p in pts], [float(p[1]) for p in pts]
+
+
+def _bubble_glass(spec, cxs):
+    """which quads of the bubble glass house are glass, by position (the plain cabin's stations: windscreen to
+    cab + 0.60, side windows to cab - 0.80, painted quarters, the rear glass on the last 0.55 m)"""
+    cab = spec['cab']
+    def glass(i, k):
+        if k == 8:
+            return False
+        xm = 0.5 * (cxs[i] + cxs[i + 1])
+        if xm > cab + 0.55:
+            return True                             # the windscreen, curving up into the roof
+        if xm < cab - 1.40:
+            return True                             # the rear glass
+        if cab - 0.80 <= xm:
+            return k in (0, 1, 6, 7)                # the side windows
+        return False                                # (painted rear quarters)
+    return glass
 
 
 def build_gt(spec, lod):
@@ -494,7 +535,12 @@ def build_gt(spec, lod):
     for x, rz in zip(cxs, roof):
         belt = top(x) - 0.01
         wb = W(x) * 0.86; wr = W(x) * 0.62
-        half = [(wb, belt), (wb - 0.06, belt + (rz - belt) * 0.55), (wr, rz - 0.015), (wr * 0.5, rz), (0.0, rz)]
+        if spec.get('bubble'):                      # (rounded tumblehome, the roof domed across)
+            h = max(rz - belt, 0.0)
+            half = [(wb, belt), (wb - 0.035, belt + h * 0.52), (wr * 1.04, rz - min(0.055, h * 0.4)),
+                    (wr * 0.56, rz - min(0.022, h * 0.12)), (0.0, rz)]
+        else:
+            half = [(wb, belt), (wb - 0.06, belt + (rz - belt) * 0.55), (wr, rz - 0.015), (wr * 0.5, rz), (0.0, rz)]
         rings.append(np.array([(x, y, z) for y, z in half] + [(x, -y, z) for y, z in half[-2::-1]]))
     # ring points: 0 belt, 1 mid glass, 2 roof edge, 3, 4 roof, 5, 6 roof edge, 7 mid glass, 8 belt (other side);
     # quad k joins point k to k + 1 (k 8: across the belt, the glass house's floor)
@@ -509,6 +555,8 @@ def build_gt(spec, lod):
         if sg and not (sg[0] <= i <= sg[1]):
             return False                            # (painted rear quarters)
         return k in (0, 1, 6, 7)                    # the side windows
+    if spec.get('bubble') and spec['layout'] == 'rear':
+        glass = _bubble_glass(spec, cxs)
     m.loft(rings, cap_front=False, cap_back=spec['layout'] == 'mid', glass=glass)
     # the headliner: a dark lining just under the roof, so from the seat the roof is black, not the livery
     if lod < 2:

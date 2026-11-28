@@ -498,7 +498,7 @@ void Game::screenSetupTablet(Panel& P) {
         if (set.weekend && set.raceMin > 0) { size_t l = strlen(b2); snprintf(b2 + l, sizeof b2 - l, "  (P+Q x1)"); }
         P.text(10, 238, b2, RGBA(140, 200, 255), 0.62f);
     }
-    P.textC(P.vw / 2, 250, "LEFT/RIGHT or X change   X select   O back", DIM, 0.6f);
+    P.textC(P.vw / 2, 250, "LEFT/RIGHT change  X select  O back", DIM, 0.6f);
 }
 
 // car setup on the diagnostics computer (and the session's times when in the garage at the track)
@@ -592,7 +592,7 @@ void Game::screenSetupComputer(Panel& P, bool trackGarage) {
         snprintf(b, sizeof b, "Track: %s %d%%", gr, (int)(race.rubber * 100)); P.text(x, y, b, RGBA(140, 200, 255), 0.6f);
     }
     if (pf) P.textC(P.vw / 2, 194, "PARC FERME: wing, springs and gearing are sealed", RGBA(255, 120, 60), 0.6f);
-    P.textC(P.vw / 2, 212, trackGarage ? "LEFT/RIGHT or X change   L / R  tabs   O pause" : "LEFT/RIGHT or X change   O back", DIM, 0.58f);
+    P.textC(P.vw / 2, 212, trackGarage ? "X drive out / flying lap / skip   L / R  tabs   O pause" : "LEFT/RIGHT change   O back", DIM, 0.58f);
 }
 
 // the weather screen beside the diagnostics computer (F1-game style): the forecast strip -- an icon, the
@@ -740,10 +740,8 @@ int Game::updateSetup(int dx, int dy, bool ok, bool back, bool trackGarage) {
     setupSel = (setupSel + dy + rows) % rows;
     CarSetup& su = set.setup;
     bool pf = parcFerme();
-    bool wrap = false;
-    if (ok && !dx && (setupSel <= 7 || setupSel == 10)) { dx = 1; wrap = true; }   // X on a value row: the next value (round to the start)
     if (dx) {
-        auto step = [&](int& v, int d, int lo, int hi) { v += d; if (v > hi) v = wrap ? lo : hi; if (v < lo) v = lo; };
+        auto step = [&](int& v, int d, int lo, int hi) { v += d; if (v < lo) v = lo; if (v > hi) v = hi; };
         switch (setupSel) {
             case 0: if (!pf) step(su.wing, dx, 1, 5); break;
             case 1: if (!pf) step(su.susp, dx, 0, 2); break;
@@ -1195,7 +1193,7 @@ void Game::screenOptions(Panel& P) {
         if (k == sel) P.fill(40, y - 2, 400, 17, RGBA(255, 150, 40, 230));
         P.text(52, y, v[i], k == sel ? INK : ((i == 18 && cfg.hideWheel) ? DIM : WHITE), 0.82f);
     }
-    P.textC(240, 255, "LEFT/RIGHT or X change     O back", DIM, 0.75f);
+    P.textC(240, 255, "LEFT/RIGHT change     X select     O back", DIM, 0.75f);
 }
 
 void Game::screenControls(Panel& P) {
@@ -1521,7 +1519,7 @@ void Game::screenCareerNew(Panel& P) {
                snprintf(b2, sizeof b2, "TIP: a 6 h round in %s:", fmtLenShort(-newMin)); P.text(274, y, b2, RGBA(140, 200, 255), 0.6f); y += 11;
                snprintf(b2, sizeof b2, "1 real min = %s", one); P.text(274, y, b2, RGBA(140, 200, 255), 0.6f); }
     }
-    P.textC(240, 254, "UP/DOWN choose   LEFT/RIGHT or X change   X select   O back", DIM, 0.72f);
+    P.textC(240, 254, "UP/DOWN choose   LEFT/RIGHT change   X select   O back", DIM, 0.72f);
 }
 
 void Game::screenLivery(Panel& P, Panel& I) {
@@ -1544,7 +1542,7 @@ void Game::screenLivery(Panel& P, Panel& I) {
         if (i == 4) { snprintf(b, sizeof b, "#%d", career.number); P.text(24, y + 14, b, tc, 0.8f); }
         if (i < 5) { P.text(P.vw - 26, y + 12, "<", tc, 0.8f); P.text(P.vw - 14, y + 12, ">", tc, 0.8f); }
     }
-    P.textC(P.vw / 2, 249, "LEFT/RIGHT or X change   O done", DIM, 0.62f);
+    P.textC(P.vw / 2, 249, "LEFT/RIGHT change   O done", DIM, 0.62f);
     const CarDef& d = CARS[career.carIndex()];
     snprintf(b, sizeof b, "%s %s  #%d", d.make, d.model, career.number);
     I.text(8, 3, b, WHITE, 0.9f);
@@ -1960,6 +1958,6 @@ void Game::drawShowroomInfo() {
     snprintf(b, sizeof b, "Cars  #%d  #%d", d.numbers[0], d.numbers[1]);
     P.text(18, 125, b, DIM, 0.66f);
     P.fill(0, SCREEN_H - 22, SCREEN_W, 22, RGBA(0, 0, 0, 160));
-    P.text(8, SCREEN_H - 18, "LEFT/RIGHT team  L/R class  R stick turn  UP/DOWN zoom  X spin  O back", DIM, 0.56f);
+    P.text(8, SCREEN_H - 18, "LEFT/RIGHT team  L/R class  R stick turn  UP/DOWN zoom  /\\ spin  O back", DIM, 0.56f);
     gfx::setBlend(false); gfx::setDepthTest(true);
 }

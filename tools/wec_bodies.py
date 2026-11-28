@@ -458,7 +458,7 @@ GT = {
     'zuffen911':     ('rear',  0.52, 0.70, 0.84, 'round', 1.28, 0.00),
     'isarm4':        ('front', 0.60, 0.82, 0.92, 'slim',  1.34, 0.03),
     'kentuckyz6':    ('mid',   0.52, 0.68, 0.90, 'slim',  1.30, 0.00),
-    'ashcombevanguard':('front',0.58, 0.80, 0.90, 'slim', 1.32, 0.03),
+    'ashcombevanguard':('front',0.60, 0.80, 0.92, 'round', 1.24, 0.03),
     'woking720':     ('mid',   0.50, 0.66, 0.85, 'eye',   1.20, 0.00),
     'sterneamg':     ('front', 0.62, 0.84, 0.94, 'slim',  1.34, 0.05),
     'kotobukigr':    ('front', 0.58, 0.80, 0.90, 'eye',   1.31, 0.02),
@@ -489,6 +489,10 @@ GT_X = {
                              endplate_drop=0.30),
     # (the 720S-like car: a 2.67 m wheelbase set back, a low teardrop canopy far forward on the same wedge cabin,
     #  a roof scoop, twin exhausts high in the middle of an open tail, the wing hung out behind on swan necks)
+    # (the Vantage-like car: a 2.70 m wheelbase, a long bonnet with two big vents, outlined exits behind the front
+    #  wheels, slatted vents at the tail's corners, side-exit pipes, a swan-neck wing with big end plates)
+    'ashcombevanguard': dict(wheelbase=2.70, axle_shift=0.0, twin_hood_vents=True, fender_exit=True, corner_vents=True,
+                             side_exhaust=True, exhaust=False, wing_back=0.08, endplate_drop=0.25, gt_nose_w=0.76),
     'woking720': dict(wheelbase=2.67, axle_shift=-0.135, cab_shift=-0.18, wedge=True, fender_rise=0.08, gt_nose_w=0.62,
                       wing_back=0.26, endplate_drop=0.22, exhaust=(0.12, 0.45, 0.05), roof_scoop=True, mesh_tail=True,
                       deck_vents=True),
@@ -910,6 +914,19 @@ def _gt_extras(m, spec, fns):
             return V
         m.box((x0, -0.15, rz - 0.03), (x1, 0.15, rz + 0.04), uv='second', taper=ramp)
         m.quad((x1 + 0.002, -0.12, rz), (x1 + 0.002, 0.12, rz), (x1 + 0.002, 0.12, rz + 0.035), (x1 + 0.002, -0.12, rz + 0.035), uv='carbon', shade=0.15)
+    if spec.get('fender_exit'):                 # (a tall exit vent behind each front wheel, leaning back)
+        fa, ra = spec['axles']
+        for s in (-1, 1):
+            for k in range(3):
+                x0 = fa - 0.46 - k * 0.045
+                ya, yb = s * (_flank_y(spec, fns, x0, 0.30) + 0.006), s * (_flank_y(spec, fns, x0 - 0.08, 0.68) + 0.006)
+                m.quad((x0, ya, 0.30), (x0 - 0.025, ya, 0.30), (x0 - 0.105, yb, 0.68), (x0 - 0.08, yb, 0.68), uv='carbon', shade=0.15)
+    if spec.get('corner_vents'):                # (upright slats at the tail's corners, behind the rear wheels)
+        for s in (-1, 1):
+            for k in range(4):
+                x0 = xr + 0.30 - k * 0.055
+                y = s * (_flank_y(spec, fns, x0, 0.40) + 0.006)
+                m.quad((x0, y, 0.22), (x0 - 0.03, y, 0.22), (x0 - 0.03, y, 0.58), (x0, y, 0.58), uv='carbon', shade=0.15)
     if spec.get('side_exhaust'):                # (side-exit pipes in the sill, just ahead of the rear wheels)
         fa, ra = spec['axles']
         xe = ra + 0.52

@@ -456,6 +456,17 @@ struct Race {
     static float steerLock(float v) { return 0.30f / (1 + v / 13.0f) + 0.014f; }
     float steerFor(float v, float lat) const { return v < 3 ? 1 : clampf(atanf(lat * 2.9f / (v * v)) / steerLock(v), 0, 1); }
     float playerLatMax = 0;                  // the player's cornering grip last step, m/s^2 (for the steering help)
+    // the player's car this physics step, for the setup engineer (setupeng.cpp): what the tyres and the chassis did
+    struct PlayerTele {
+        float ex = 0;            // steering past the front grip (0 = within it): understeer
+        float rot = 0;           // the rear's own rotation this step (rad/s, + in the turn's direction): oversteer
+        float lock = 0; bool frontLock = true; float rearLock = 0;   // wheels locked under braking
+        float rpmFrac = 0; int topGear = 7;
+        bool kerb = false, off = false;
+        float load = 1;          // the tyres' share of the load (light over kerbs / crests)
+        float vTop = 0;          // the car's top speed (m/s)
+        float sgn = 0;           // the turn's direction (+ / -)
+    } tele;
     bool newRecord = false;                  // set when a lap beats the record (the game saves the ghost)
     float ttDelta = 0; bool ttDeltaOn = false;   // the live gap to the record (+ slower)
     bool ghostAt(float t, GhostPt& out) const;   // the ghost's place t seconds into its lap

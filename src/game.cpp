@@ -898,6 +898,12 @@ void Game::update(float dt, const Pad& p) {
         }
         race.sfxEvents.clear();
         sound::silence();
+        engUi.update(dt);
+        // the setup engineer's offer: X applies it, O leaves the car as it is (before O can pause)
+        if (setupTab == 0 && engUi.pending()) {
+            if (ok) { if (engUi.accept(set.setup)) setups.put(set.track, CARS[set.car].era, set.setup); ok = false; }
+            else if (back) { engUi.dismiss(); back = false; }
+        }
         if (pressed(p, &Pad::start) || back) { screen = SCR_PAUSE; sel = 0; break; }   // START or O: the pause menu
         if (pressed(p, &Pad::r)) setupTab = (setupTab + 1) % 3;                         // SETUP, WEATHER, TIMING
         if (pressed(p, &Pad::l)) setupTab = (setupTab + 2) % 3;

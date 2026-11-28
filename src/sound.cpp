@@ -74,7 +74,7 @@ const int MAX_SFX = 160;
 Clip sfx[MAX_SFX]; int sfxCount = 0;
 struct Shot { volatile int clip = -1; volatile float vol = 0, pan = 0; volatile bool loop = false; float pos = 0, g = 0;
               int decAt = -1, decClip = -1, dec[2] = {0, 0}, cur = 0; };   // ADPCM: decoded up to sample decAt (audio thread)
-Shot shots[7];                          // 0..3 effects, 4 radio, 5 rain loop, 6 crowd loop
+Shot shots[8];                          // 0..3 effects, 4 radio, 5 rain loop, 6 crowd loop, 7 a voice in the garage (the setup engineer)
 // freeing the effects while the audio thread mixes: it skips them while sfxHold is set, and
 // mixBusy says it is in the middle of reading them
 volatile bool sfxHold = false;
@@ -274,14 +274,14 @@ void mix(int16_t* out, int frames) {
     }
     // one-shots and loops (DATA/sfx: ADP1 files, packed in memory -- radio 11025 Hz, the rest 22050 Hz)
     mixBusy = 1;
-    for (int si = 0; si < 7 && !sfxHold; si++) {
+    for (int si = 0; si < 8 && !sfxHold; si++) {
         Shot& sh = shots[si];
         int ci = sh.clip;
         if (ci < 0 || ci >= sfxCount) continue;
         const Clip& c = sfx[ci];
         float target = sh.vol, pan = sh.pan;
         float gl = sqrtf(0.5f * (1 - pan)), gr = sqrtf(0.5f * (1 + pan));
-        float shotVol = (si == 4 ? volRadio : volSfx) * 1.2f;
+        float shotVol = (si == 4 || si == 7 ? volRadio : volSfx) * 1.2f;
         for (int i = 0; i < frames; i++) {
             sh.g += (target - sh.g) * 0.003f;
             int a = (int)sh.pos;
@@ -297,7 +297,7 @@ void mix(int16_t* out, int frames) {
                 smp = sh.cur;
             } else smp = c.ulaw ? ULAW[c.ulaw[a]] : c.data[a];
             float x = smp * (1.0f / 32768.0f) * sh.g * shotVol;
-            float* dst = si == 4 ? rbuf : buf;            // (the radio is mixed apart: it isn't ducked)
+            float* dst = si == 4 || si == 7 ? rbuf : buf; // (the radio and the voice are mixed apart: not ducked)
             dst[i * 2] += x * gl; dst[i * 2 + 1] += x * gr;
             sh.pos += c.step;
         }
@@ -356,7 +356,7 @@ void mix(int16_t* out, int frames) {
     }
     mixBusy = 0;
     float m = master;
-    bool talking = shots[4].clip >= 0 && shots[4].vol > 0 && volRadio > 0;
+    bool talking = ((shots[4].clip >= 0 && shots[4].vol > 0) || (shots[7].clip >= 0 && shots[7].vol > 0)) && volRadio > 0;
     float duckTo = talking ? DUCK_LEVEL : 1.0f;
     for (int i = 0; i < frames * 2; i++) {
         if ((i & 1) == 0) duckG += (duckTo - duckG) * (duckTo < duckG ? 0.00038f : 0.000057f);   // 44.1 kHz frames
@@ -515,6 +515,21 @@ bool radio(const char* name) {
     return true;
 }
 bool radioBusy() { return shots[4].clip >= 0; }
+// a voice in the garage (DATA/sfx/<name>.raw, not radio-filtered): its own channel, so it never cuts the radio off
+bool voice(const char* name) {
+    static char keep[64][48]; static int nk = 0;
+    const char* key = nullptr;
+    for (int i = 0; i < nk; i++) if (!strcmp(keep[i], name)) key = keep[i];
+    if (!key && nk < 64 && strlen(name) < 47) { strcpy(keep[nk], name); key = keep[nk++]; }
+    if (!key) return false;
+    int c = sfxFor(key);
+    if (c < 0) return false;
+    Shot& s = shots[7];
+    s.clip = -1; s.pos = 0; s.g = 1; s.vol = 1.0f; s.pan = 0; s.loop = false;
+    s.clip = c;
+    return true;
+}
+bool voiceBusy() { return shots[7].clip >= 0; }
 void loop(int slot, const char* name, float vol) {
     Shot& s = shots[slot == 0 ? 5 : 6];
     if (!name || vol <= 0.001f) { s.vol = 0; if (s.g < 0.001f) s.clip = -1; return; }

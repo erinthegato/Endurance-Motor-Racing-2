@@ -33,6 +33,8 @@ float musicLevel();            // current music fade level 0..1 (tests)
 void play(const char* name, float vol, float pan);
 bool radio(const char* name);  // e.g. "16_box" plays radio_16_box.raw (a new call cuts the last one off); false: no such clip
 bool radioBusy();
+bool voice(const char* name);  // a voice in the garage, e.g. "setup_greet" (DATA/sfx/setup_greet.raw): its own channel; false: no such clip
+bool voiceBusy();
 void loop(int slot, const char* name, float vol);
 void testNextSong();           // tests only: the next song in the playlist (the game has no skip)
 void stopEffects();

@@ -1,3 +1,4 @@
+#include "../src/setupeng.h"
 #include "../src/trophies.h"
 #include <algorithm>
 // PC test program: runs the real game code with the software renderer.
@@ -976,6 +977,54 @@ int main(int argc, char** argv) {
         run(10, none); shot(g, out + "/s_reel.ppm");
         fprintf(stderr, "reel screen %d\n", (int)g.screen);
         return 0;
+    }
+    if (mode == "setupeng") {
+        // setupeng <track> [wing gearing susp]: practice laps (the AI driving our car) with a deliberately bad setup,
+        // then the setup engineer's report; checks she asks for less wing / longer gearing on a fast track
+        std::string tid = argc > 2 ? argv[2] : "lemans";
+        for (int i = 0; i < TRACK_COUNT; i++) if (tid == TRACKS[i].id) g.set.track = i;
+        g.set.car = 1; g.set.opponents = 0; g.set.weather = WX_DRY; g.set.weekend = true; g.set.sessionMin = 60;
+        g.aiDrivesPlayer = true;
+        g.startRace();
+        if (g.screen != SCR_RACE) { fprintf(stderr, "session did not start\n"); return 1; }
+        CarSetup bad = g.race.player().su;
+        bad.wing = argc > 3 ? atoi(argv[3]) : 5; bad.gearing = argc > 4 ? atoi(argv[4]) : 0; if (argc > 5) bad.susp = atoi(argv[5]);
+        g.race.player().su = bad;
+        setupeng::Report rp;
+        int lastShown = -1;
+        for (int k = 0; k < 60 * 60 * 30 && setupeng::cleanLaps() < 3; k++) {
+            g.race.update(1.0f / 60, 0, 0, 0, 0, true);
+            if (setupeng::cleanLaps() != lastShown) { lastShown = setupeng::cleanLaps(); fprintf(stdout, "t %.0f s: lap %d, %d clean laps\n", g.race.time, g.race.player().lap, lastShown); }
+        }
+        rp = setupeng::analyse(bad, g.race.player().tyre);
+        const setupeng::Lap& a = rp.avg;
+        fprintf(stdout, "laps %d  lap %.1f s  limiter %.3f  flat-out %.3f  top gear %d/%d  under e/m/x %.3f %.3f %.3f  over e/x %.3f %.3f  fast slide %.3f  lock F/R %.3f %.3f  kerb %.3f  tyres %.0f C\n",
+                rp.laps, a.time, a.limiter, a.flatOut, a.topGearUsed, a.topGear, a.underEntry, a.underMid, a.underExit, a.overEntry, a.overExit, a.fastSlide, a.lockF, a.lockR, a.kerbHop, a.tyreT);
+        bool wingLess = false, gearLonger = false;
+        for (int i = 0; i < rp.n; i++) {
+            fprintf(stdout, "  %d. %-55s (score %.2f)\n", i + 1, setupeng::text(rp.sug[i]), rp.score[i]);
+            if (rp.sug[i] == setupeng::SG_WING_LESS) wingLess = true;
+            if (rp.sug[i] == setupeng::SG_GEAR_LONGER) gearLonger = true;
+        }
+        if (rp.obs) fprintf(stdout, "  observation: %s\n", setupeng::obsText(rp.obs));
+        bool okk = wingLess || gearLonger;
+        fprintf(stdout, "setupeng: %s (less wing %d, longer gearing %d)\n", okk ? "ok" : "FAIL", (int)wingLess, (int)gearLonger);
+        // the garage: ask her in person (screenshot of the subtitle and the X apply / O ignore offer)
+        if (argc > 6) {
+            std::string out = argv[6];
+            g.set.setup = bad;
+            g.race.toGarage(); g.screen = SCR_GARAGE; g.setupPage = true; g.setupTab = 0; g.setupSel = 12;
+            Pad x{}; x.cross = true; g.frame(1.0f / 30, x);
+            for (int k = 0; k < 150; k++) { Pad z{}; g.frame(1.0f / 30, z); }
+            shot(g, out + "/setupeng_offer.ppm");
+            fprintf(stdout, "offer pending %d: %s\n", (int)g.engUi.pending(), g.engUi.sub);
+            int w0 = g.set.setup.wing;
+            Pad x2{}; x2.cross = true; g.frame(1.0f / 30, x2);
+            for (int k = 0; k < 60; k++) { Pad z{}; g.frame(1.0f / 30, z); }
+            shot(g, out + "/setupeng_applied.ppm");
+            fprintf(stdout, "after X: wing %d -> %d, pending %d: %s\n", w0, g.set.setup.wing, (int)g.engUi.pending(), g.engUi.sub);
+        }
+        return okk ? 0 : 1;
     }
     if (mode == "weekend") {
         // practice -> qualifying -> race with 1-minute sessions; checks music and the grid

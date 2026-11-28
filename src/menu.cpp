@@ -1,6 +1,7 @@
 // The menus live inside a 3D pit garage: the car sits in its box, and every menu is a screen or
 // board standing in the garage (a monitor on a stand, the big wall screen, a pit board). The camera
 // walks from one to the next. The same panel code draws the settings flat over a paused race.
+#include "setupeng.h"
 #include "trophies.h"
 #include "setups.h"
 #include "game.h"
@@ -527,7 +528,7 @@ void Game::screenSetupComputer(Panel& P, bool trackGarage) {
             return;
         }
     } else P.text(6, 2, b, WHITE, 0.8f);
-    char v[12][40];
+    char v[13][40];
     snprintf(v[0], 40, "Rear wing  < %d >", su.wing);
     snprintf(v[1], 40, "Springs  < %s >", SOFT3[su.susp]);
     snprintf(v[2], 40, "Gearing  < %s >", GEAR3[su.gearing]);
@@ -540,15 +541,16 @@ void Game::screenSetupComputer(Panel& P, bool trackGarage) {
     snprintf(v[9], 40, "FLYING LAP");
     snprintf(v[10], 40, "Time  < x%d >", (int)(raceLoaded ? race.timeAccel : 1));
     snprintf(v[11], 40, raceLoaded && race.set.timeTrial ? "End time trial" : (raceLoaded && race.session == SES_PRACTICE ? "Skip to qualifying" : "Skip to the race"));
-    int rows = trackGarage ? 12 : 9;
+    snprintf(v[12], 40, "Ask the engineer  (%d laps)", setupeng::cleanLaps());
+    int rows = trackGarage ? 13 : 9;
     bool active = setupPage || trackGarage;
-    float rowH = trackGarage ? 13.6f : 18;
+    float rowH = trackGarage ? 12.8f : 18;
     for (int i = 0; i < rows; i++) {
         float y = 25 + i * rowH;
         bool sealed = pf && i < 3;
         bool timeOff = i == 10 && raceLoaded && race.set.sessionMin <= 5;
         if (i == setupSel && active) P.fill(3, y - 2, 170, rowH - 1, sealed || timeOff ? RGBA(120, 120, 130, 230) : RGBA(80, 180, 255, 230));
-        u32 col = i == setupSel && active ? INK : (sealed || timeOff ? DIM : (i == 8 || i == 9 ? GOLD : WHITE));
+        u32 col = i == setupSel && active ? INK : (sealed || timeOff ? DIM : (i == 8 || i == 9 ? GOLD : (i == 12 ? RGBA(140, 200, 255) : WHITE)));
         P.text(8, y, v[i], col, trackGarage ? 0.68f : 0.74f);
         if (sealed) P.textR(170, y + 1, "SEALED", i == setupSel && active ? INK : RGBA(255, 120, 60), 0.55f);
     }
@@ -592,7 +594,18 @@ void Game::screenSetupComputer(Panel& P, bool trackGarage) {
         snprintf(b, sizeof b, "Track: %s %d%%", gr, (int)(race.rubber * 100)); P.text(x, y, b, RGBA(140, 200, 255), 0.6f);
     }
     if (pf) P.textC(P.vw / 2, 194, "PARC FERME: wing, springs and gearing are sealed", RGBA(255, 120, 60), 0.6f);
-    P.textC(P.vw / 2, 212, trackGarage ? "X drive out / flying lap / skip   L / R  tabs   O pause" : "LEFT/RIGHT change   O back", DIM, 0.58f);
+    if (trackGarage && engUi.open && engUi.sub[0]) {
+        // the setup engineer talking: her words (two lines if long), and the offer
+        P.fill(2, 192, P.vw - 4, 31, RGBA(10, 14, 22, 225));
+        P.text(8, 193, "SETUP ENGINEER", RGBA(255, 190, 60), 0.5f);
+        char l1[96], l2[96]; snprintf(l1, sizeof l1, "%s", engUi.sub); l2[0] = 0;
+        size_t n = strlen(l1);
+        if (n > 48) { size_t k = n / 2; while (k < n && l1[k] != ' ') k++; if (k < n) { l1[k] = 0; snprintf(l2, sizeof l2, "%s", l1 + k + 1); } }
+        P.text(8, 202, l1, WHITE, 0.56f);
+        if (l2[0]) P.text(8, 211, l2, WHITE, 0.56f);
+        if (engUi.pending()) P.textR(P.vw - 8, 193, "X apply   O ignore", GOLD, 0.52f);
+    } else
+    P.textC(P.vw / 2, 212, trackGarage ? (setupSel == 12 ? "X ask the engineer   L / R  tabs   O pause" : "X drive out / flying lap / skip   L / R  tabs   O pause") : "LEFT/RIGHT change   O back", DIM, 0.58f);
 }
 
 // the weather screen beside the diagnostics computer (F1-game style): the forecast strip -- an icon, the
@@ -736,10 +749,12 @@ void Game::screenTiming(Panel& P) {
 }
 
 int Game::updateSetup(int dx, int dy, bool ok, bool back, bool trackGarage) {
-    int rows = trackGarage ? 12 : 9;
+    int rows = trackGarage ? 13 : 9;
     setupSel = (setupSel + dy + rows) % rows;
     CarSetup& su = set.setup;
     bool pf = parcFerme();
+    // the setup engineer (practice / qualifying): X asks; her suggestion waits for X apply / O ignore (Game::update)
+    if (ok && trackGarage && setupSel == 12 && !engUi.pending()) { engUi.ask(su, su.tyre, pf); return 0; }
     if (dx) {
         auto step = [&](int& v, int d, int lo, int hi) { v += d; if (v < lo) v = lo; if (v > hi) v = hi; };
         switch (setupSel) {

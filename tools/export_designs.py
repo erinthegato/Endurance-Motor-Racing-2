@@ -139,6 +139,8 @@ for c in G.read_cars():
     ts = getattr(ms, 'tags', [])
     ts = (ts + ['carbon'] * len(ms.tris))[:len(ms.tris)]
     Pi = np.concatenate([Pi, Ps]); ti = ti + ts
+    cs = spec.get('cab_shift', 0.0)              # (a cabin moved forward: its cockpit, wheel and eye with it)
+    Pi = Pi + np.array([cs, 0.0, 0.0])
     ti = [t if isinstance(t, str) else 'carbon' for t in ti]
     keep_i = np.array([t != 'cage' for t in ti])
     # the cockpit was made for the game's generic canopy: drop whatever pokes out through this car's bodywork
@@ -167,7 +169,7 @@ for c in G.read_cars():
                          tyre_f=REG[rule]['tyre_f'], tyre_r=REG[rule]['tyre_r'],
                          mirrors=[list(map(float, q)) for q in getattr(m, 'mirrors', [])],
                          colour=[float(v) for v in c['colour']], second=[float(v) for v in spec['second']], accent=[float(v) for v in spec['accent']],
-                         eye=list(B.PROTO_EYE if c['hyper'] else B.GT_EYE),
+                         eye=list(np.array(B.PROTO_EYE if c['hyper'] else B.GT_EYE) + np.array([spec.get('cab_shift', 0.0), 0, 0])),
                          lights=spec.get('lights', ''), wing_mount=spec.get('wing_mount', ''), scoop=bool(spec.get('scoop', False)))
     print(c['id'], rule, f"L {spec['L']:.3f}", 'lofts', len(m.lofts), 'parts', int(keep.sum()), 'tris', len(T))
 json.dump(meta, open(os.path.join(OUTDIR, 'designs.json'), 'w'), indent=1)

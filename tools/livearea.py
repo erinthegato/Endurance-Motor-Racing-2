@@ -1,8 +1,8 @@
 """The Vita's LiveArea pictures for Endurance Motor Racing 2.0: icon0.png (128x128, shown in a
 circle), the LiveArea background (840x500) and the start gate (280x158). Night at an endurance race:
-the cars are the game's own, rendered on magenta in the showroom (emr_test art) and cut out.
+the car is one of the new Blender-built hypercars (Ardenza 499), rendered on a transparent background.
 
-  ./emr_test art /tmp/art <car> <yaw> ...     then     python3 tools/livearea.py /tmp/art vita/sce_sys
+  python3 tools/livearea.py <dir with la_34.png la_side.png la_icon.png> vita/sce_sys
 """
 import sys, numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
@@ -17,6 +17,10 @@ def font(size, weight=800):
 ACC = (255, 60, 40); GT = (255, 150, 30)
 
 def cutout(name):
+    import os
+    if os.path.exists(f'{ART}/{name}.png'):          # a Blender render with a transparent background
+        im = Image.open(f'{ART}/{name}.png').convert('RGBA')
+        return im.crop(im.getbbox())
     a = np.array(Image.open(f'{ART}/{name}.ppm').convert('RGB')).astype(int)
     key = (a[..., 0] > 200) & (a[..., 1] < 90) & (a[..., 2] > 200)
     al = Image.fromarray(np.where(key, 0, 255).astype('uint8')).filter(ImageFilter.MinFilter(3)).filter(ImageFilter.GaussianBlur(0.6))
@@ -60,13 +64,12 @@ def save8(im, path):
     # the Vita wants 8-bit palettised PNGs
     im.convert('RGB').quantize(256, method=Image.MEDIANCUT, dither=Image.FLOYDSTEINBERG).save(path, optimize=True)
 
-hyper, hyper_side, gt, hyper2 = cutout('h_icon'), cutout('h_side'), cutout('g_34'), cutout('h2_34')
+hyper, hyper_side, hyper34 = cutout('la_icon'), cutout('la_side'), cutout('la_34')   # one of the new hypercars (Blender)
 
 # ---- the LiveArea background, 840x500: the title top left, the cars below it, the right side calm (the start gate)
 bg = streaks(night(840, 500, 300), 330, 470, 9, 1)
 d = ImageDraw.Draw(bg)
-place(bg, gt, 18, 250, 300)
-place(bg, hyper2, 210, 255, 380)
+place(bg, hyper34, 40, 222, 560)
 text(d, (36, 28), 'ENDURANCE', font(64), (245, 245, 250), 2)
 text(d, (40, 100), 'MOTOR RACING', font(38, 700), (210, 214, 230), 2)
 text(d, (382, 84), '2.0', font(64), ACC, 2)

@@ -2,7 +2,7 @@
 # drawing into an offscreen picture through Mesa (EGL + llvmpipe), driven by tests/pc_main.cpp.
 # tests/headless/SDL.h stands in for SDL2. Screenshots come out at 1280 x 720 (EMR_W / EMR_H).
 #   make -f Makefile.headless && ./emr_gl race lemans 0 1 11 shots 25
-GAME = src/data.cpp src/track.cpp src/race.cpp src/racecontrol.cpp src/launch.cpp src/reliability.cpp src/champ.cpp src/career.cpp src/settings.cpp src/menu.cpp src/sound.cpp src/render.cpp src/render_fx.cpp src/clip.cpp src/game.cpp src/intro.cpp src/trophies.cpp src/setups.cpp src/setupeng.cpp src/walk.cpp
+GAME = src/data.cpp src/track.cpp src/race.cpp src/racecontrol.cpp src/launch.cpp src/reliability.cpp src/champ.cpp src/career.cpp src/settings.cpp src/menu.cpp src/sound.cpp src/render.cpp src/render_fx.cpp src/clip.cpp src/game.cpp src/intro.cpp src/trophies.cpp src/setups.cpp src/setupeng.cpp src/walk.cpp src/loading.cpp
 SRC = $(GAME) src/platform_desktop.cpp tests/pc_main.cpp tests/headless/glue.cpp
 GLLIBS = $(firstword $(wildcard /usr/lib/x86_64-linux-gnu/libEGL.so /usr/lib/x86_64-linux-gnu/libEGL.so.1)) $(firstword $(wildcard /usr/lib/x86_64-linux-gnu/libGL.so /usr/lib/x86_64-linux-gnu/libGL.so.1))
 emr_gl: $(SRC) src/*.h tests/headless/*.h

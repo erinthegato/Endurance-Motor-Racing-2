@@ -31,7 +31,8 @@ enum Screen { SCR_TITLE, SCR_TRACK, SCR_CAR, SCR_SETTINGS, SCR_HELP, SCR_RACE, S
               SCR_TEAM, SCR_PODIUM, SCR_CHAMP, SCR_LOAD, SCR_REEL, SCR_OPTIONS, SCR_CONTROLS, SCR_GARAGE, SCR_INTRO,
               SCR_CAREER, SCR_CAREER_NEW, SCR_LIVERY, SCR_TROPHIES, SCR_REPLAY, SCR_PHOTO, SCR_REALISM,
               SCR_HQ, SCR_SHOWROOM,
-              SCR_WALK };     // [walk] on foot in the garage and the pits (walk.cpp)
+              SCR_WALK,       // [walk] on foot in the garage and the pits (walk.cpp)
+              SCR_LOADING };  // the loading slideshow while a session is built over several frames (loading.cpp)
 
 struct Game {
     Screen screen = SCR_TITLE;
@@ -142,6 +143,19 @@ struct Game {
     double lastUpdMs = 0, lastDrawMs = 0;        // the last frame's CPU time: update, draw (the perf test)
     void startRace();
     void startSession(Session ses);
+    // loading a session (loading.cpp): in steps over several frames behind a slideshow (asyncLoad), or all
+    // at once (the tests); the same code either way
+    bool asyncLoad = true;
+    struct LoadState {
+        bool active = false; int step = 0; Session ses = SES_PRACTICE; double t0 = 0; float prog = 0, shown = 0;
+        RaceSettings s; std::vector<int> grid, cars; int carNext = 0; int slide = 0; float slideT = 0;
+    } ld;
+    Session sessionPrep(Session ses, RaceSettings& s, std::vector<int>& grid);
+    void sessionFinish(Session ses);
+    void afterLoadBegin();
+    void afterLoadEnd();
+    void loadStep();
+    void drawLoading();
     void startReel();
     bool loadSlot(int slot);
     std::vector<int> qualiGrid;   // car numbers in qualifying order

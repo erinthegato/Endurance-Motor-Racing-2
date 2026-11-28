@@ -378,7 +378,7 @@ GT_X = {
     'zuffen911': dict(fender_rise=0.20, rear_flare=1.13, gt_waist=0.84, side_glass=(1, 3), nose_drop=0.05,
                       axle_shift=0.15, cab_shift=0.12, gt_nose_w=0.56, round_nose=True, chin=0.07),
     # (the AMG-like car: one flat bonnet sloping evenly down to the nose, no wing humps or arch flares in front)
-    'sterneamg': dict(fender_rise=0.0, front_flare=0.0, bulge=0.0, flat_bonnet=True),
+    'sterneamg': dict(fender_rise=0.0, front_flare=0.0, bulge=0.0, flat_bonnet=True, cab_shift=-0.22),
 }
 
 

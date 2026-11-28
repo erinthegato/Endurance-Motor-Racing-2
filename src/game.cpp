@@ -175,11 +175,7 @@ void Game::frame(float dt, const Pad& pad) {
     sound::musicEra(set.car >= 0 && set.car < CAR_COUNT ? CARS[set.car].era % ERA_COUNT : -1);   // the era's own songs join the menu music
     bool menu = (!raceLoaded || screen == SCR_RESULTS || screen == SCR_PODIUM) && screen != SCR_INTRO;
     (void)menu;
-    // main menu: a tap in the top-right corner of the screen skips to the next song, top-left the one before
-    if (screen == SCR_TITLE && pad.touches > 0 && prev.touches == 0 && pad.ty[0] < TOUCH_SKIP_H) {
-        if (pad.tx[0] < TOUCH_SKIP_W) sound::musicSkip(-1);
-        else if (pad.tx[0] >= SCREEN_W - TOUCH_SKIP_W) sound::musicSkip(1);
-    }
+    // (the songs play through in order: there's no skipping)
     // headquarters has a theme for each class (hq_hyper.emu, hq_gt3.emu, on a loop) for the class looked
     // at, and only there; everywhere else the era's songs
     {
@@ -509,7 +505,8 @@ void Game::updateRace(float dt, const Pad& p) {
             int k = 0; for (int i = 0; i < 5; i++) if (ACCEL[i] == (int)race.timeAccel) k = i;
             race.timeAccel = (float)ACCEL[(k + 1) % 5];
         }
-        if (pressed(p, &Pad::circle)) mgrCam = (mgrCam + 1) % 3;   // the pit wall -> TV -> the dashcam
+        if (pressed(p, &Pad::select)) mgrCam = (mgrCam + 1) % 3;   // the pit wall -> TV -> the dashcam
+        if (pressed(p, &Pad::circle)) { screen = SCR_PAUSE; sel = 0; raceAudio(); return; }   // O: back (the pause menu)
     } else {
         race.timeAccel = 1;
         if (race.qte.on) {
@@ -696,8 +693,9 @@ void Game::update(float dt, const Pad& p) {
     noteT -= dt;
     bool any = p.cross || p.circle || p.square || p.triangle || p.start || p.select || p.up || p.down || p.left || p.right || p.l || p.r;
     idle = any ? 0 : idle + dt;
-    int dy = (pressed(p, &Pad::down) ? 1 : 0) - (pressed(p, &Pad::up) ? 1 : 0);
-    int dx = (pressed(p, &Pad::right) ? 1 : 0) - (pressed(p, &Pad::left) ? 1 : 0);
+    // menu steps: the d-pad or the left stick, with repeat while held (nav.h)
+    navRep.update(p, dt, navDx, navDy);
+    int dy = navDy, dx = navDx;
     bool ok = pressed(p, &Pad::cross), back = pressed(p, &Pad::circle);
     switch (screen) {
     case SCR_INTRO:
@@ -741,7 +739,8 @@ void Game::update(float dt, const Pad& p) {
         // team headquarters: the four eras' cars on the desk
         if (dx) hqSel = (hqSel + dx + ERA_COUNT) % ERA_COUNT;
         if (idle > cfg.attract && !aiDrivesPlayer) { idle = 0; introBegin(1); break; }
-        if ((ok || pressed(p, &Pad::start)) && t > 0.3f) { chooseEra(hqSel); screen = SCR_TITLE; sel = 0; t = 0; }   // (no back: X picks)
+        if ((ok || pressed(p, &Pad::start)) && t > 0.3f) { chooseEra(hqSel); screen = SCR_TITLE; sel = 0; t = 0; }   // X picks the class
+        else if (back && t > 0.3f) { hqSel = era; screen = SCR_TITLE; sel = 0; t = 0; }                           // O: the main menu, class unchanged
         break;
     case SCR_SHOWROOM: {
         // left / right: the era's teams; L / R: the era; the sticks walk the camera round; up / down: closer
@@ -749,12 +748,12 @@ void Game::update(float dt, const Pad& p) {
         if (dx) showroomCar = eraFirstCar(e) + (k + dx + TEAMS_PER_ERA) % TEAMS_PER_ERA;
         int de = (pressed(p, &Pad::r) ? 1 : 0) - (pressed(p, &Pad::l) ? 1 : 0);
         if (de) { e = (e + de + ERA_COUNT) % ERA_COUNT; showroomCar = eraFirstCar(e) + k; }
-        float turn = fabsf(p.rstickX) > 0.1f ? p.rstickX : (fabsf(p.stickX) > 0.25f ? p.stickX : 0);
+        float turn = fabsf(p.rstickX) > 0.1f ? p.rstickX : 0;            // the right stick walks the camera round
         if (turn != 0) { showSpin = false; showYaw += turn * dt * 1.6f; }
         else if (showSpin) showYaw += dt * 0.22f;
-        if (p.up) showDist = fmaxf(3.4f, showDist - dt * 2.5f);
-        if (p.down) showDist = fminf(6.4f, showDist + dt * 2.5f);
-        if (pressed(p, &Pad::triangle)) showSpin = !showSpin;
+        float mx, my; nav::move(p, mx, my);                                // up / down (d-pad or left stick): closer / further
+        if (fabsf(my) > fabsf(mx) && fabsf(my) > 0.3f) showDist = clampf(showDist + my * dt * 2.5f, 3.4f, 6.4f);
+        if (pressed(p, &Pad::triangle) || ok) showSpin = !showSpin;
         if (back) { screen = SCR_TITLE; sel = 8; t = 0; }
         break;
     }
@@ -845,6 +844,7 @@ void Game::update(float dt, const Pad& p) {
         const int ROWS = 15;
         sel = (sel + dy + ROWS) % ROWS;
         if (ok && sel == 14) { setupPage = true; setupSel = 0; break; }
+        if (ok && sel <= 11 && !dx) dx = 1;                 // X on a value row: the next value
         auto cyc = [&](int v, int n) { return (v + dx + n) % n; };
         int li = 0, oi = 0, ei = 0;
         for (int i = 0; i < LENGTH_N; i++) if ((set.raceMin > 0 && LENGTHS[i] == -set.raceMin) || (set.raceMin <= 0 && LENGTHS[i] == set.laps)) li = i;
@@ -894,7 +894,7 @@ void Game::update(float dt, const Pad& p) {
         }
         race.sfxEvents.clear();
         sound::silence();
-        if (pressed(p, &Pad::start)) { screen = SCR_PAUSE; sel = 0; break; }
+        if (pressed(p, &Pad::start) || back) { screen = SCR_PAUSE; sel = 0; break; }   // START or O: the pause menu
         if (pressed(p, &Pad::r)) setupTab = (setupTab + 1) % 3;                         // SETUP, WEATHER, TIMING
         if (pressed(p, &Pad::l)) setupTab = (setupTab + 2) % 3;
         if (setupTab == 2 && pressed(p, &Pad::square)) timingOverall = !timingOverall;   // by class <-> overall
@@ -913,6 +913,7 @@ void Game::update(float dt, const Pad& p) {
         int tr = tapRow(p, 12, 254, 48, 22, 7);
         if (tr >= 0) { if (tr != sel) { sel = tr; dy = 0; } else if (tr <= 4) dx = p.tx[0] < 133 ? -1 : 1; else ok = true; }
         sel = (sel + dy + 7) % 7;
+        if (ok && sel <= 3 && !dx) dx = 1;               // X on a value row: the next value
         if (dx) {
             if (sel == 0) { int v = pl.tyres ? pl.tyre + 1 : 0; v = (v + dx + TY_COUNT + 1) % (TY_COUNT + 1); pl.tyres = v > 0; if (v) pl.tyre = v - 1; }
             if (sel == 1 && race.ep().refuel) pl.fuel = clampf(pl.fuel + dx * 0.1f, fmaxf(me.fuel, 0.1f), 1.0f);
@@ -934,7 +935,7 @@ void Game::update(float dt, const Pad& p) {
             snprintf(note, sizeof note, okSave ? "Saved to slot %d" : "Could not save to slot %d", saveSlot + 1); noteT = 2.5f;
         }
         if (ok && sel == 6) { leaveRace(); screen = SCR_TITLE; sel = 0; t = 0; break; }
-        if ((ok && sel == 5) || pressed(p, &Pad::start)) {
+        if ((ok && sel == 5) || pressed(p, &Pad::start) || back) {        // (O: back to the race with this plan)
             race.releasePlayer();
             if (!pl.aiDrives) race.timeAccel = 1;
             else { mgrCam = 0; mgrSel = 0; mgrFocus = 1; mgrRow = 0; snprintf(note, sizeof note, "On the pit wall: you're managing the team"); noteT = 3.0f; }
@@ -950,8 +951,9 @@ void Game::update(float dt, const Pad& p) {
         sel = PAUSE_ORDER[(pos + dy + 9) % 9];
         if (ok && sel == 7) { replayStart(); break; }
         if (ok && sel == 8) { phFrom = SCR_PAUSE; phYaw = 2.4f; phPitch = 0.25f; phDist = 7; phFov = 50; phHelp = true; screen = SCR_PHOTO; break; }
+        if (ok && sel == 2 && !dx) dx = 1;               // X on the camera row: the next camera
         if (dx && sel == 2) cam = (cam + dx + CAM_COUNT) % CAM_COUNT;
-        if (pressed(p, &Pad::start) || (ok && sel == 0)) { screen = SCR_RACE; }
+        if (pressed(p, &Pad::start) || back || (ok && sel == 0)) { screen = SCR_RACE; }   // START / O: back to the race
         else if (ok && sel == 1) startSession(race.session);
         else if (ok && sel == 3) { screen = SCR_OPTIONS; optionsFrom = SCR_PAUSE; sel = 0; optCat = -1; }
         else if (ok && sel == 4 && race.session != SES_RACE) { race.toGarage(); screen = SCR_GARAGE; setupPage = true; setupSel = 0; sound::silence(); }
@@ -965,7 +967,7 @@ void Game::update(float dt, const Pad& p) {
         updateOptions(p, dx, dy, ok, back);
         break;
     case SCR_RESULTS:
-        if (ok || pressed(p, &Pad::start)) {
+        if (ok || back || pressed(p, &Pad::start)) {
             if (ttMode) { leaveRace(); screen = SCR_TITLE; sel = 6; t = 0; break; }
             if (race.session != SES_RACE) weekendRubber = race.rubber;
             if (race.session == SES_PRACTICE) { startSession(SES_QUALI); break; }
@@ -999,7 +1001,7 @@ void Game::update(float dt, const Pad& p) {
         }
         bits.erase(std::remove_if(bits.begin(), bits.end(), [](const Bit& b) { return b.life <= 0 || b.y > SCREEN_H + 10; }), bits.end());
         if (bits.size() > 700) bits.erase(bits.begin(), bits.begin() + 100);
-        if ((ok || pressed(p, &Pad::start)) && t > 1.0f) {
+        if ((ok || back || pressed(p, &Pad::start)) && t > 1.0f) {
             sound::loop(1, nullptr, 0);
             sound::musicPodium(false);
             qualiGrid.clear();
@@ -1131,7 +1133,7 @@ void Game::updateManager(const Pad& p) {
     int nCars = race.teamCar(1) >= 0 ? 2 : 1;
     // left / right: the focused screen on the pit wall (the timing screen, then our cars); on TV and the
     // dashcam, which have no screens, our cars only
-    int fx = (pressed(p, &Pad::right) ? 1 : 0) - (pressed(p, &Pad::left) ? 1 : 0);
+    int fx = navDx;
     if (fx) {
         int lo = mgrCam == 0 ? 0 : 1, n = nCars + 1 - lo;
         mgrFocus = lo + ((mgrFocus - lo + fx) % n + n) % n;
@@ -1143,8 +1145,8 @@ void Game::updateManager(const Pad& p) {
     if (pressed(p, &Pad::l) || pressed(p, &Pad::r)) mgrTab[mgrFocus] ^= 1;
     if (mgrFocus == 0 || mgrTab[mgrFocus] != 0) return;          // the orders are on a car's ORDERS tab
     const int ROWS = 7;
-    if (pressed(p, &Pad::up)) mgrRow = (mgrRow + ROWS - 1) % ROWS;
-    if (pressed(p, &Pad::down)) mgrRow = (mgrRow + 1) % ROWS;
+    if (navDy < 0) mgrRow = (mgrRow + ROWS - 1) % ROWS;
+    if (navDy > 0) mgrRow = (mgrRow + 1) % ROWS;
     // X: the next value (or do it: box, DRIVE), Square: the one before
     int dx = (pressed(p, &Pad::cross) ? 1 : 0) - (pressed(p, &Pad::square) ? 1 : 0);
     bool ok = pressed(p, &Pad::cross);
@@ -1230,8 +1232,8 @@ void Game::drawManage(bool wall) {
     if (wall) {
         gfx::drawFill2D(0, SCREEN_H - 18, SCREEN_W, 18, RGBA(0, 0, 0, 150));
         static const char* CAMN[3] = {"PIT WALL", "TV", "DASHCAM"};
-        if (mgrCam == 0) snprintf(b, sizeof b, "D-PAD screen / order   X SQUARE change   L R tab   TRIANGLE x%d   O %s", (int)race.timeAccel, CAMN[1]);
-        else snprintf(b, sizeof b, "LEFT RIGHT car   UP DOWN order   X SQUARE change   TRIANGLE x%d   O %s", (int)race.timeAccel, CAMN[(mgrCam + 1) % 3]);
+        if (mgrCam == 0) snprintf(b, sizeof b, "D-PAD screen / order   X SQUARE change   L R tab   TRIANGLE x%d   SELECT %s   O pause", (int)race.timeAccel, CAMN[1]);
+        else snprintf(b, sizeof b, "LEFT RIGHT car   UP DOWN order   X SQUARE change   TRIANGLE x%d   SELECT %s   O pause", (int)race.timeAccel, CAMN[(mgrCam + 1) % 3]);
         R.font.drawCentre(SCREEN_W / 2, SCREEN_H - 17, b, DIM, 0.6f);
         gfx::setBlend(false);
         return;
@@ -1260,7 +1262,7 @@ void Game::drawManage(bool wall) {
       snprintf(b, sizeof b, "%s %d%%  %s%s", nm, (int)(w.drv[w.driver].fatigue * 100), PACE[w.su.map], w.wantPit ? "  BOX" : ""); }
     R.font.draw(SCREEN_W - 144, 212, b, DIM, 0.62f);
     gfx::drawFill2D(0, SCREEN_H - 18, SCREEN_W, 18, RGBA(0, 0, 0, 150));
-    snprintf(b, sizeof b, "LEFT RIGHT car   UP DOWN order   X SQUARE change   TRIANGLE x%d   O %s", (int)race.timeAccel, mgrCam == 2 ? "PIT WALL" : "DASHCAM");
+    snprintf(b, sizeof b, "LEFT RIGHT car   UP DOWN order   X SQUARE change   TRIANGLE x%d   SELECT %s   O pause", (int)race.timeAccel, mgrCam == 2 ? "PIT WALL" : "DASHCAM");
     R.font.drawCentre(SCREEN_W / 2, SCREEN_H - 17, b, DIM, 0.6f);
     gfx::setBlend(false);
 }
@@ -1319,7 +1321,7 @@ void Game::drawTeam() {
     }
     if (pl.aiDrives) R.font.draw(274, y + 2, "Team-mate in: you go to the pit wall", RGBA(120, 200, 255), 0.62f);
     if (noteT > 0) R.font.drawCentre(SCREEN_W / 2, 230, note, GOLD, 0.8f);
-    R.font.drawCentre(SCREEN_W / 2, SCREEN_H - 18, "UP/DOWN choose   LEFT/RIGHT change   X select", DIM, 0.75f);
+    R.font.drawCentre(SCREEN_W / 2, SCREEN_H - 18, "UP/DOWN choose   LEFT/RIGHT or X change   X select   O release the car", DIM, 0.75f);
 }
 
 
@@ -1372,6 +1374,7 @@ void Game::draw() {
                 R.font.drawCentre(SCREEN_W / 2, 82 + k * 16, items[i], col, 0.86f);
             }
             if (noteT > 0) R.font.drawCentre(SCREEN_W / 2, 236, note, GOLD, 0.7f);
+            else R.font.drawCentre(SCREEN_W / 2, 236, "X select     O resume", DIM, 0.7f);
         }
         if (screen == SCR_RESULTS) {
             gfx::setDepthTest(false); gfx::setBlend(true);
@@ -1409,7 +1412,7 @@ void Game::draw() {
                 R.font.draw(380, y, best, col, 0.9f);
                 if (c.penalty > 0 && race.session == SES_RACE) { snprintf(b, sizeof b, "+%.0fs", c.penalty); R.font.draw(450, y + 2, b, RGBA(255, 120, 60), 0.65f); }
             }
-            R.font.drawCentre(SCREEN_W / 2, SCREEN_H - 18, race.set.timeTrial ? "X  back to the title" : race.session == SES_PRACTICE ? "X  go to qualifying" : (race.session == SES_QUALI ? "X  go to the race (grid set by qualifying)" : "X  podium"), DIM, 0.8f);
+            R.font.drawCentre(SCREEN_W / 2, SCREEN_H - 18, race.set.timeTrial ? "X / O  back to the title" : race.session == SES_PRACTICE ? "X / O  go to qualifying" : (race.session == SES_QUALI ? "X / O  go to the race (grid set by qualifying)" : "X / O  podium"), DIM, 0.8f);
         }
         finishFrame();
         return;
@@ -1464,8 +1467,10 @@ void Game::updateOptions(const Pad& p, int dx, int dy, bool ok, bool back) {
     if ((dx || ok) && id == 21) { cfg.hudMode = (cfg.hudMode + (dx ? dx : 1) + 3) % 3; cfg.save(); return; }
     if ((dx || ok) && id == 22) { cfg.lookApex = !cfg.lookApex; cfg.save(); return; }
     if ((dx || ok) && id == 23) { cfg.rumble = !cfg.rumble; cfg.save(); return; }
+    bool wrap = false;
+    if (ok && !dx && id != 16) { dx = 1; wrap = true; }        // X on a value row: the next value (round to the start)
     if (dx) {
-        auto step = [&](int& v, int lo, int hi) { v += dx; if (v < lo) v = lo; if (v > hi) v = hi; };
+        auto step = [&](int& v, int lo, int hi) { v += dx; if (v > hi) v = wrap ? lo : hi; if (v < lo) v = lo; };
         bool custom = false;
         switch (id) {
             case 0: step(cfg.master, 0, 10); break;
@@ -1483,7 +1488,7 @@ void Game::updateOptions(const Pad& p, int dx, int dy, bool ok, bool back) {
             case 12: cfg.autoQuality = !cfg.autoQuality; if (!cfg.autoQuality) autoLevel = 0; break;
             case 14: cfg.pitCam ^= 1; break;
             case 20: cfg.swearing = !cfg.swearing; break;
-            case 13: cfg.attract += dx * 5; if (cfg.attract < 5) cfg.attract = 5; if (cfg.attract > 30) cfg.attract = 30; break;
+            case 13: cfg.attract += dx * 5; if (cfg.attract < 5) cfg.attract = 5; if (cfg.attract > 30) cfg.attract = wrap ? 5 : 30; break;
         }
         if (custom) { cfg.preset = 3; autoLevel = 0; }      // the player's own choice: start again from it
         if (id == 5) autoLevel = 0;
@@ -1523,6 +1528,7 @@ void Game::updateCareer(int dx, int dy, bool ok, bool back, bool square) {
         newCls = era;                                    // the era picked at headquarters
         sel = (sel + dy + 6) % 6;
         if (sel == 1) sel = dy < 0 ? 0 : 2;              // (the era row is only shown)
+        if (ok && sel <= 3 && !dx) dx = 1;               // X on a value row: the next value
         if (dx) {
             if (sel == 0) newName = cyc(newName, TEAM_NAME_COUNT);
             if (sel == 2) newDiff = cyc(newDiff, 3);
@@ -1539,6 +1545,7 @@ void Game::updateCareer(int dx, int dy, bool ok, bool back, bool square) {
     }
     if (screen == SCR_LIVERY) {
         sel = (sel + dy + 6) % 6;
+        if (ok && sel <= 4 && !dx) dx = 1;               // X on a value row: the next value
         if (dx) {
             if (sel == 0) career.style = cyc(career.style, LIVERY_STYLES);
             if (sel == 1) career.colA = cyc(career.colA, LIVERY_COLOURS_N);
@@ -1673,8 +1680,8 @@ void Game::updateReplay(float dt, const Pad& p) {
     if (pressed(p, &Pad::cross)) repPlay = !repPlay;
     if (pressed(p, &Pad::triangle)) repCam = (repCam + 1) % 4;           // TV, chase, far, cockpit
     int n = repCars;
-    if (pressed(p, &Pad::right)) repFocus = (repFocus + 1) % n;
-    if (pressed(p, &Pad::left)) repFocus = (repFocus + n - 1) % n;
+    if (navDx > 0) repFocus = (repFocus + 1) % n;
+    if (navDx < 0) repFocus = (repFocus + n - 1) % n;
     if (pressed(p, &Pad::square)) { phFrom = SCR_REPLAY; phYaw = 2.4f; phPitch = 0.25f; phDist = 7; phFov = 50; phHelp = true; screen = SCR_PHOTO; return; }
     // touch: tap the left / right of the timeline bar to jump, anywhere else to pause / play
     if (p.touches > 0 && prev.touches == 0) {
@@ -1697,8 +1704,7 @@ void Game::updatePhoto(float dt, const Pad& p) {
     if (pressed(p, &Pad::circle) || pressed(p, &Pad::start)) { screen = phFrom; if (phFrom == SCR_PAUSE) sel = 8; R.camInit = false; return; }
     if (pressed(p, &Pad::cross) || pressed(p, &Pad::triangle) || (p.touches > 0 && prev.touches == 0)) phHelp = !phHelp;
     // left stick / D-pad: around and up / down; right stick or L / R: closer / further; SQUARE + up/down: zoom lens
-    float sx = p.stickX + (p.right ? 1.0f : 0) - (p.left ? 1.0f : 0);
-    float sy = p.stickY + (p.down ? 1.0f : 0) - (p.up ? 1.0f : 0);
+    float sx, sy; nav::move(p, sx, sy);
     if (p.square) phFov = clampf(phFov + sy * 30 * dt, 15, 90);
     else { phYaw += sx * 1.6f * dt; phPitch = clampf(phPitch - sy * 0.9f * dt, -0.05f, 1.35f); }
     float zoom = p.rstickY + (p.l ? 1.0f : 0) - (p.r ? 1.0f : 0);
@@ -1743,7 +1749,7 @@ void Game::drawPhotoHud() {
     gfx::bindTexture(nullptr);
     gfx::drawFill2D(SCREEN_W / 2 - 170, SCREEN_H - 62, 340, 54, RGBA(0, 0, 0, 160));
     R.font.drawCentre(SCREEN_W / 2, SCREEN_H - 60, "PHOTO MODE", ACC, 0.9f);
-    R.font.drawCentre(SCREEN_W / 2, SCREEN_H - 44, "Stick: move around   R stick or L / R: closer / further   SQUARE + up/down: zoom", DIM, 0.56f);
+    R.font.drawCentre(SCREEN_W / 2, SCREEN_H - 44, "Stick / D-pad: move around   R stick or L / R: closer / further   SQUARE + up/down: zoom", DIM, 0.56f);
     R.font.drawCentre(SCREEN_W / 2, SCREEN_H - 32, input::hasTouch() ? "X: hide this, then PS + START saves a screenshot   O: back"
                                                                        : "X: hide this, then take your screenshot   O: back", WHITE, 0.6f);
     char b[32]; snprintf(b, sizeof b, "lens %.0f", phFov);

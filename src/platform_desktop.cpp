@@ -1380,7 +1380,8 @@ void start(MixFn fn) {
     if (dev) { SDL_LockAudioDevice(dev); mixFn = fn; SDL_UnlockAudioDevice(dev); return; }
     mixFn = fn;
     SDL_AudioSpec want{}, got{};
-    want.freq = 44100; want.format = AUDIO_S16SYS; want.channels = 2; want.samples = 512;   // ~12 ms: streaming adds its own delay want.callback = callback;
+    want.freq = 44100; want.format = AUDIO_S16SYS; want.channels = 2; want.samples = 512;   // ~12 ms: streaming adds its own delay
+    want.callback = callback;
     dev = SDL_OpenAudioDevice(nullptr, 0, &want, &got, 0);    // no changes allowed: SDL converts if it must
     if (!dev) { sys::log("audio failed: %s\n", SDL_GetError()); return; }
     SDL_PauseAudioDevice(dev, 0);

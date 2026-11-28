@@ -125,6 +125,7 @@ struct Car {
     bool finished = false; float finishTime = 0;
     int position = 0, lastPos = 0;
     float startDelay = 0;         // Le Mans start: driver running to the car
+    int runLaps = 0, runPlan = 0; // practice / qualifying (the AI): laps done on this run, flying laps it will do
     // tyres, fuel, drivers
     int tyre = TY_MEDIUM; float wear = 0;
     void coldTyres() { for (float& t : tyreT) t = 45; for (float& w : tyreWear) w = 0; rel.flat = -1; }   // a fresh set straight from the rack
@@ -282,6 +283,13 @@ struct Race {
     float startHour = 12;
     float timeAccel = 1;
     bool autoPlayer = false;      // the AI drives the player's car (tests, highlights)          // 1..16x speed-up while the AI drives (manage mode)
+    // leaving the garage: the AI drives the first 10 s, then hands the car over (on track, past the pit exit)
+    float handover = -1;          // seconds left of the countdown (-1 none; 0 = waiting for the pit exit)
+    float handBlend = 0;          // seconds left of the smooth handover (the AI's inputs fade into the player's)
+    float handGo = 0;             // seconds left of the "GO" after the handover
+    bool handing() const { return handover >= 0; }
+    static constexpr float HANDOVER_S = 10.0f;
+    int spawnHits = 0;            // (tests) flying-lap spawns that had to be moved clear of another car
     // weather
     float rain = 0, wet = 0, rainTarget = 0, rainTimer = 0;
     // track rubber 0 (green) .. 1 (fully rubbered in): the cars lay rubber on the racing line, which
@@ -413,6 +421,9 @@ struct Race {
     void toGarage();                            // put the player's car straight back in its garage
     void leaveGarage(const CarSetup& su);       // ... and send it out (pushed out, then the pit lane)
     void flyingLap(const CarSetup& su);         // ... or straight onto a flying lap
+    void practiceRunLap(Car& c);                // (the AI, practice / qualifying) a lap done: in to the garage after its run?
+    float garageSpell(const Car& c) const;      // how long the AI sits in its garage between runs (s)
+    void planRun(Car& c);                       // the flying laps of the AI's next run
     void garageCar(Car& c, int phase, float delay);
     float garageD() const { return boxD + 9.0f; }
     bool inGarage() const { return session != SES_RACE && player().pit == PIT_STOP && player().pitPhase == -2; }

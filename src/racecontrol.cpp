@@ -466,6 +466,8 @@ void Race::garageCar(Car& c, int phase, float delay) {
     c.total = cand;
     c.pit = PIT_STOP; c.pitPhase = phase; c.pitTimer = -delay; c.wantPit = false; c.outLap = true;
     c.lift = 0.12f; c.engineOn = false; c.rpm = 0;
+    c.body = CarBody();                                  // sat on its jacks: no spring state carried over
+    if (c.player) { handover = -1; handBlend = 0; handGo = 0; }
     pose(c);
 }
 
@@ -489,22 +491,77 @@ void Race::leaveGarage(const CarSetup& su) {
     if (c.pit != PIT_STOP || c.pitPhase != -2) return;
     applySetup(*this, c, su);
     c.pitPhase = -3; c.pitTimer = 0;
+    handover = HANDOVER_S; handBlend = 0;                // the AI takes it out; the player gets it in 10 s
 }
 
 void Race::flyingLap(const CarSetup& su) {
     Car& c = player();
     if (c.pit != PIT_STOP || c.pitPhase != -2) return;
     applySetup(*this, c, su);
-    // 900 m before the line at racing speed: the next crossing starts a timed lap
+    // 900 m before the line at racing speed: the next crossing starts a timed lap.
+    // A safe spot: clear of the other cars (none within 60 m along the lap, nor 40 m ahead of us
+    // after a second at speed), so the collision push-out never fires on the first step
     float L = track.length;
-    float back = fminf(900.0f, L * 0.25f);
+    float back0 = fminf(900.0f, L * 0.25f), back = back0;
+    for (int tries = 0; tries < 24; tries++) {
+        float s = track.wrap(-back);
+        bool clear = true;
+        for (const Car& o : cars) {
+            if (&o == &c || o.pit == PIT_STOP || o.rel.retired) continue;
+            float ds = track.wrap(o.s - s); if (ds > L * 0.5f) ds -= L;
+            if (ds > -60 && ds < 100) { clear = false; break; }
+        }
+        if (clear) break;
+        spawnHits++;
+        back += 45;
+        if (back > L * 0.45f) back = back0 * 0.5f + tries * 13.0f;
+    }
     c.s = track.wrap(-back);
     c.total = (floorf(c.total / L) + 1) * L - back;
     int i = track.index(c.s);
-    c.d = line[i]; c.yaw = 0; c.drift = 0; c.lift = 0;
-    c.v = vmax[c.def->cls][i] * 0.85f; c.gear = 6;
+    float hw = track.pts[i].hw;
+    c.d = clampf(line[i], -hw + 1.6f, hw - 1.6f);        // on the tarmac: never on a kerb or the grass
+    c.yaw = 0; c.drift = 0; c.lift = 0; c.yawRate = 0; c.yawCmd = 0; c.steer = 0;
+    c.spinning = false; c.offTrack = false; c.stuck = 0;
+    c.v = vmax[c.def->cls][i] * 0.85f;
+    c.gear = 6;
     c.pit = PIT_NONE; c.pitPhase = 0; c.outLap = true; c.engineOn = true;
+    // the root of the launches: the body kept its spring state from the garage spot, so the first
+    // step saw the road jump by the height difference in one frame (a huge vertical speed) and the
+    // springs fired the car into the air. Start the body afresh, sat on the road here
+    c.body = CarBody();
+    for (float& d : c.dmg) d = 0;
+    c.noseOff = c.wingOff = false;
     pose(c);
+    handover = HANDOVER_S; handBlend = 0;
+}
+
+// practice / qualifying runs (the AI): an out lap, 2-5 flying laps (some teams do long runs in practice),
+// an in lap to the garage, a spell there (changes to the car), then out again
+void Race::planRun(Car& c) {
+    uint32_t h = (uint32_t)c.number * 2654435761u + (uint32_t)(time * 7);
+    float u = ((h >> 8) & 1023) / 1023.0f;
+    if (session == SES_QUALI) c.runPlan = 2 + (int)(u * 2.0f);                    // 2-3 flying laps
+    else c.runPlan = u < 0.12f ? 6 + (int)(u * 30) : 2 + (int)((u - 0.12f) / 0.88f * 3.99f);  // a long run, or 2-5
+    c.runLaps = 0;
+}
+
+float Race::garageSpell(const Car& c) const {
+    // a few minutes, each team its own habit (by its number), varied a little each time
+    uint32_t h = (uint32_t)c.number * 2246822519u;
+    float team = 0.7f + ((h >> 10) & 255) / 255.0f * 0.8f;            // 0.7 .. 1.5
+    float base = session == SES_QUALI ? 150 : 480;
+    float s = base * team * (0.75f + rnd() * 0.5f);
+    // qualifying: the last run comes late, in the rush at the end
+    if (session == SES_QUALI && time < sessionLength * 0.55f) s = fmaxf(s, sessionLength * 0.6f - time + rnd() * 120);
+    return s;
+}
+
+void Race::practiceRunLap(Car& c) {
+    if (c.player || session == SES_RACE || c.pit != PIT_NONE || chequered) return;
+    c.runLaps++;
+    // laps done this run: the out lap (it counts as one) plus the planned flying laps -> in this lap
+    if (c.runLaps >= c.runPlan + 1) c.wantPit = true;
 }
 
 // garage moves: in from the box, and out: off the jacks, engine on, pushed to the box
@@ -519,13 +576,16 @@ static bool garageMove(Race& r, Car& c, float dt, std::vector<int>& sfx) {
             c.engineOn = false; c.lift = 0.12f;
             if (c.player) sfx.push_back(SFX_AIRJACK);
             c.pitPhase = c.player && !r.autoPlayer ? -2 : -3; c.pitTimer = -5;
+            if (!c.player) { c.pitTimer = -r.garageSpell(c); r.planRun(c); c.wantPit = false; }   // a spell in the garage: the crew at work
         }
         return true;
     }
     if (c.pitPhase != -3) return false;
     c.pitTimer += dt;
     float t = c.pitTimer;
-    if (t < 0) { c.lift = 0.12f; return true; }                    // waiting for its turn
+    // the AI's spell in the garage: its doors open while the crew work on it, shut a few seconds before it goes
+    if (!c.player) c.doorHold = (t < -4 && c.pitTimer > -1e5f) || r.chequered ? 1.0f : -1.0f;
+    if (t < 0 || (!c.player && r.chequered)) { c.lift = 0.12f; if (t >= 0) c.pitTimer = 0; return true; }   // waiting for its turn (no new run after the flag)
     if (t < 1.0f) {                                                // down off the jacks
         if (t - dt < 0 && c.player) sfx.push_back(SFX_JACKDROP);
         c.lift = 0.12f * (1 - t);
@@ -567,7 +627,20 @@ void Race::setupStart() {
         // practice / qualifying: every car starts in its garage and the crews push them out in turn
         std::swap(cars[0], cars[playerIdx]);
         playerIdx = 0;
-        for (int k = 0; k < n; k++) { cars[k].total = 0; garageCar(cars[k], -3, k == 0 ? 0 : 3 + rnd() * (session == SES_QUALI ? 40 : 70)); }
+        // when each AI car first goes out: practice spread over the first minutes (a few wait longer);
+        // qualifying: a few early runs, most cars wait for the track to rubber in and go late
+        for (int k = 0; k < n; k++) {
+            Car& c = cars[k];
+            c.total = 0;
+            float delay = 0;
+            if (k != 0) {
+                float L = fmaxf(sessionLength, 600);
+                if (session == SES_QUALI) delay = rnd() < 0.3f ? 3 + rnd() * 90 : L * (0.35f + rnd() * 0.3f);
+                else delay = rnd() < 0.7f ? 3 + rnd() * 120 : 120 + rnd() * L * 0.25f;
+            }
+            garageCar(c, -3, delay);
+            c.runLaps = 0; planRun(c);
+        }
         return;
     }
     int type = set.startType;

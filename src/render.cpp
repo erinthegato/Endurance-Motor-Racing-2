@@ -1,3 +1,4 @@
+#include <new>
 #include "render.h"
 #include "endian.h"
 #include "team_colours.h"
@@ -147,7 +148,14 @@ void Renderer::loadCar(int idx) {
     }
     if (carLoaded[idx] && CARS[idx].career) applyLivery(idx);
     // (the PC) the car made in Blender, where there is one: your car's textures at full size, the others' halved
-    if (carLoaded[idx] && !CARS[idx].career && carMesh[idx].load(CARS[idx].id, hd)) {
+    // Out of memory (the Vita's heap is fixed): no Blender car, the game's own model is drawn instead
+    // (std::bad_alloc from the mesh's or a texture's buffers used to abort the game)
+    bool mesh = false;
+    if (carLoaded[idx] && !CARS[idx].career) {
+        try { mesh = carMesh[idx].load(CARS[idx].id, hd); }
+        catch (const std::bad_alloc&) { carMesh[idx].unload(); mesh = false; sys::log("car %s: out of memory for its Blender model, the plain one is used\n", CARS[idx].id); }
+    }
+    if (mesh) {
         // the cockpit camera and cabin go where this model's driver sits
         carModel[idx].cabX = carMesh[idx].head[0] - COCKPIT[CARS[idx].era % ERA_COUNT].eye.x;
     }
@@ -223,6 +231,23 @@ void Renderer::applyLivery(int idx) {
         px += sizes[l] * sizes[l];
     }
     m.reshare();       // the smaller levels share level 0's freshly painted texture
+}
+
+// the menus show one car: everything else goes (the Vita frees GPU copies only after the frames that
+// drew them are done: gpuFree's pending list)
+void Renderer::freeCarsExcept(int keep) {
+    for (int i = 0; i < CAR_COUNT; i++) if (carLoaded[i] && i != keep) { carModel[i].unload(); carMesh[i].unload(); carLoaded[i] = false; }
+    if (ghostFor >= 0 && ghostFor != keep) { ghostFor = -1; std::vector<ModelVertex>().swap(ghostVerts); }
+}
+
+void Renderer::prewarmCars(const Race& r) {
+    for (const Car& c : r.cars) {
+        int idx = (int)(c.def - CARS);
+        if (idx < 0 || idx >= CAR_COUNT || !carLoaded[idx]) continue;
+        const Model& m = carModel[idx];
+        for (int i = 0; i < m.lodCount; i++) gfx::bindTexture(&m.lod[i].tex);
+    }
+    gfx::bindTexture(nullptr);
 }
 
 void Renderer::freeCars() {
@@ -961,6 +986,7 @@ void Renderer::drawCar(const Car& c, const V3& eye, const V3& fwd, float tanH, f
     V3 rel = c.pos - eye;
     Camera cam; cam.fwd = fwd; cam.up = V3(0, 0, 1);
     if (!inside && !visible(rel, 3.0f, cam, tanH, tanV, FAR_CARS * perf.distance)) return;   // (camRight / camUp set by drawScene)
+    carsDrawn++;
     float d = len(rel);
     if (carMesh[idx].loaded()) {
         // (the PC) the car made in Blender: its own body, interior, driver's helmet, glass and wheels
@@ -1774,6 +1800,19 @@ void Renderer::drawHUD(const Race& r, int mode) {
         }
         if (r.countdown <= 0) font.drawCentre(SCREEN_W / 2, 48, "GO!", RGBA(60, 255, 90), 1.6f);
     }
+    if (r.handing() || r.handGo > 0) {
+        // leaving the garage: the AI drives the first 10 s, then hands over
+        char hb[40];
+        u32 col = RGBA(255, 255, 255);
+        float sc = 1.6f;
+        if (!r.handing()) { snprintf(hb, sizeof hb, "GO"); col = RGBA(60, 255, 90); sc = 2.0f; }
+        else if (r.handover <= 0) { snprintf(hb, sizeof hb, "AT PIT EXIT"); col = RGBA(255, 215, 40); sc = 1.2f; }
+        else if (r.handover <= 3) { snprintf(hb, sizeof hb, "%d", (int)ceilf(r.handover)); col = RGBA(255, 215, 40); sc = 2.4f; }
+        else snprintf(hb, sizeof hb, "YOUR CAR IN %d", (int)ceilf(r.handover));
+        gfx::drawFill2D(SCREEN_W / 2 - 100, 58, 200, 44, RGBA(0, 0, 0, 150));
+        font.drawCentre(SCREEN_W / 2, 64, r.handing() ? "THE TEAM IS DRIVING" : "YOU HAVE THE CAR", RGBA(170, 200, 230), 0.6f);
+        font.drawCentre(SCREEN_W / 2, sc > 2 ? 72 : 78, hb, col, sc);
+    }
     if (c.finished) {
         gfx::drawFill2D(SCREEN_W / 2 - 110, 100, 220, 50, RGBA(0, 0, 0, 170));
         font.drawCentre(SCREEN_W / 2, 104, r.session == SES_RACE ? "FINISH" : "SESSION OVER", RGBA(255, 255, 255), 1.6f);
@@ -1793,6 +1832,7 @@ void Renderer::drawHUD(const Race& r, int mode) {
 void Renderer::drawCarModel(int idx, const M4& place, bool withDriver) {
     loadCar(idx);
     if (!carLoaded[idx]) return;
+    carsDrawn++;
     const Model& m = carModel[idx];
     if (carMesh[idx].loaded()) {
         const CarMesh& cm = carMesh[idx];

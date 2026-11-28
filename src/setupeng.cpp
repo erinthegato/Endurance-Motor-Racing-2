@@ -13,7 +13,7 @@ Lap cur;                       // the lap being driven
 std::vector<Lap> laps;         // the last clean laps (newest last)
 int lastLap = -1;
 bool clean = false;
-float offT = 0, tyreSum = 0;
+float offT = 0, tyreSum = 0, distSum = 0, fuelSum = 0, abuseSum = 0;
 const void* lastRace = nullptr;
 int lastSession = -1;
 const int KEEP = 5;
@@ -45,13 +45,15 @@ void finishLap() {
     if (l.braking > 0.5f) { l.lockF /= l.braking; l.lockR /= l.braking; } else { l.lockF = l.lockR = 0; }
     l.braking /= T;
     l.tyreT = tyreSum / T;
+    if (distSum > 100) { l.fuelK = fuelSum / distSum; l.abuseK = abuseSum / distSum; }
     laps.push_back(l);
     if ((int)laps.size() > KEEP) laps.erase(laps.begin());
 }
 }
 
-void reset() { laps.clear(); cur = Lap(); lastLap = -1; clean = false; offT = 0; tyreSum = 0; }
+void reset() { laps.clear(); cur = Lap(); lastLap = -1; clean = false; offT = 0; tyreSum = 0; distSum = fuelSum = abuseSum = 0; }
 int cleanLaps() { return (int)laps.size(); }
+bool lapClean() { return clean; }
 
 void sample(const Race& r, float dt) {
     if (dt <= 0) return;
@@ -66,8 +68,9 @@ void sample(const Race& r, float dt) {
     const Car& c = r.player();
     if (c.lap != lastLap) {
         if (lastLap >= 0) finishLap();
-        cur = Lap(); tyreSum = 0; offT = 0;
+        cur = Lap(); tyreSum = 0; offT = 0; distSum = fuelSum = abuseSum = 0;
         clean = !c.outLap;
+        cur.tyre = c.tyre;
         lastLap = c.lap;
     }
     if (c.pit != PIT_NONE || c.spinning || c.v < 1) { if (c.pit != PIT_NONE || c.spinning) clean = false; return; }
@@ -76,6 +79,15 @@ void sample(const Race& r, float dt) {
     float v = c.v;
     cur.time += dt;
     tyreSum += c.tyreTemp() * dt;
+    {   // the race's fuel and tyre use for this driving (Race::physics: fuel x (0.6 + 0.4 throttle) x the
+        // map's factor / 0.95; tyres x (1 + 1.5 slip) x hot tarmac); in practice nothing is used up
+        static const float MAP_FUEL[3] = {0.6f, 1.0f, 1.25f};
+        float ds = v * dt;
+        int map = c.su.map >= 0 && c.su.map < 3 ? c.su.map : 1;
+        distSum += ds;
+        fuelSum += ds * (0.6f + 0.4f * c.throttle) * MAP_FUEL[map] / 0.95f;
+        abuseSum += ds * (1 + c.slip * 1.5f) * (1 + fmaxf(0, r.trackNow - 32) * 0.015f);
+    }
     cur.topGear = t.topGear;
     cur.topGearUsed = std::max(cur.topGearUsed, c.gear);
     if (c.gear >= t.topGear && t.rpmFrac > 0.985f && c.throttle > 0.8f) cur.limiter += dt;
@@ -150,6 +162,58 @@ Report analyse(const CarSetup& su, int tyre, bool sealed) {
     return rp;
 }
 
+Strategy strategy(const Race& r) {
+    Strategy st;
+    const Car& me = r.player();
+    float L = r.track.length;
+    // the race's clock and use rates (as Race::start sets them for the race session)
+    const TrackDef& td = TRACKS[r.set.track];
+    float hours = r.set.eventHours > 0 ? r.set.eventHours : td.hours;
+    int raceMin = r.set.raceMin >= RACE_FULL ? (int)(hours * 60 + 0.5f) : r.set.raceMin;
+    float ts = raceMin > 0 ? hours * 60.0f / raceMin : 1.0f;
+    float estLap = L / 52.0f;
+    float consume = fmaxf(1.0f, fminf(ts, 3900.0f / (5.0f * estLap)));
+    // what the laps say (the last three clean ones), else the defaults
+    int n = std::min(3, (int)laps.size());
+    float lt = 0, fk = 0, ak = 0;
+    for (int i = (int)laps.size() - n; i < (int)laps.size(); i++) { lt += laps[i].time / n; fk += laps[i].fuelK / n; ak += laps[i].abuseK / n; }
+    st.dataLaps = (int)laps.size();
+    if (n == 0) {
+        lt = me.bestLap > 0 ? me.bestLap : L / (me.def->era == ERA_GT3 ? 44.0f : 50.0f);   // ~160 / 180 km/h on average
+        fk = 0.88f;                                       // (flat out ~70 % of a lap)
+        ak = 1.15f;
+    }
+    st.lapTime = lt;
+    st.raceLaps = raceMin > 0 ? raceMin * 60.0f / lt : (float)r.set.laps;
+    float tank = r.tankKmOf(me) * 1000;
+    st.fuelLap = L / tank * consume * fk;
+    st.stintLaps = std::max(1, (int)floorf(0.97f / st.fuelLap));      // (a lap's worth kept in hand)
+    st.stintMin = st.stintLaps * lt / 60.0f;
+    st.stops = std::max(0, (int)ceilf(st.raceLaps / st.stintLaps - 0.02f) - 1);
+    // tyres: laps each dry compound lasts at this driving (the race wears them at 'consume' too)
+    float life[3];
+    for (int t = TY_SOFT; t <= TY_HARD; t++) life[t] = r.tyreKm[t] * 1000 / (L * consume * ak);
+    st.dryTyre = TY_HARD;
+    for (int t = TY_SOFT; t <= TY_HARD; t++) if (life[t] >= st.stintLaps * 0.95f) { st.dryTyre = t; break; }
+    st.doubleOk = life[st.dryTyre] >= st.stintLaps * 1.9f || life[TY_HARD] >= st.stintLaps * 1.9f;
+    int dbl = life[st.dryTyre] >= st.stintLaps * 1.9f ? st.dryTyre : TY_HARD;
+    // drivers: a stint in race hours; the 4 h rule (and 14 h in all) decides how often they change
+    float stintH = st.stintLaps * lt * ts / 3600.0f;
+    st.changeEvery = std::max(1, (int)floorf((MAX_STINT_H - 0.2f) / fmaxf(stintH, 0.05f)));
+    st.pitLoss = 25 + 0.012f * L / 10;                     // the lane at 60 km/h and the work (about)
+    // the plans: 1 a standard stop, 2 a double stint (fuel only), 3 a driver change, 4 wet weather
+    PitPlan p1; p1.tyres = true; p1.tyre = st.dryTyre; p1.fuel = 1; p1.repair = true;
+    PitPlan p2 = p1; p2.tyres = false; p2.tyre = dbl;
+    PitPlan p3 = p1; p3.swapDriver = true; p3.nextDriver = 1;
+    PitPlan p4 = p1; p4.tyre = TY_INTER;
+    st.plan[0] = p1; st.plan[1] = p2; st.plan[2] = p3; st.plan[3] = p4;
+    static const char* TN[TY_COUNT] = {"softs", "mediums", "hards", "inters", "wets"};
+    snprintf(st.line[0], sizeof st.line[0], "Stop every %d laps (~%.0f min), %d stop%s", st.stintLaps, st.stintMin, st.stops, st.stops == 1 ? "" : "s");
+    snprintf(st.line[1], sizeof st.line[1], "%s for a stint, %s", TN[st.dryTyre], st.doubleOk ? "double stint OK" : "no double stints");
+    snprintf(st.line[2], sizeof st.line[2], "Driver change every %d stint%s%s", st.changeEvery, st.changeEvery == 1 ? "" : "s", st.dataLaps < 2 ? " (estimate)" : "");
+    return st;
+}
+
 bool apply(Sug s, CarSetup& su) {
     switch (s) {
         case SG_GEAR_LONGER: if (su.gearing >= 2) return false; su.gearing++; return true;
@@ -182,15 +246,30 @@ void Ui::say(const char* clipName, const char* subtitle) {
     if (qn < 4) { queue[qn] = clipName; subs[qn] = subtitle; qn++; }
 }
 
-void Ui::ask(const CarSetup& su, int tyre, bool sealed) {
+void Ui::tell(const char* subtitle) { say(nullptr, subtitle); }
+void Ui::announce(const char* subtitle) {
+    qn = qi = 0; gap = 0; holdT = 0; open = true; offer = false; closing = false; sub[0] = 0;
+    snprintf(own[1], sizeof own[1], "%s", subtitle); tell(own[1]);
+}
+
+void Ui::ask(const CarSetup& su, int tyre, bool sealed, const Strategy* st) {
     Report rp = analyse(su, tyre, sealed);
     qn = qi = 0; gap = 0; holdT = 0; open = true; offer = false; closing = false; sub[0] = 0;
     say("setup_greet", "Right, let's have a look at the data.");
     sug = rp.sug[0];
-    if (sug == SG_NEED_LAPS) { say(clip(sug), text(sug)); return; }
+    if (sug == SG_NEED_LAPS) {
+        // what counts, said plainly (the Vita report: "she does not work in career" -- no laps counted yet)
+        say(clip(sug), text(sug));
+        int have = (int)laps.size();
+        snprintf(own[0], sizeof own[0], "Get me two clean laps (%d so far). Out laps, stops, spins and running wide don't count.", have);
+        tell(own[0]);
+        if (st) { snprintf(own[1], sizeof own[1], "For now, on the numbers: %s.", st->line[0]); tell(own[1]); }
+        return;
+    }
     if (rp.obs != OB_NONE) say(obsClip(rp.obs), obsText(rp.obs));
     say(clip(sug), text(sug));
     offer = sug != SG_BALANCED;
+    if (st) { snprintf(own[1], sizeof own[1], "Strategy: %s; %s.", st->line[0], st->line[1]); tell(own[1]); }
 }
 
 void Ui::update(float dt) {

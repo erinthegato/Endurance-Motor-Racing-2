@@ -13,6 +13,8 @@ static const float PI_ = 3.14159265f;
 static float wrapA(float a) { while (a > PI_) a -= 2 * PI_; while (a < -PI_) a += 2 * PI_; return a; }
 static float clampW(float v, float a, float b) { return v < a ? a : (v > b ? b : v); }
 static const float DOOR_SEQ = 1.8f;          // getting in / out of the car: the door, the step, the door
+static const float STEP_SEQ = 0.75f;         // a car with no doors that open (no 'DOR1' hinges: the plain models): just the step in / out
+static float doorSeq = DOOR_SEQ;             // this get-in's length (set when it starts)
 
 // ------------------------------------------------------------------ the walker
 void Walker::clear() {
@@ -400,7 +402,7 @@ void Game::updateWalkHQ(float dt, const Pad& p) {
         return;
     }
     if (pressed(p, &Pad::circle) && hqChosen) { screen = SCR_TITLE; sel = 0; t = 0; walkList = false; walker.scene = -1; return; }
-    if (idle > cfg.attract && !aiDrivesPlayer) { idle = 0; introBegin(1); }
+    if (cfg.attractOn && idle > cfg.attract && !aiDrivesPlayer) { idle = 0; introBegin(1); }
 }
 
 void Game::drawWalkHQ(const V3& eye, const V3& fwd) {
@@ -431,6 +433,24 @@ std::vector<SceneryRange> sceneryRanges;
 struct Desk { float x, y, z; int id; };
 Desk desks[3]; int deskCount = 0;
 float npcX = 0, npcY = 0;                  // the setup engineer
+char engLabel[40] = "SETUP ENGINEER";      // her station's label, with the clean laps she has (updated each frame)
+// our garage's furniture as boxes (local x, y, z), every one, for the line-of-sight test
+struct Box3 { float x0, y0, z0, x1, y1, z1; };
+std::vector<Box3> ourBoxes;
+// does the segment p -> q pass through the box? (slabs)
+bool segHits(const Box3& b, V3 p, V3 q) {
+    float t0 = 0, t1 = 1;
+    const float P[3] = {p.x, p.y, p.z}, D[3] = {q.x - p.x, q.y - p.y, q.z - p.z};
+    const float lo[3] = {b.x0, b.y0, b.z0}, hi[3] = {b.x1, b.y1, b.z1};
+    for (int i = 0; i < 3; i++) {
+        if (fabsf(D[i]) < 1e-6f) { if (P[i] < lo[i] || P[i] > hi[i]) return false; continue; }
+        float a = (lo[i] - P[i]) / D[i], c = (hi[i] - P[i]) / D[i];
+        if (a > c) std::swap(a, c);
+        t0 = fmaxf(t0, a); t1 = fminf(t1, c);
+        if (t0 > t1) return false;
+    }
+    return true;
+}
 u32 shadeW(u32 c, float k) { return RGBA((int)((c & 255) * k), (int)(((c >> 8) & 255) * k), (int)(((c >> 16) & 255) * k)); }
 }   // namespace
 
@@ -447,7 +467,8 @@ void Game::walkPitLayout() {
     const Car& me = race.player();
     int mine = pitSlot(me.def);
     // the furniture, in the world (relative to the origin), and as obstacles
-    scenery.clear(); sceneryRanges.clear();
+    scenery.clear(); sceneryRanges.clear(); ourBoxes.clear();
+    bool inOurs = false;
     sceneryOrigin = walkPitWorld(PIT_BOX0, garage, 0);
     auto box = [&](float x0, float y0, float z0, float x1, float y1, float z1, u32 col, bool solid) {
         V3 c[8];
@@ -461,6 +482,7 @@ void Game::walkPitLayout() {
             for (int i : idx) scenery.push_back(WorldVertex{0, 0, k, c[i].x, c[i].y, c[i].z});
         }
         if (solid) w.boxes.push_back({x0, y0, x1, y1, z1});
+        if (inOurs) ourBoxes.push_back({x0, y0, z0, x1, y1, z1});
     };
     const u32 DESK = RGBA(70, 74, 82), SCREEN = RGBA(18, 22, 30), CHEST = RGBA(190, 40, 36), RUBBER = RGBA(28, 28, 30), RIM = RGBA(150, 152, 158), RIG = RGBA(110, 116, 124);
     for (int team = 0; team < slots; team++) {
@@ -479,6 +501,7 @@ void Game::walkPitLayout() {
         w.roofs.push_back({sa - 0.3f, d0 - 0.4f, sb + 0.3f, d1 + 0.3f, 3.0f});
         // furniture along the back wall: desks with monitors, a tool chest, tyre stacks, the fuel rig
         bool ours = team == mine;
+        inOurs = ours;
         float deskXs[3] = {a + 2.5f, a + 7.5f, a + 12.5f};
         int nd = ours ? 3 : 1;
         for (int k = 0; k < nd; k++) {
@@ -492,7 +515,9 @@ void Game::walkPitLayout() {
             box(a + 6.05f, g + 11.05f, 1.05f, a + 7.25f, g + 11.8f, 1.45f, shadeW(CHEST, 0.85f), false);
         } else box(b - 2.4f, g + 6.8f, 0, b - 1.2f, g + 7.7f, 1.05f, CHEST, true);   // (ours: by the side wall)
         for (int st = 0; st < 2; st++) {                       // two stacks of four tyres
-            float tx = b - 1.6f - st * 0.75f, ty = g + 11.3f;
+            // ours: against the side wall between the tool chest and the desks, clear of the PIT PLANS
+            // desk and the way to it (they stood in front of its monitor: the Vita report)
+            float tx = ours ? b - 0.55f : b - 1.6f - st * 0.75f, ty = ours ? g + 8.75f + st * 0.8f : g + 11.3f;
             for (int k = 0; k < 4; k++) {
                 float z = k * 0.3f;
                 box(tx - 0.33f, ty - 0.33f, z, tx + 0.33f, ty + 0.33f, z + 0.28f, RUBBER, false);
@@ -518,9 +543,10 @@ void Game::walkPitLayout() {
             box(b - 1.8f, g + 3.35f, 0.76f, b - 1.45f, g + 3.75f, 0.79f, RGBA(40, 42, 48), false);       // laptop base
             box(b - 1.48f, g + 3.35f, 0.79f, b - 1.45f, g + 3.75f, 1.05f, RGBA(60, 110, 170), false);    // its screen
             w.posts.push_back({npcX, npcY, 0.28f});
-            w.stations.push_back({b - 2.5f, g + 3.6f, 1.0f, WST_SETUPENG, "SETUP ENGINEER", 2.3f});
+            w.stations.push_back({b - 2.5f, g + 3.6f, 1.0f, WST_SETUPENG, engLabel, 2.3f});
         }
     }
+    inOurs = false;
     gfx::flushCache(scenery.data(), (int)scenery.size() * (int)sizeof(WorldVertex));
     // our car in the garage: in at the driver's door
     float cx = race.pitRel(me.s), cy = me.d;
@@ -530,6 +556,31 @@ void Game::walkPitLayout() {
     float a = PIT_BOX0 + mine * 16.0f - 7.5f, b = a + 15.0f;
     float d0 = wallD + 0.25f, d1 = wallD + 2.5f;
     w.stations.push_back({(a + b) * 0.5f, (d0 + 0.75f + d1) * 0.5f, 2.1f, WST_PLANS, "PIT PLANS", 3.7f});
+}
+
+// (tests) the garage's desks: how many of the sight lines to their monitors pass through furniture.
+// For each desk: from the focus camera, from where you stand at it (eye height) and from 3 m back
+// (walking up to it); each to the monitor's centre. Prints what blocks what.
+int Game::walkSightBlocked() const {
+    int bad = 0;
+    for (int k = 0; k < deskCount; k++) {
+        const Desk& d = desks[k];
+        V3 mon(d.x, d.y, d.z);
+        V3 eyes[3] = {V3(d.x, d.y - 0.98f, d.z + 0.02f), V3(d.x, d.y - 0.98f, 1.65f), V3(d.x - 0.6f, d.y - 4.0f, 1.65f)};
+        for (const V3& e : eyes)
+            for (const Box3& b : ourBoxes) {
+                bool own = fabsf((b.x0 + b.x1) * 0.5f - d.x) < 1.2f && b.y0 >= d.y - 0.4f;   // the desk, its stand and monitor
+                if (own) continue;
+                if (segHits(b, e, mon)) { bad++; sys::log("sight: desk %d blocked from (%.1f %.1f %.1f) by box x %.2f..%.2f y %.2f..%.2f z %.2f..%.2f\n", d.id, e.x, e.y, e.z, b.x0, b.x1, b.y0, b.y1, b.z0, b.z1); }
+            }
+    }
+    // the setup engineer: from his station to him (head height)
+    for (const Box3& b : ourBoxes) {
+        V3 e(npcX - 1.4f, npcY, 1.65f), t(npcX, npcY, 1.55f);
+        bool own = b.x0 > npcX - 1.0f && b.y0 > npcY - 1.0f && b.y1 < npcY + 1.0f;   // his desk and laptop
+        if (!own && segHits(b, e, t)) { bad++; sys::log("sight: the setup engineer blocked by box x %.2f..%.2f y %.2f..%.2f\n", b.x0, b.x1, b.y0, b.y1); }
+    }
+    return bad;
 }
 
 void Game::walkPitBegin(bool climbOut) {
@@ -542,7 +593,8 @@ void Game::walkPitBegin(bool climbOut) {
     float cx = race.pitRel(me.s), cy = me.d;
     walker.place(cx + 2.6f, cy + 1.2f, PI_);                 // out of the car, standing beside it
     walker.camYaw = PI_ - 0.6f;
-    walkDoor = climbOut ? 2 : 0; walkDoorT = 0; me.doorHold = climbOut ? 1.0f : -1.0f;   // climbing out: the door opens, out, it shuts
+    walkDoor = climbOut ? 2 : 0; walkDoorT = 0; me.doorHold = climbOut ? 1.0f : -1.0f;
+    doorSeq = R.carHasDoors((int)(me.def - CARS)) ? DOOR_SEQ : STEP_SEQ;   // climbing out: the door opens, out, it shuts
     race.timeAccel = 1;
     screen = SCR_WALK; t = 0;
 }
@@ -557,11 +609,17 @@ void Game::driveOut() {
 // the setup engineer at her laptop: she reads the laps and offers one change (src/setupeng.h); the
 // conversation has the pad until it's over: X takes the change, O leaves the car as it is
 void Game::askSetupEngineer() {
-    engUi.ask(set.setup, set.setup.tyre, parcFerme());
+    setupeng::Strategy st = setupeng::strategy(race);
+    engUi.ask(set.setup, set.setup.tyre, parcFerme(), &st);
     walkFocus = WST_SETUPENG;
 }
 
 void Game::updateWalkPit(float dt, const Pad& p, bool onFoot) {
+    {   // her label: the clean laps she has to work with (she needs two)
+        int n = setupeng::cleanLaps();
+        if (n < 2) snprintf(engLabel, sizeof engLabel, "SETUP ENGINEER  %d/2 clean laps", n);
+        else snprintf(engLabel, sizeof engLabel, "SETUP ENGINEER  %d laps of data", n);
+    }
     // the session carries on round us (our car waits in the garage)
     {
         int accel = (int)race.timeAccel;
@@ -582,8 +640,8 @@ void Game::updateWalkPit(float dt, const Pad& p, bool onFoot) {
         Car& me = race.player();
         walkDoorT += dt;
         bool skip = pressed(p, &Pad::cross);
-        me.doorHold = walkDoorT < 1.2f ? 1.0f : 0.0f;
-        if (skip || walkDoorT >= DOOR_SEQ) {
+        me.doorHold = walkDoorT < 1.2f * doorSeq / DOOR_SEQ ? 1.0f : 0.0f;
+        if (skip || walkDoorT >= doorSeq) {
             if (skip) me.door = 0;
             me.doorHold = -1;
             if (walkDoor == 1) driveOut(); else walkDoor = 0;
@@ -642,7 +700,10 @@ void Game::updateWalkPit(float dt, const Pad& p, bool onFoot) {
     bool use = walker.update(dt, p, prev);
     int id = walker.nearSt >= 0 ? walker.stations[walker.nearSt].id : -1;
     if (!use) return;
-    if (id == WST_CAR) { walkDoor = 1; walkDoorT = 0; race.player().doorHold = 1; }   // the door opens, in we get
+    if (id == WST_CAR) {
+        walkDoor = 1; walkDoorT = 0; race.player().doorHold = 1;   // the door opens, in we get
+        doorSeq = R.carHasDoors((int)(race.player().def - CARS)) ? DOOR_SEQ : STEP_SEQ;   // (no door to watch: straight in)
+    }   // the door opens, in we get
     else if (id == WST_SETUPENG) askSetupEngineer();
     else if (id == WST_SETUP || id == WST_SESSION || id == WST_PLANS) {
         walkFocus = id; planRow = 0; planDone = false; setupSel = 0;
@@ -791,7 +852,7 @@ void Game::radioTick() {
 // repairs and the driver for the next stint
 static const char* CORNER_NAME[4] = {"top left", "top right", "bottom left", "bottom right"};
 void Game::updatePlans(int dx, int dy, bool ok, bool back) {
-    const int ROWS = 7;          // plan, tyres, fuel, repair, driver, in use, done
+    const int ROWS = 8;          // plan, tyres, fuel, repair, driver, in use, let the engineer decide, done
     planRow = (planRow + dy + ROWS) % ROWS;
     PitPlan& q = pitPlans[planEdit];
     bool changed = false;
@@ -810,13 +871,22 @@ void Game::updatePlans(int dx, int dy, bool ok, bool back) {
         if (planRow >= 1 && planRow <= 4) pitPlanSet[planEdit] = true;     // (editing a plan puts it in use)
     }
     if (ok && planRow == 5) { pitPlanSet[planEdit] = !pitPlanSet[planEdit]; changed = true; }
+    if (ok && planRow == 6) {
+        // the setup engineer fills all four from the laps so far (or her estimate before there are any);
+        // each can still be changed by hand afterwards
+        setupeng::Strategy st = setupeng::strategy(race);
+        for (int i = 0; i < PLANS; i++) { pitPlans[i] = st.plan[i]; pitPlanSet[i] = true; }
+        changed = true;
+        char b[96]; snprintf(b, sizeof b, "Plans in. %s.", st.line[0]);
+        engUi.announce(b);
+    }
     if (changed) pitPlansSave();
-    if (back || (ok && planRow == 6)) planDone = true;      // (back to walking: the desk lets go)
+    if (back || (ok && planRow == 7)) planDone = true;      // (back to walking: the desk lets go)
 }
 
 void Game::drawPlans() {
     gfx::setDepthTest(false); gfx::setBlend(true); gfx::setFog(false, 0, 1, 0);
-    float x0 = SCREEN_W / 2 - 150, y0 = 38, w = 300, h = 196;
+    float x0 = SCREEN_W / 2 - 150, y0 = 36, w = 300, h = 216;
     gfx::drawFill2D(x0, y0, w, h, RGBA(8, 12, 20, 225));
     gfx::drawFill2D(x0, y0, w, 2, W_ACC);
     R.font.drawCentre(SCREEN_W / 2, y0 + 6, "PIT PLANS", W_WHITE, 1.1f);
@@ -829,7 +899,7 @@ void Game::drawPlans() {
         R.font.drawCentre(bx + 30, by + 3, b, i == planEdit ? RGBA(20, 20, 20) : W_WHITE, 0.9f);
     }
     const PitPlan& q = pitPlans[planEdit];
-    char v[7][64];
+    char v[8][64];
     snprintf(v[0], 64, "Plan %d  (touch the %s corner)", planEdit + 1, CORNER_NAME[planEdit]);
     snprintf(v[1], 64, "Tyres  < %s >", q.tyres ? TYRE_NAME[q.tyre] : "stay on");
     if (raceLoaded && !race.ep().refuel) snprintf(v[2], 64, "Fuel  (no refuelling)");
@@ -838,13 +908,23 @@ void Game::drawPlans() {
     if (q.swapDriver && raceLoaded) { char dn[24]; Race::driverName(race.player(), q.nextDriver, dn, sizeof dn); snprintf(v[4], 64, "Driver  < change to %s >", dn); }
     else snprintf(v[4], 64, "Driver  < stay in >");
     snprintf(v[5], 64, "In use  < %s >", pitPlanSet[planEdit] ? "yes" : "no (empty)");
-    snprintf(v[6], 64, "Done");
-    for (int r = 0; r < 7; r++) {
-        float y = y0 + 58 + r * 18;
-        if (r == planRow) gfx::drawFill2D(x0 + 8, y - 2, w - 16, 17, RGBA(255, 150, 40, 220));
-        R.font.drawCentre(SCREEN_W / 2, y, v[r], r == planRow ? RGBA(20, 20, 20) : (r >= 1 && r <= 4 && !pitPlanSet[planEdit] ? W_DIM : W_WHITE), 0.78f);
+    snprintf(v[6], 64, "Let the engineer decide");
+    snprintf(v[7], 64, "Done");
+    for (int r = 0; r < 8; r++) {
+        float y = y0 + 54 + r * 16;
+        if (r == planRow) gfx::drawFill2D(x0 + 8, y - 2, w - 16, 15, RGBA(255, 150, 40, 220));
+        u32 col = r == planRow ? RGBA(20, 20, 20) : (r >= 1 && r <= 4 && !pitPlanSet[planEdit] ? W_DIM : (r == 6 ? RGBA(150, 210, 255) : W_WHITE));
+        R.font.drawCentre(SCREEN_W / 2, y, v[r], col, 0.74f);
     }
-    R.font.drawCentre(SCREEN_W / 2, y0 + h - 14, "In the race: touch a corner to call that plan, again to call it off", W_DIM, 0.56f);
+    // the engineer's strategy: when to stop, the tyres, the driver changes
+    if (raceLoaded) {
+        setupeng::Strategy st = setupeng::strategy(race);
+        gfx::drawFill2D(x0 + 8, y0 + 183, w - 16, 1, RGBA(60, 70, 90));
+        R.font.drawCentre(SCREEN_W / 2, y0 + 186, st.line[0], RGBA(150, 210, 255), 0.56f);
+        char l2[150]; snprintf(l2, sizeof l2, "%s  |  %s", st.line[1], st.line[2]);
+        R.font.drawCentre(SCREEN_W / 2, y0 + 196, l2, RGBA(150, 210, 255), 0.5f);
+    }
+    R.font.drawCentre(SCREEN_W / 2, y0 + h - 10, "In the race: touch a corner to call that plan, again to call it off", W_DIM, 0.5f);
     gfx::drawFill2D(0, SCREEN_H - 18, SCREEN_W, 18, RGBA(0, 0, 0, 140));
     R.font.drawCentre(SCREEN_W / 2, SCREEN_H - 15, "UP/DOWN  row     LEFT/RIGHT  change     X  select     O  back to the pits", W_DIM, 0.6f);
     gfx::setBlend(false); gfx::setDepthTest(true);
@@ -872,7 +952,7 @@ Camera Game::walkPitCamera() const {
         M4 place = M4::basis(me.fwd, me.left, me.up, me.pos);
         V3 eyeC = place.point(R.carLoaded[idx] ? R.cockpitEye(idx) : V3(0, 0, 0.95f));
         V3 fwdC = norm(me.fwd - me.up * 0.10f);
-        float u = walkDoor == 1 ? walkDoorT : DOOR_SEQ - walkDoorT;
+        float u = (walkDoor == 1 ? walkDoorT : doorSeq - walkDoorT) * (DOOR_SEQ / doorSeq);
         auto ease = [](float k) { k = clampW(k, 0, 1); return k * k * (3 - 2 * k); };
         V3 seat = norm(eyeC - c.eye);
         if (u < 0.6f) c.fwd = norm(c.fwd + (seat - c.fwd) * ease(u / 0.6f));

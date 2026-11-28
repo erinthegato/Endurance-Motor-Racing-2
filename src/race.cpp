@@ -335,6 +335,9 @@ void Race::bodyUpdate(Car& c, float dt, float gEff, float accLong, float accLat)
     if (!b.init || fabsf(zs - b.zPrev) > 1.5f || c.lift > 0 || dt <= 0) {
         // first step, or the car was put somewhere new (pits, a restart, the intro): sit on the road
         b = CarBody(); b.init = true; b.zPrev = zs; b.psPrev = ps; b.rsPrev = rs;
+        // already moving with the road: a car put down at speed on a slope (FLYING LAP) climbs or falls
+        // with it. Starting it at vz 0 on a downhill made the road drop away from it and it flew
+        b.vz = c.v * cosf(c.yaw - c.drift) * track.gradeAt(c.s);
         return;
     }
     const float W = 2 * 3.14159f * 3.2f, K = W * W, C = 2 * 0.75f * W, E0 = G / K;   // ~3 Hz ride, well damped
@@ -1017,7 +1020,16 @@ void Race::endSession() {
 void Race::update(float dt, float steer, float throttle, float brake, int shift, bool aiPlayer) {
     sfxEvents.clear();
     airNow = airTemp(); trackNow = trackTemp();
-    autoPlayer = aiPlayer;
+    if (handGo > 0) handGo = fmaxf(0, handGo - dt);
+    if (handover >= 0) {
+        // leaving the garage: the AI has the car for 10 s, and on to the pit exit if it is still in the lane
+        if (aiPlayer || over) handover = -1;
+        else {
+            handover = fmaxf(0, handover - dt);
+            if (handover <= 0 && player().pit == PIT_NONE) { handover = -1; handBlend = 0.4f; handGo = 1.2f; }
+        }
+    }
+    autoPlayer = aiPlayer || handover >= 0;
     bool clutch = drsPress || shift > 0;          // the launch clutch (standing starts)
     if (launch.state == LS_REV || launch.state == LS_WAIT) { if (drsPress) drsPress = false; if (launch.state == LS_WAIT) shift = 0; }
     if (countdown > 0) {
@@ -1051,11 +1063,19 @@ void Race::update(float dt, float steer, float throttle, float brake, int shift,
         if (c.hold) { c.v = 0; continue; }
         if (c.rel.retired) { retiredDrive(c, dt); continue; }
         if (c.startDelay > 0) { c.startDelay -= dt; if (c.startDelay <= 0 && c.player) message("In the car - go!", RGBA(60, 255, 90)); }
-        bool human = c.player && !aiPlayer && !c.finished && c.pit == PIT_NONE && !c.plan.aiDrives;
+        bool human = c.player && !autoPlayer && !c.finished && c.pit == PIT_NONE && !c.plan.aiDrives;
         // the player's car is taken into the pit lane automatically once the entry is reached
         if (human && c.wantPit && pitRel(c.s) >= -5 && pitRel(c.s) < 40) human = false;
         c.human = human && c.startDelay <= 0;
         if (human && c.startDelay <= 0) {
+            if (c.player && handBlend > 0) {
+                // the handover: the AI's last inputs fade into the player's over 0.4 s (no steering jerk)
+                float k = 1 - handBlend / 0.4f;
+                steer = c.steer + (steer - c.steer) * k;
+                throttle = c.throttle + (throttle - c.throttle) * k;
+                brake = c.brake + (brake - c.brake) * k;
+                handBlend = fmaxf(0, handBlend - dt);
+            }
             c.throttle = throttle; c.brake = brake;
             if (c.player && launch.state != LS_OFF) launchBefore(c, dt, clutch);
             // the lock falls away with speed (less twitchy at high speed), and the car takes ~0.1 s to
@@ -1162,6 +1182,7 @@ void Race::update(float dt, float steer, float throttle, float brake, int shift,
             }
             c.lapStart = time;
             c.lap = lapsAfter;
+            if (!c.player && session != SES_RACE) practiceRunLap(c);
             if (c.driveThrough && --c.dtLaps <= 0 && c.pit == PIT_NONE) {
                 c.driveThrough = false; c.penalty += 30;
                 if (c.player) message("Drive-through not served: +30 s", RGBA(255, 90, 60), RADIO_PENALTY);

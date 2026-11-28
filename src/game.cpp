@@ -91,12 +91,13 @@ void Game::startSession(Session ses) {
     if (asyncLoad) {
         // in steps behind the loading slideshow (loading.cpp)
         ld = LoadState(); ld.active = true; ld.ses = ses; ld.t0 = sys::timeSec();
-        ld.slide = (int)(ld.t0 * 3) % 7;
+        ld.slide = (int)((unsigned long long)(ld.t0 * 3) % 7);
         screen = SCR_LOADING;
         return;
     }
     RaceSettings s; std::vector<int> grid;
     ses = sessionPrep(ses, s, grid);
+    R.freeCars(); menuCarShown = -1;              // the menu's car goes before the circuit and the field load
     raceLoaded = race.start(s, ses, grid.empty() ? nullptr : &grid);
     if (!raceLoaded) { screen = SCR_TRACK; return; }
     afterLoad();
@@ -144,7 +145,7 @@ void Game::leaveRace() {
     sound::freeEffects();         // radio calls, thunder, rain, pit sounds: loaded again when needed
     if (raceLoaded) race.end();
     raceLoaded = false;
-    R.freeCars();
+    R.freeCars(); menuCarShown = -1;
     R.hdAll = true;               // menus and the showroom: the 512 px liveries
 }
 
@@ -231,6 +232,7 @@ void Game::frame(float dt, const Pad& pad) {
     }
     sound::update();
     prev = pad;
+    R.carsDrawn = 0;
     draw();
     double tu2 = sys::timeSec();
     lastUpdMs = (tu1 - tu0) * 1000; lastDrawMs = (tu2 - tu1) * 1000;
@@ -284,7 +286,13 @@ static const char* screenName(int s) {
 
 void Game::perfFrame(float dt, double updMs, double drawMs) {
     int mem = sys::memUsedKB();
-    if (mem > memPeak) memPeak = mem;
+    if (mem > memPeak) {
+        // the heap's high-water mark, in the log each time it climbs another 2 MB (the Vita's heap is fixed:
+        // running out aborts with std::bad_alloc)
+        static int logged = 0;
+        if (mem > logged + 2048) { logged = mem; sys::log("mem: heap high water %d KB (screen %d, cars loaded %d)\n", mem, (int)screen, R.carsLoadedCount()); }
+        memPeak = mem;
+    }
     if (!cfg.showFps && !bench) return;
     perfUpd += updMs; perfDraw += drawMs; perfN++; perfT += dt;
     perfGpu += gfx::lastGpuWaitSec() * 1000; perfWait += gfx::lastWaitSec() * 1000;
@@ -754,7 +762,7 @@ void Game::update(float dt, const Pad& p) {
             int id = updateWalkHub(dt, p);
             dy = 0; ok = id >= 0; back = id == -2;
             if (ok) sel = id;
-            if (!ok && !back) { if (idle > cfg.attract && !aiDrivesPlayer) { idle = 0; introBegin(1); } break; }
+            if (!ok && !back) { if (cfg.attractOn && idle > cfg.attract && !aiDrivesPlayer) { idle = 0; introBegin(1); } break; }
         } else if (walkMenus && back) { walkList = false; break; }
         if (dy) {
             // TIME TRIAL (id 6) is shown second; the other items keep their ids
@@ -762,7 +770,7 @@ void Game::update(float dt, const Pad& p) {
             sel = TITLE_ORDER[(pos + dy + TITLE_N) % TITLE_N];
         }
         if (back) { screen = SCR_HQ; hqSel = era; t = 0; break; }
-        if (idle > cfg.attract && !aiDrivesPlayer) { idle = 0; introBegin(1); break; }
+        if (cfg.attractOn && idle > cfg.attract && !aiDrivesPlayer) { idle = 0; introBegin(1); break; }
         if (ok || (pressed(p, &Pad::start) && !(walkMenus && !walkList))) {
             t = 0;
             ttMode = sel == 6;
@@ -793,7 +801,7 @@ void Game::update(float dt, const Pad& p) {
         if (walkMenus) { updateWalkHQ(dt, p); break; }      // [walk] the office on foot (walk.cpp)
         // team headquarters: the four eras' cars on the desk
         if (dx) hqSel = (hqSel + dx + ERA_COUNT) % ERA_COUNT;
-        if (idle > cfg.attract && !aiDrivesPlayer) { idle = 0; introBegin(1); break; }
+        if (cfg.attractOn && idle > cfg.attract && !aiDrivesPlayer) { idle = 0; introBegin(1); break; }
         if ((ok || pressed(p, &Pad::start)) && t > 0.3f) { chooseEra(hqSel); screen = SCR_TITLE; sel = 0; t = 0; }   // X picks the class
         else if (back && t > 0.3f) { hqSel = era; screen = SCR_TITLE; sel = 0; t = 0; }                           // O: the main menu, class unchanged
         break;
@@ -1463,9 +1471,10 @@ void Game::draw() {
                 char b[96], tm[24], best[16];
                 formatTime(best, c.bestLap);
                 if (race.session != SES_RACE) {
-                    if (c.bestLap <= 0) strcpy(tm, "no time");
+                    if (c.bestLap <= 0) strcpy(tm, c.pit == PIT_STOP ? "garage" : "no time");
                     else if (&c == lead) formatTime(tm, c.bestLap);
                     else snprintf(tm, sizeof tm, "+%.3f", c.bestLap - lead->bestLap);
+                    if (c.bestLap > 0 && c.pit == PIT_STOP) { size_t l = strlen(tm); snprintf(tm + l, sizeof tm - l, " gar"); }
                 } else if (c.rel.retired) snprintf(tm, sizeof tm, "DNF %s", RETIRE_SHORT[c.rel.cause < 0 ? MF_COUNT : c.rel.cause]);
                 else if (&c == lead) formatTime(tm, c.finishTime - race.greenTime);
                 else if (c.finished && c.lap == lead->lap) { float g = c.finishTime + c.penalty - lead->finishTime - lead->penalty; snprintf(tm, sizeof tm, "+%.3f", g); }
@@ -1553,7 +1562,10 @@ void Game::updateOptions(const Pad& p, int dx, int dy, bool ok, bool back) {
             case 12: cfg.autoQuality = !cfg.autoQuality; if (!cfg.autoQuality) autoLevel = 0; break;
             case 14: cfg.pitCam ^= 1; break;
             case 20: cfg.swearing = !cfg.swearing; break;
-            case 13: cfg.attract += dx * 5; if (cfg.attract < 5) cfg.attract = 5; if (cfg.attract > 30) cfg.attract = 30; break;
+            case 13:                                       // Off, then on after 5 .. 30 s
+                if (!cfg.attractOn) { if (dx > 0) { cfg.attractOn = true; cfg.attract = 5; } }
+                else { cfg.attract += dx * 5; if (cfg.attract < 5) { cfg.attract = 5; cfg.attractOn = false; } if (cfg.attract > 30) cfg.attract = 30; }
+                break;
         }
         if (custom) { cfg.preset = 3; autoLevel = 0; }      // the player's own choice: start again from it
         if (id == 5) autoLevel = 0;

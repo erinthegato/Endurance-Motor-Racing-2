@@ -81,6 +81,7 @@ void Config::save() const {
     fprintf(f, "\nengineer %d\nhud %d\n", (int)swearing, hudMode);
     fprintf(f, "camera %d %d\n", (int)lookApex, (int)rumble);
     fprintf(f, "sessions %d\n", sessionMin);
+    fprintf(f, "attract %d\n", (int)attractOn);
     fclose(f);
 }
 
@@ -126,6 +127,8 @@ void Config::load() {
     if (ok && fscanf(f, "\ncamera %d %d", &la, &ru) == 2) { c.lookApex = la != 0; c.rumble = ru != 0; if (fscanf(f, " %d", &rs) == 1) (void)rs; }
     int sm = 30;
     if (ok && fscanf(f, "\nsessions %d", &sm) == 1) c.sessionMin = sm;     // (optional line: 30 min in older files)
+    int ao = 1;
+    if (ok && fscanf(f, "\nattract %d", &ao) == 1) c.attractOn = ao != 0;   // (optional line: on in older files)
     fclose(f);
     if (!ok) return;
     auto in = [](int x, int lo, int hi) { return x < lo ? lo : (x > hi ? hi : x); };

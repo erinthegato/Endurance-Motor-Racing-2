@@ -31,7 +31,11 @@ extern "C" {
 // The game's own heap (models, circuits, sounds): a full 20-car race peaks at ~15 MB on the PC test
 // (FL_MEM=1) and ~29 MB on the Vita, so 48 MB still leaves ~19 MB spare. The graphics memory pools are
 // separate blocks (see startGpu). (It was 64 MB; before that 200 MB.)
-int _newlib_heap_size_user = 48 * 1024 * 1024;
+// v3.3: 80 MB. The Blender cars (ECM meshes, PNG textures decoded on the CPU before they go to the GPU)
+// made the menu / attract / race peaks larger, and 48 MB ran out (std::bad_alloc) idling in the main
+// menu. The GPU's main-memory pool is sized from what is left after this (startGpu), so it shrinks
+// rather than failing.
+int _newlib_heap_size_user = 80 * 1024 * 1024;
 unsigned int sceUserMainThreadStackSize = 2 * 1024 * 1024;
 }
 

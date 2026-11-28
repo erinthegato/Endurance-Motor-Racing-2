@@ -25,6 +25,7 @@ struct Config {
     bool showFps = false;
     bool autoQuality = true; // lower the detail by itself when the frame rate drops (see Game::autoQualityStep)
     int attract = 10;
+    bool attractOn = true;   // the attract movie when the main menu is left alone (off: never)
     bool spins = true;       // steering far past the grip makes the rear step out and the car spin
     // PS Vita: steer by turning the console (0 off, 1 gentle, 2 normal, 3 strong); reversed if it turns the wrong way
     int tilt = 0; bool tiltInvert = false;

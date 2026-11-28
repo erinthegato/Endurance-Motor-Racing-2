@@ -79,6 +79,7 @@ void Config::save() const {
             (int)real.cooling, (int)real.slipstream, (int)real.blowTyre, (int)real.ground, (int)real.fuel, real.damagePct);
     for (bool m : real.mech) fprintf(f, " %d", (int)m);
     fprintf(f, "\nengineer %d\nhud %d\n", (int)swearing, hudMode);
+    fprintf(f, "camera %d %d %d\n", (int)lookApex, (int)rumble, rstick);
     fclose(f);
 }
 
@@ -119,6 +120,8 @@ void Config::load() {
     if (ok && fscanf(f, "\nengineer %d", &sw) == 1) c.swearing = sw != 0;   // (optional line: off in older files)
     int hm = 1;
     if (ok && fscanf(f, "\nhud %d", &hm) == 1) c.hudMode = hm;                // (optional line: full in older files)
+    int la = 1, ru = 1, rs = 0;
+    if (ok && fscanf(f, "\ncamera %d %d %d", &la, &ru, &rs) == 3) { c.lookApex = la != 0; c.rumble = ru != 0; c.rstick = rs ? 1 : 0; }   // (optional line)
     fclose(f);
     if (!ok) return;
     auto in = [](int x, int lo, int hi) { return x < lo ? lo : (x > hi ? hi : x); };

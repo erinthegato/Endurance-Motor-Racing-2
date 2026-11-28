@@ -1153,7 +1153,7 @@ void Game::screenOptions(Panel& P) {
     header(P, "SETTINGS");
     static const char* PRESET[4] = {"Quality", "Balanced", "Performance", "Custom"};
     static const char* DISTN[3] = {"Far", "Medium", "Near"};
-    char v[22][56];
+    char v[25][56];
     auto vol = [](char* o, const char* name, int x) {
         char bar[12]; for (int i = 0; i < 10; i++) bar[i] = i < x ? '|' : '.'; bar[10] = 0;
         snprintf(o, 56, "%-9s < %s >  %d", name, bar, x);
@@ -1178,10 +1178,13 @@ void Game::screenOptions(Panel& P) {
     snprintf(v[21], 56, "HUD:  < %s >", HUDN[cfg.hudMode]);
     snprintf(v[19], 56, "Rear-view mirror:  < %s >", cfg.mirror ? "On" : "Off");
     snprintf(v[20], 56, "Engineer on a bad day:  < %s >", cfg.swearing ? "Swears" : "Clean");
+    snprintf(v[22], 56, "Look to apex:  < %s >", cfg.lookApex ? "On" : "Off");
+    snprintf(v[23], 56, "Cockpit rumble:  < %s >", cfg.rumble ? "On" : "Off");
+    snprintf(v[24], 56, "Right stick:  < %s >", cfg.rstick ? "Throttle / brake" : "Look round");
     if (optCat < 0) {
         // the categories
         static const char* SUB[OPT_CATS] = {"Volumes, and how the engineer talks on a bad day",
-            "Optimisation, frame rate, draw distance, scenery, effects", "Menus, pit stop camera, steering wheel, HUD, mirror",
+            "Optimisation, frame rate, draw distance, scenery, effects", "Menus, cameras, look to apex, rumble, HUD, mirror",
             "Buttons, steering help, tilt steering", "Temperatures, slipstream, damage, mechanical problems", ""};
         for (int i = 0; i < OPT_CATS; i++) {
             float y = 46 + i * 33;

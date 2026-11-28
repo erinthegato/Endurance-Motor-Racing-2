@@ -88,6 +88,14 @@ struct Renderer {
     // smoothed chase camera
     V3 camPos, camFwd;
     bool camInit = false;
+    float camYaw = 0, camZ = 0; V3 camCarLast;     // the chase camera's smoothed heading and height, the car last frame
+    // looking round: the right stick (set each frame by the game, -1..1; 0 = no input) and its sprung view offset
+    float lookX = 0, lookY = 0, lookYawS = 0, lookPitchS = 0;
+    // look to apex (Settings): the view turned toward the coming corner's apex (radians, smoothed)
+    bool lookApex = true; float apexYaw = 0;
+    float apexTarget(const Race& r, const Car& c, const V3& eye) const;
+    // the cockpit's high-speed rumble (Settings): smooth noise, its strength grows with the speed
+    bool rumble = true; float rumbleAmp = 0;
     float speedFeel = 0, shakeAmp = 0;   // the camera's sense of speed: smoothed speed share, shake strength
     void speedShake(const Race& r, const Car& c, float dt, float& sx, float& sy);
     V3 camRight, camUp;             // camera axes for this frame

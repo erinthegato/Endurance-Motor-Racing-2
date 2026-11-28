@@ -1464,6 +1464,52 @@ int main(int argc, char** argv) {
         printf("manager: %s\n", bad ? "FAILED" : "ok");
         return bad ? 1 : 0;
     }
+    if (mode == "cam") {
+        // cam <track id> <outdir>: the race camera follows the (AI-driven) player car at varying frame rates.
+        // Prints the chase camera's distance from the car (it must hold steady at any speed / frame time),
+        // the look-to-apex angle in the corners, then shots: chase at speed and the cockpit in a corner.
+        std::string tid = argv[2], out = argv[3];
+        for (int i = 0; i < TRACK_COUNT; i++) if (tid == TRACKS[i].id) g.set.track = i;
+        g.set.car = 0; g.set.laps = 2; g.set.opponents = 5;
+        g.aiDrivesPlayer = true;
+        g.startRace();
+        if (g.screen != SCR_RACE) { fprintf(stderr, "race did not start\n"); return 1; }
+        float simT = 0; const float dt = 1.0f / 30;
+        float dmin = 1e9f, dmax = 0, vmax = 0, amax = 0; int bad = 0, nshot = 0; float lastShot = -100;
+        const float dts[3] = {1.0f / 30, 1.0f / 60, 1.0f / 144};
+        int k = 0;
+        while (g.screen == SCR_RACE && simT < 150) {
+            Pad p{};
+            g.screen = SCR_RACE; g.step(dt, p); simT += dt;
+            if (simT < 25) continue;                       // (the start)
+            const Car& c = g.race.player();
+            // the camera stepped in sub-frames of a varying length over this 1/30 s
+            float fdt = dts[(k++ / 90) % 3]; int sub = (int)(dt / fdt + 0.5f);
+            Camera cam;
+            for (int j = 0; j < sub; j++) cam = g.R.camera(g.race, CAM_CHASE, fdt, false);
+            V3 d = cam.eye - c.pos; d.z = 0;
+            float dist = sqrtf(dot(d, d));
+            if (c.v > 20) { dmin = fminf(dmin, dist); dmax = fmaxf(dmax, dist); }
+            vmax = fmaxf(vmax, c.v); amax = fmaxf(amax, fabsf(g.R.apexYaw));
+            // the car must stay in front of the chase camera, near the middle of the picture
+            V3 rel = c.pos - cam.eye; float fz = dot(rel, cam.fwd);
+            if (fz < 2) bad++;
+            // shots: at speed, and in a corner (the apex angle well over 5 degrees)
+            const TrackPoint& tp = g.race.track.pts[(int)(g.race.track.wrap(c.s) / g.race.track.step) % g.race.track.n];
+            bool corner = fabsf(g.R.apexYaw) > 0.09f && c.v > 25, fast = c.v > 75 && fabsf(tp.curv) > 1.0f / 900;
+            if ((corner || fast) && simT - lastShot > 8 && nshot < 6) {
+                char b[96];
+                g.cam = CAM_CHASE; snprintf(b, sizeof b, "/cam_chase_%s_%d.ppm", tid.c_str(), nshot); shot(g, out + b, dt);
+                g.cam = CAM_COCKPIT; for (int j = 0; j < 20; j++) { Pad z{}; g.frame(1.0f / 60, z); }
+                snprintf(b, sizeof b, "/cam_cockpit_%s_%d.ppm", tid.c_str(), nshot); shot(g, out + b, dt);
+                printf("shot %d at %.0f s: %.0f km/h, apex %.1f deg, curvature 1/%.0f m\n", nshot, simT, c.v * 3.6f, g.R.apexYaw * 57.3f, tp.curv != 0 ? 1 / tp.curv : 0);
+                g.cam = CAM_CHASE; g.R.camInit = false; nshot++; lastShot = simT;
+            }
+        }
+        printf("chase distance above 72 km/h: %.2f .. %.2f m (top speed %.0f km/h), largest apex angle %.1f deg, frames with the car behind the camera %d\n",
+               dmin, dmax, vmax * 3.6f, amax * 57.3f, bad);
+        return (dmax - dmin > 0.6f || bad) ? 1 : 0;
+    }
     if (mode == "race") {
         std::string tid = argv[2];
         for (int i = 0; i < TRACK_COUNT; i++) if (tid == TRACKS[i].id) g.set.track = i;

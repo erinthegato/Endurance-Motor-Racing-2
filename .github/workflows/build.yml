@@ -199,11 +199,11 @@ jobs:
           ./emr_test_asan nospin spa 3 2
           ./emr_test_asan nospin spa 11 2
           ./emr_test_asan difflap imola 0
-          ./emr_test_asan garagesight x 2>/dev/null | tail -1
-          ./emr_test_asan flyspawn x 2>/dev/null | tail -1
-          ./emr_test_asan memcycle x 2>/dev/null | tail -1
-          ./emr_test_asan careereng x 2>/dev/null | tail -1
-          ./emr_test_asan practiceruns x 2>/dev/null | tail -1
+          ./emr_test_asan garagesight x > /dev/null 2>&1 || { echo "garagesight failed"; exit 1; }
+          ./emr_test_asan flyspawn x > /dev/null 2>&1 || { echo "flyspawn failed"; exit 1; }
+          ./emr_test_asan memcycle x > /dev/null 2>&1 || { echo "memcycle failed"; exit 1; }
+          ./emr_test_asan careereng x > /dev/null 2>&1 || { echo "careereng failed"; exit 1; }
+          ./emr_test_asan practiceruns x > /dev/null 2>&1 || { echo "practiceruns failed"; exit 1; }
       - name: Pit stop hand-over to a team-mate, career race lengths
         env:
           ASAN_OPTIONS: detect_leaks=0
